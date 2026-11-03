@@ -4,6 +4,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { truncate } from './format.ts';
+import type { Segment } from '../game/chatlinks.ts';
 
 const h = React.createElement;
 
@@ -79,6 +80,34 @@ export function FormView({ form, width }: { form: FormState; width: number }) {
 }
 
 /** Splits text into lines of at most `width` characters (words kept whole when possible). */
+/** wrap() for coloured runs: same word breaking, each word keeps its run's colour. */
+export function wrapSegments(segs: Segment[], width: number): Segment[][] {
+  const out: Segment[][] = [];
+  let line: Segment[] = [];
+  let len = 0;
+  const put = (text: string, color?: string) => {
+    const last = line[line.length - 1];
+    if (last && last.color === color) last.text += text;
+    else line.push({ text, color });
+    len += text.length;
+  };
+  const words = segs.flatMap((s) => s.text.split(/\s+/).filter(Boolean).map((w) => ({ w, color: s.color })));
+  for (const { w, color } of words) {
+    for (let i = 0; i < w.length; i += width) {
+      const piece = w.slice(i, i + width);
+      if (len && len + 1 + piece.length > width) {
+        out.push(line);
+        line = [];
+        len = 0;
+      }
+      if (len) put(' ', line[line.length - 1].color === color ? color : undefined);
+      put(piece, color);
+    }
+  }
+  out.push(line);
+  return out;
+}
+
 export function wrap(text: string, width: number): string[] {
   const out: string[] = [];
   for (const para of text.split('\n')) {

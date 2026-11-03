@@ -3,7 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { ScreenProps } from './character.ts';
 import { scrollWindow, truncate } from './format.ts';
-import { formKey, formValues, FormView, makeForm, wrap, type FormState } from './form.ts';
+import { formKey, formValues, FormView, makeForm, wrapSegments, type FormState } from './form.ts';
+import { chatSegments, type Segment } from '../game/chatlinks.ts';
 
 const h = React.createElement;
 
@@ -71,14 +72,14 @@ export function ChatScreen({ state, width, height, onCapture, onExit, active = t
   const tw = Math.max(10, rightW - 4);
   const wrapped = lines.flatMap((l) => {
     const time = new Date(l.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return wrap(`${time} ${l.from}: ${l.text}`, tw).map((t, i) => ({ t, own: l.own, first: i === 0, from: l.from }));
+    return wrapSegments(lineSegments(state, `${time} ${l.from}: `, l.text, l.own), tw);
   });
   const room4 = Math.max(1, height - 4 - (form ? 6 : 0));
   const shown = wrapped.slice(-room4);
   const topic = room ? live?.rooms.get(room)?.topic : '';
   const right = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width: rightW, height, paddingX: 1 },
     h(Text, { bold: true, wrap: 'truncate' }, room && live ? live.roomTitle(room) : '', topic ? h(Text, { dimColor: true, bold: false }, ` · ${topic}`) : ''),
-    ...shown.map((l, i) => h(Text, { key: i, color: l.own ? 'cyan' : undefined }, l.t || ' ')),
+    ...shown.map((l, i) => segLine(l, i)),
     lines.length ? null : h(Text, { dimColor: true }, room ? 'No messages since you connected.' : ''),
     h(Box, { flexGrow: 1 }),
     form ? h(FormView, { form, width: rightW - 4 }) : null,
@@ -87,6 +88,19 @@ export function ChatScreen({ state, width, height, onCapture, onExit, active = t
       : h(Text, { dimColor: true, wrap: 'truncate' }, 'Enter write · t whisper · ↑↓ room · Esc back'),
   );
   return h(Box, { width, height }, left, right);
+}
+
+/** A chat line as coloured runs: own lines cyan, [item=…] / [quest=…] links as names. */
+function lineSegments(state: ScreenProps['state'], head: string, text: string, own: boolean): Segment[] {
+  const color = own ? 'cyan' : undefined;
+  return [{ text: head, color }, ...chatSegments(text, {
+    item: (id) => ({ name: state.itemName(id), set: !!state.items?.get(id)?.set }),
+    quest: (id) => state.questTitle(id),
+  }, color)];
+}
+
+function segLine(segs: Segment[], key: number, wrap?: 'truncate') {
+  return h(Text, { key, wrap }, ...(segs.length ? segs.map((s, i) => h(Text, { key: i, color: s.color }, s.text)) : [' ']));
 }
 
 /** Rooms (town, saloon, …) then whispers, in the order both chat views show them. */
@@ -113,7 +127,7 @@ export function ChatPanel({ state, width, height, focused, roomIdx, draft }: {
   const tw = Math.max(10, width - 4);
   const wrapped = lines.flatMap((l) => {
     const time = new Date(l.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return wrap(`${time} ${l.from}: ${l.text}`, tw).map((t) => ({ t, own: l.own }));
+    return wrapSegments(lineSegments(state, `${time} ${l.from}: `, l.text, l.own), tw);
   });
   const shown = wrapped.slice(-Math.max(1, height - 4));
   const others = ids.filter((id) => id !== room && live?.unreadRooms.has(id)).length;
@@ -121,7 +135,7 @@ export function ChatPanel({ state, width, height, focused, roomIdx, draft }: {
   const status = !live?.active ? 'live updates off (L)' : ids.length ? `${Math.min(roomIdx, ids.length - 1) + 1}/${ids.length}${others ? ` · ${others} unread` : ''}` : 'connecting…';
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: focused ? 'cyan' : 'gray', width, height, paddingX: 1, flexShrink: 0 },
     h(Text, { bold: true, wrap: 'truncate' }, `${ids.length > 1 ? '◂ ' : ''}${title}${ids.length > 1 ? ' ▸' : ''}`, h(Text, { dimColor: true, bold: false }, `  ${status}`)),
-    ...shown.map((l, i) => h(Text, { key: i, color: l.own ? 'cyan' : undefined, wrap: 'truncate' }, l.t || ' ')),
+    ...shown.map((l, i) => segLine(l, i, 'truncate')),
     lines.length || !room ? null : h(Text, { dimColor: true }, 'No messages since you connected.'),
     h(Box, { flexGrow: 1 }),
     draft !== null

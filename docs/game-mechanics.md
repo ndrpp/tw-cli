@@ -70,3 +70,8 @@ browser client's code; **unverified** = assumed, check live and update this file
 - `reports show_report` → `page` (HTML; the "Items Found" block is an empty `<span id="jobreward_item_<report>_<item>">`
   the browser fills from `js`) and `reportInfo: {items: [[itemId, ?, count, type], …], job_id}`: the found
   items. Verified on a live Prospecting report (5× Fool's gold).
+
+## Chat
+- Messages carry links as tags in the text: `[item=<instance id>]` (seen live: `wtb [item=42085000]`). The client
+  shows them as names (`chatlinks.ts`: items yellow, set items green). `[quest=<id>]` is assumed the same way
+  (unverified); its title is only known for quests in the log or at the open employer, else `quest <id>`.

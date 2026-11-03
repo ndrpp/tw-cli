@@ -166,6 +166,11 @@ export class GameState extends EventEmitter {
     return this.items ? this.items.name(id) : `item ${id}`;
   }
 
+  /** Title of a quest in the log or at the open employer, if we have it. */
+  questTitle(id: number): string | undefined {
+    return (this.quests.find((q) => q.id === id) ?? this.employer?.open.find((q) => q.id === id))?.title;
+  }
+
   info(msg: string): void {
     this.push('info', msg);
   }

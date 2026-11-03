@@ -21,5 +21,6 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
 - The 1 s ticker in `App` re-renders and drives `state.tick()`, queue polls, syncs and `state.runner.step()`.
 - `GameState` emits `change`; `useGameState` re-renders on it. Components read state directly (no copies).
 - Lists use `scrollWindow(selected, total, rows)`; text is `wrap: 'truncate'` with `truncate()` for columns.
+- Coloured wrapped text (chat lines): `wrapSegments()` in `form.ts` wraps `{text, color}` runs like `wrap()`.
 - Tests render with a `PassThrough` stdout (`isTTY`, `columns`, `rows`) and strip ANSI; a stub state must be
   re-rendered by hand (`app.rerender`) since it does not emit `change`.
