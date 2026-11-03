@@ -283,6 +283,13 @@ export class GameState extends EventEmitter {
 
   // ---- live updates -------------------------------------------------------------------------
 
+  /** After a rebuild (wake from sleep): keep the log and a running auto-route. */
+  carryOver(prev: GameState): void {
+    this.log.unshift(...prev.log.slice(-100));
+    if (prev.autoRoute) this.autoRoute = { ...prev.autoRoute, retryAt: 0 };
+    this.mapLayers = prev.mapLayers;
+  }
+
   /** Starts the chat long-poll the browser keeps open; pushes XP/money/energy/position. */
   startLive(): void {
     if (this.live?.active) return;

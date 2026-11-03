@@ -611,3 +611,28 @@ test('auto-route: queues the rest of a route as queue space and energy allow, in
   s.stopAutoRoute();
   assert.equal(s.autoRoute, null);
 });
+
+test('wake: a timer gap far above the interval counts as sleep; the rebuilt state keeps log and auto-route', async () => {
+  const { WakeDetector } = await import('../src/util/wake.ts');
+  let t = 1_000_000;
+  const woke: number[] = [];
+  const w = new WakeDetector((ms) => woke.push(ms), { intervalMs: 5_000, gapMs: 60_000, now: () => t });
+  t += 5_000;
+  assert.equal(w.check(), null);
+  t += 59_000; // a slow tick (busy event loop) is not a sleep
+  assert.equal(w.check(), null);
+  t += 2 * 3600_000;
+  assert.equal(w.check(), 2 * 3600_000);
+  assert.deepEqual(woke, [2 * 3600_000]);
+  t += 5_000;
+  assert.equal(w.check(), null, 'measured from the wake, not from before the sleep');
+
+  const old = makeState();
+  old.info('before sleep');
+  old.autoRoute = { label: 'this quest', runs: [{ post: {}, energy: 12, title: 'job1' }] as any, total: 3, retryAt: Date.now() + 60_000 };
+  const next = makeState();
+  next.carryOver(old);
+  assert.ok(next.log.some((l) => l.msg === 'before sleep'));
+  assert.equal(next.autoRoute?.runs.length, 1);
+  assert.equal(next.autoRoute?.retryAt, 0, 'retries right away after waking');
+});

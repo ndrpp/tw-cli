@@ -196,7 +196,15 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   useEffect(() => {
     let lastPoll = Date.now();
     let lastSync = Date.now();
+    let lastTick = Date.now();
+    let pausedUntil = 0;
     const timer = setInterval(() => {
+      // Back from sleep: the Root's WakeDetector rebuilds everything within ~2 s; don't act on the
+      // stale session/queue meanwhile (an auto-route step could queue against an old queue).
+      const now = Date.now();
+      if (now - lastTick > 30_000) pausedUntil = now + 5_000;
+      lastTick = now;
+      if (now < pausedUntil) return;
       const finished = state.tick();
       if (Date.now() - Math.max(lastSync, state.lastSync) > SYNC_MS) {
         lastSync = lastPoll = Date.now();
