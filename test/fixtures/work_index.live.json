@@ -1,0 +1,143 @@
+{
+ "workspeed": 0.5,
+ "premiumSystem": {},
+ "moneyBonus": 0,
+ "itemBonus": 1.8920000000000003,
+ "jobs": {
+  "1": {
+   "workpoints": 352,
+   "jobSkillPoints": 353,
+   "motivation": 1,
+   "durations": [
+    {
+     "cost": 1,
+     "money": 18,
+     "xp": 5,
+     "luck": 0.03,
+     "items": [
+      {
+       "prop": 2,
+       "probBonus": 4,
+       "itemid": 700000,
+       "random": false,
+       "buyCost": 8
+      }
+     ],
+     "duration": 15
+    },
+    {
+     "cost": 5,
+     "money": 84,
+     "xp": 23,
+     "luck": 0.07,
+     "items": [
+      {
+       "prop": 45,
+       "probBonus": 83,
+       "itemid": 700000,
+       "random": false,
+       "buyCost": 8
+      }
+     ],
+     "duration": 600
+    },
+    {
+     "cost": 12,
+     "money": 178,
+     "xp": 48,
+     "luck": 0.27,
+     "items": [
+      {
+       "prop": 270,
+       "probBonus": 497,
+       "itemid": 700000,
+       "random": false,
+       "buyCost": 8
+      }
+     ],
+     "duration": 3600
+    }
+   ],
+   "minMaxItemVal": [
+    80,
+    242,
+    16.15394266202178
+   ],
+   "limit_reached": false,
+   "stage": {
+    "stage": 5,
+    "progress": 0,
+    "malus": 1
+   }
+  },
+  "54": {
+   "workpoints": 515,
+   "jobSkillPoints": 738,
+   "motivation": 0.88,
+   "durations": [
+    {
+     "cost": 1,
+     "money": 32,
+     "xp": 15,
+     "luck": 0.03,
+     "items": [
+      {
+       "prop": 1,
+       "probBonus": 2,
+       "itemid": 719000,
+       "random": false,
+       "buyCost": 19
+      }
+     ],
+     "duration": 15
+    },
+    {
+     "cost": 5,
+     "money": 148,
+     "xp": 69,
+     "luck": 0.07,
+     "items": [
+      {
+       "prop": 11,
+       "probBonus": 21,
+       "itemid": 719000,
+       "random": false,
+       "buyCost": 19
+      }
+     ],
+     "duration": 600
+    },
+    {
+     "cost": 12,
+     "money": 312,
+     "xp": 145,
+     "luck": 0.27,
+     "items": [
+      {
+       "prop": 66,
+       "probBonus": 122,
+       "itemid": 719000,
+       "random": false,
+       "buyCost": 19
+      }
+     ],
+     "duration": 3600
+    }
+   ],
+   "minMaxItemVal": [
+    1075,
+    3226,
+    215.1030705250296
+   ],
+   "limit_reached": false,
+   "stage": {
+    "stage": 5,
+    "progress": 0,
+    "malus": 1
+   }
+  }
+ },
+ "premiumCost": 50,
+ "eventPointsBonus": 1,
+ "error": false
+}

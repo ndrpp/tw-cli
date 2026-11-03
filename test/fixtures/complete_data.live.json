@@ -1,0 +1,414 @@
+{
+ "dynamic": [
+  {
+   "114": {
+    "62": [
+     [
+      {
+       "x": 114,
+       "y": 62,
+       "left": 24,
+       "top": 108
+      },
+      {
+       "town_id": 1434,
+       "x": 29208,
+       "y": 15980,
+       "name": null,
+       "member": 0,
+       "npctown": false,
+       "points": 0,
+       "image": false,
+       "rank": null,
+       "mean_level": null,
+       "fort_points": null,
+       "member_level_points": null,
+       "duel_diff_points": null
+      }
+     ]
+    ]
+   },
+   "116": {
+    "60": [
+     [
+      {
+       "x": 116,
+       "y": 60,
+       "left": 192,
+       "top": 204
+      },
+      {
+       "count": 2,
+       "x": 29888,
+       "y": 15564
+      }
+     ]
+    ],
+    "62": [
+     [
+      {
+       "x": 116,
+       "y": 62,
+       "left": 45,
+       "top": 7
+      },
+      {
+       "town_id": 1458,
+       "x": 29741,
+       "y": 15879,
+       "name": "Wroc\u0142aw",
+       "member": 1,
+       "npctown": false,
+       "points": 2927,
+       "image": false,
+       "rank": 45,
+       "mean_level": 24,
+       "fort_points": 0,
+       "member_level_points": 120,
+       "duel_diff_points": 0
+      }
+     ],
+     [
+      {
+       "x": 116,
+       "y": 62,
+       "left": 45,
+       "top": 7
+      },
+      {
+       "count": 1,
+       "x": 29741,
+       "y": 15879
+      }
+     ]
+    ],
+    "64": [
+     [
+      {
+       "x": 116,
+       "y": 64,
+       "left": 151,
+       "top": 72
+      },
+      {
+       "town_id": 1459,
+       "x": 29847,
+       "y": 16456,
+       "name": null,
+       "member": 0,
+       "npctown": false,
+       "points": 0,
+       "image": false,
+       "rank": null,
+       "mean_level": null,
+       "fort_points": null,
+       "member_level_points": null,
+       "duel_diff_points": null
+      }
+     ]
+    ],
+    "65": [
+     [
+      {
+       "x": 116,
+       "y": 65,
+       "left": 248,
+       "top": 148
+      },
+      {
+       "count": 4,
+       "x": 29944,
+       "y": 16788
+      }
+     ]
+    ]
+   },
+   "117": {
+    "65": [
+     [
+      {
+       "x": 117,
+       "y": 65,
+       "left": 231,
+       "top": 23
+      },
+      {
+       "town_id": 1472,
+       "x": 30183,
+       "y": 16663,
+       "name": null,
+       "member": 0,
+       "npctown": false,
+       "points": 0,
+       "image": false,
+       "rank": null,
+       "mean_level": null,
+       "fort_points": null,
+       "member_level_points": null,
+       "duel_diff_points": null
+      }
+     ]
+    ]
+   },
+   "118": {
+    "61": [
+     [
+      {
+       "x": 118,
+       "y": 61,
+       "left": 110,
+       "top": 56
+      },
+      {
+       "fort_id": 13,
+       "x": 30318,
+       "y": 15672,
+       "name": "BRONX",
+       "type": 2,
+       "image": false,
+       "fort_battle_count": 0,
+       "points": 200,
+       "member": 1,
+       "war": false,
+       "start": "2 Oca 1970 01:00",
+       "timezoneoffset": 1,
+       "battlestartdelta": -1793612853
+      }
+     ]
+    ],
+    "62": [
+     [
+      {
+       "x": 118,
+       "y": 62,
+       "left": 147,
+       "top": 134
+      },
+      {
+       "town_id": 1483,
+       "x": 30355,
+       "y": 16006,
+       "name": null,
+       "member": 0,
+       "npctown": false,
+       "points": 0,
+       "image": false,
+       "rank": null,
+       "mean_level": null,
+       "fort_points": null,
+       "member_level_points": null,
+       "duel_diff_points": null
+      }
+     ]
+    ],
+    "63": [
+     [
+      {
+       "x": 118,
+       "y": 63,
+       "left": 172,
+       "top": 180
+      },
+      {
+       "count": 1,
+       "x": 30380,
+       "y": 16308
+      }
+     ],
+     [
+      {
+       "x": 118,
+       "y": 63,
+       "left": 172,
+       "top": 180
+      },
+      {
+       "x": 30380,
+       "y": 16308,
+       "job_id": 5,
+       "group_id": 7,
+       "silver": true,
+       "gold": false
+      }
+     ]
+    ]
+   }
+  },
+  {
+   "115": {
+    "57": [
+     [
+      {
+       "x": 115,
+       "y": 57,
+       "left": 48,
+       "top": 141
+      },
+      {
+       "town_id": 1447,
+       "x": 29488,
+       "y": 14733,
+       "name": null,
+       "member": 0,
+       "npctown": false,
+       "points": 0,
+       "image": false,
+       "rank": null,
+       "mean_level": null,
+       "fort_points": null,
+       "member_level_points": null,
+       "duel_diff_points": null
+      }
+     ]
+    ]
+   },
+   "116": {
+    "55": [
+     [
+      {
+       "x": 116,
+       "y": 55,
+       "left": 249,
+       "top": 127
+      },
+      {
+       "town_id": 1457,
+       "x": 29945,
+       "y": 14207,
+       "name": null,
+       "member": 0,
+       "npctown": false,
+       "points": 0,
+       "image": false,
+       "rank": null,
+       "mean_level": null,
+       "fort_points": null,
+       "member_level_points": null,
+       "duel_diff_points": null
+      }
+     ]
+    ],
+    "58": [
+     [
+      {
+       "x": 116,
+       "y": 58,
+       "left": 33,
+       "top": 228
+      },
+      {
+       "count": 7,
+       "x": 29729,
+       "y": 15076
+      }
+     ]
+    ]
+   },
+   "117": {
+    "58": [
+     [
+      {
+       "x": 117,
+       "y": 58,
+       "left": 129,
+       "top": 153
+      },
+      {
+       "town_id": 1471,
+       "x": 30081,
+       "y": 15001,
+       "name": null,
+       "member": 0,
+       "npctown": false,
+       "points": 0,
+       "image": false,
+       "rank": null,
+       "mean_level": null,
+       "fort_points": null,
+       "member_level_points": null,
+       "duel_diff_points": null
+      }
+     ]
+    ]
+   },
+   "119": {
+    "54": [
+     [
+      {
+       "x": 119,
+       "y": 54,
+       "left": 42,
+       "top": 5
+      },
+      {
+       "town_id": 1497,
+       "x": 30506,
+       "y": 13829,
+       "name": null,
+       "member": 0,
+       "npctown": false,
+       "points": 0,
+       "image": false,
+       "rank": null,
+       "mean_level": null,
+       "fort_points": null,
+       "member_level_points": null,
+       "duel_diff_points": null
+      }
+     ]
+    ],
+    "56": [
+     [
+      {
+       "x": 119,
+       "y": 56,
+       "left": 43,
+       "top": 38
+      },
+      {
+       "town_id": 1498,
+       "x": 30507,
+       "y": 14374,
+       "name": null,
+       "member": 0,
+       "npctown": false,
+       "points": 0,
+       "image": false,
+       "rank": null,
+       "mean_level": null,
+       "fort_points": null,
+       "member_level_points": null,
+       "duel_diff_points": null
+      }
+     ]
+    ],
+    "58": [
+     [
+      {
+       "x": 119,
+       "y": 58,
+       "left": 113,
+       "top": 186
+      },
+      {
+       "town_id": 1499,
+       "x": 30577,
+       "y": 15034,
+       "name": null,
+       "member": 0,
+       "npctown": false,
+       "points": 0,
+       "image": false,
+       "rank": null,
+       "mean_level": null,
+       "fort_points": null,
+       "member_level_points": null,
+       "duel_diff_points": null
+      }
+     ]
+    ]
+   }
+  }
+ ],
+ "quests": null
+}

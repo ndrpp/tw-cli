@@ -1,0 +1,573 @@
+// Inventory, skills, quests, hotel, live updates (chat long-poll) and their TUI screens.
+// Fixtures: bag_init / items / open_quests are trimmed from the downloaded game.php, items_en_DK.json and
+// the captured quest log reply (game-c450166a72a56.php); other replies follow the client JS.
+import { afterEach, beforeEach, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { PassThrough } from 'node:stream';
+
+const home = mkdtempSync(join(tmpdir(), 'twcli-feat-'));
+process.env.TW_CLI_HOME = home;
+const FIX = fileURLToPath(new URL('./fixtures/', import.meta.url));
+process.env.TW_ITEMS_FILE = `${FIX}items.sample.json`;
+
+const React = (await import('react')).default;
+const { render } = await import('ink');
+const { CookieJar } = await import('../src/http/cookie-jar.ts');
+const { GameClient } = await import('../src/http/game-client.ts');
+const { resetThrottle, throttledFetch } = await import('../src/http/throttle.ts');
+const { GameState } = await import('../src/game/state.ts');
+const { ItemCatalog, bonusText } = await import('../src/game/items.ts');
+const { Inventory } = await import('../src/game/inventory.ts');
+const { Skills, adjustPlan, emptyPlan, plannedDelta, savePayload } = await import('../src/game/skills.ts');
+const { parseQuest, plainText, groupByChain } = await import('../src/game/quests.ts');
+const { parseHotel, defaultRoom } = await import('../src/game/hotel.ts');
+const { ChatPoller, encodeChatRequest, makeClientId } = await import('../src/realtime/chat.ts');
+const { App } = await import('../src/tui/app.ts');
+const { gearDelta } = await import('../src/tui/character.ts');
+
+const WORLD = 'https://en32.the-west.net';
+const FAST = { concurrency: 1, minIntervalMs: 0, jitterMs: 0, maxRetries: 0, baseBackoffMs: 0, maxBackoffMs: 0, breakerThreshold: 100, breakerCooldownMs: 0, timeoutMs: 5_000 };
+const json = (name: string) => JSON.parse(readFileSync(`${FIX}${name}.json`, 'utf8'));
+const BAG = json('bag_init.sample');
+const ITEMS = json('items.sample');
+const QUESTS = json('open_quests.sample');
+
+const SKILL_DATA = {
+  attributes: { strength: 4, flexibility: 0, dexterity: 0, charisma: 26 },
+  attributeBonus: { strength: 14, flexibility: 14, dexterity: 12, charisma: 14 },
+  skills: { build: 5, punch: 5, tough: 5, endurance: 4, health: 7, ride: 1, reflex: 0, dodge: 0, hide: 0, swim: 0, aim: 1, shot: 0, pitfall: 0, finger_dexterity: 0, repair: 1, leadership: 27, tactic: 26, trade: 111, animal: 27, appearance: 27 },
+  skillBonus: { build: 43, trade: 115 },
+  freeAttribute: 1,
+  freeSkill: 3,
+};
+
+function bootstrap(): any {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    h: 'abc123',
+    player: { h: 'abc123' },
+    game: { sincepoch: now, travelSpeed: 1, currentWorldName: 'Quebec', jobs: [], itemsFile: 'cache/items_en_DK.json?42' },
+    character: {
+      playerId: 42, name: 'shallax', level: 30, charClass: { type: 'adventurer' }, experience: 1000, cash: 50, deposit: 10, nuggets: 0,
+      pos: { x: 100, y: 100 }, town: { id: 1421, coords: { x: 200, y: 200 } }, charSpeed: 1, maxEnergy: 100, energy: 40, health: 300,
+      healthRegenFactor: 0, energyRegenFactor: 0, taskQueue: [], taskLimit: { normal: 4, premium: 9 }, skillData: SKILL_DATA, lpPerPoint: 10,
+    },
+    premium: null,
+    bag: BAG,
+  };
+}
+
+interface Call { url: string; body: string }
+let calls: Call[];
+let realFetch: typeof fetch;
+let routes: Record<string, (body: string) => unknown>;
+
+function fakeServer() {
+  globalThis.fetch = (async (input: string | URL, init: RequestInit = {}) => {
+    const url = String(input);
+    const body = typeof init.body === 'string' ? init.body : '';
+    calls.push({ url, body });
+    const path = url.replace(WORLD, '').replace(/&h=\w+/, '');
+    const route = routes[path];
+    if (route) {
+      const r = route(body);
+      return r instanceof Response ? r : Response.json(r);
+    }
+    return new Response('unexpected ' + url, { status: 404 });
+  }) as typeof fetch;
+}
+
+function makeState() {
+  const b = bootstrap();
+  const client = new GameClient({ worldUrl: WORLD, h: b.h, jar: new CookieJar(), identity: { userAgent: 'UA', acceptLanguage: 'en' }, policy: FAST });
+  return new GameState({ client, bootstrap: b }, async () => ({ client, bootstrap: b }));
+}
+
+beforeEach(() => {
+  calls = [];
+  routes = {};
+  realFetch = globalThis.fetch;
+  resetThrottle();
+});
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+test.after(() => rmSync(home, { recursive: true, force: true }));
+
+test('items: base id / upgrade level, names and bonus text', () => {
+  const c = ItemCatalog.fromRaw(ITEMS);
+  assert.equal(c.name(110001), 'Rusty rifle ☆1');
+  assert.equal(c.get(54997000)?.type, 'right_arm');
+  const withSkills = ITEMS.find((i: any) => !Array.isArray(i.bonus.skills));
+  if (withSkills) assert.match(bonusText(c.get(withSkills.item_id)), /^\+\d/);
+});
+
+test('item stats: computed like the web popup (upgrade level, per-level rounding, sets)', async () => {
+  const { itemStats, calculateItemLevelBonus, upgradedSpeed, speedPercent, mergedStages, setBonusLines } = await import('../src/game/itemstats.ts');
+  const c = ItemCatalog.fromRaw(ITEMS);
+  // ItemManager.calculateItemLevelBonus: ≥1 → round(max(1, v·lvl/10)); <1 → round(max(1, v·1000·lvl))/10000
+  assert.equal(calculateItemLevelBonus(1, 22), 2);
+  assert.equal(calculateItemLevelBonus(1, 6), 1);
+  assert.equal(calculateItemLevelBonus(3, 1), 1);
+  assert.equal(calculateItemLevelBonus(2, 0.5), 0.1);
+  assert.equal(calculateItemLevelBonus(0, 10), 0);
+  // Bowie knife ☆1 at level 30: damage 22-34 → 24-37; +0.19 Appearance per level → ceil(5.7)=6, +1 upgrade = 7
+  const knife = itemStats(c.get(16000)!, 16001, { charLevel: 30 });
+  assert.deepEqual(knife.damage, { min: 24, max: 37 });
+  assert.equal(knife.lines[0]!.text, '24-37 Damage');
+  assert.ok(knife.lines.some((l) => l.text === '+ 7 Appearance'), JSON.stringify(knife.lines));
+  assert.equal(knife.totals.appearance, 7);
+  // Without a character: per-level description as the game writes it
+  const plain = itemStats(c.get(16000)!, 16000);
+  assert.ok(plain.lines.some((l) => l.text === '+0.19 Appearance (per Level)'));
+  // Tomahawk: damage per level is folded into the damage range when the character is known
+  const tom = itemStats(c.get(75000)!, 75000, { charLevel: 20 });
+  assert.deepEqual(tom.damage, { min: 16, max: 25 });
+  assert.ok(!tom.lines.some((l) => /Damage$/.test(l.text) && l.kind !== 'damage'));
+  assert.equal(itemStats(c.get(75000)!, 75000).lines[0]!.text, '1-10 Base damage');
+  // Fixed attribute + upgrade: The Joker +1 Charisma → ☆2: 1 + max(1, round(0.2)) = 2
+  assert.equal(itemStats(c.get(2716000)!, 2716002, { charLevel: 10 }).totals.charisma, 2);
+  // Speed (Item.parseSpeed) and the popup's percentage
+  const bat = c.get(54994000)!;
+  assert.equal(speedPercent(bat.speed!), 272);
+  const s1 = upgradedSpeed(bat.speed, 1)!;
+  assert.ok(s1 < bat.speed!, 'upgrade makes the horse faster');
+  assert.ok(itemStats(bat, 54994001, { charLevel: 50 }).lines.some((l) => l.text === `Speed: +${speedPercent(s1)}%`));
+  // Set stages merge per bonus and stop at the worn count
+  const set = { key: 's', name: 'S', items: [1, 2, 3], bonus: {
+    2: [{ type: 'attribute', name: 'strength', value: 1 }, { type: 'job', job: 'all', value: 10 }],
+    3: [{ type: 'attribute', name: 'strength', value: 2 }, { type: 'character', key: 'level', roundingMethod: 'ceil', bonus: { type: 'skill', name: 'build', value: 0.25 } }],
+  } };
+  assert.equal(mergedStages(set, 1).length, 0);
+  assert.deepEqual(setBonusLines(set, 2, { charLevel: 10 }), ['+ 1 Strength', '+ 10 labor points']);
+  assert.deepEqual(setBonusLines(set, 3, { charLevel: 10 }), ['+ 3 Strength', '+ 3 Construction', '+ 10 labor points']);
+});
+
+test('quest route: needs from requirements, greedy plan per energy, unmet reasons', async () => {
+  const { questNeeds, planRoute } = await import('../src/game/route.ts');
+  const req = (o: any) => ({ solved: false, info: '', ...o });
+  const quests: any[] = [
+    { id: 1, title: 'A', soloTitle: 'A', requirements: [req({ itemId: 700000, count: 5, info: 'Ham 0/5' }), req({ jobId: 92, count: 4, info: 'Mucking out the stables (0/4)' })] },
+    { id: 2, title: 'B', soloTitle: 'B', requirements: [req({ itemId: 700000, count: 2 }), req({ itemId: 999000, count: 1 }), req({ jobId: 36, count: 3600, info: 'Trading (30 minutes)' })] },
+  ];
+  const needs = questNeeds(quests, (id) => (id === 700000 ? 1 : 0), (id) => `item${id}`, (id) => `job${id}`);
+  const by = Object.fromEntries(needs.map((n) => [n.key, n]));
+  assert.equal(by['item:700'].amount, 6, '5 + 2 needed, 1 in the bag');
+  assert.deepEqual([by['job:92:runs'].amount, by['job:36:seconds'].amount], [4, 1800]);
+  const job = (id: number, groupid: number, items: Record<string, number>, ok = true): any => ({
+    id, groupid, name: `job${id}`, jobPoints: ok ? 10 : 0, workPoints: 1, laborPoints: ok ? 9 : -1, durations: {},
+    values: {
+      short: { duration: 15, energy: 1, money: 1, experience: 1, luck: 0, items: Object.entries(items).map(([i, p]) => ({ itemId: +i, expected: p * 0.02, percent: p * 2 })) },
+      long: { duration: 3600, energy: 12, money: 100, experience: 50, luck: 0, items: Object.entries(items).map(([i, p]) => ({ itemId: +i, expected: p * 1.5, percent: p * 150 })) },
+    },
+  });
+  const jobs = [job(10, 1, { 700000: 1 }), job(92, 2, {}), job(36, 3, {}, false), job(11, 4, { 999000: 1 }, false)];
+  const locs: Record<number, any[]> = { 1: [{ x: 10, y: 0 }], 2: [{ x: 20, y: 0 }], 3: [{ x: 5, y: 0 }], 4: [{ x: 1, y: 1 }] };
+  const plan = planRoute({ needs, jobs, locations: (g) => locs[g], from: { x: 0, y: 0 }, wayTime: (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) });
+  const ham = plan.stops.find((s) => s.job.id === 10)!;
+  assert.equal(ham.duration, 'long', 'per energy, 1 h runs drop far more per point');
+  assert.equal(ham.runs, 4, '6 ham at ~1.5 per run');
+  const muck = plan.stops.find((s) => s.job.id === 92)!;
+  assert.deepEqual([muck.duration, muck.runs], ['short', 4], 'count-based job requirement: cheapest runs');
+  assert.equal(plan.totals.runs, 8);
+  assert.deepEqual(plan.unmet.map((u) => u.need.key).sort(), ['item:999', 'job:36:seconds']);
+  assert.match(plan.unmet.find((u) => u.need.key === 'item:999')!.why, /labor points/);
+  assert.match(plan.unmet.find((u) => u.need.key === 'job:36:seconds')!.why, /labor points/);
+  assert.deepEqual(plan.leftover, {});
+});
+
+test('inventory: Bag.init, worn slots, and Bag.handleChanges semantics (new totals, 0 removes)', () => {
+  const c = ItemCatalog.fromRaw(ITEMS);
+  const inv = Inventory.fromInit(BAG);
+  assert.ok([...inv.wear.keys()].every((k) => k.startsWith('#')), 'slots unknown before items load');
+  inv.retype(c);
+  assert.equal(inv.wear.get('animal'), 54994000);
+  assert.equal(inv.wear.get('left_arm'), 110001);
+  const knife = BAG.bag.right_arm[0];
+  assert.equal(inv.count(knife.item_id), 1);
+  assert.equal(inv.lastInvId, Math.max(...Object.values<any>(BAG.bag).flat().map((i: any) => i.inv_id)));
+  inv.applyChanges([{ item_id: knife.item_id, count: 0, inv_id: 1, type: 'right_arm' }, { item_id: 700000, count: 5, inv_id: 99999999, type: 'yield' }]);
+  assert.equal(inv.count(knife.item_id), 0);
+  assert.equal(inv.count(700000), 5);
+  assert.equal(inv.lastInvId, 99999999);
+  inv.applyWear({ head: null, neck: 41058000 });
+  assert.equal(inv.wear.has('head'), false);
+  assert.equal(inv.wear.get('neck'), 41058000);
+});
+
+test('skills: planning respects free points; attribute points raise their skills; save payload', () => {
+  const s = Skills.fromInit(SKILL_DATA);
+  assert.equal(s.total('trade'), 226);
+  assert.equal(s.total('charisma'), 40);
+  const plan = emptyPlan();
+  assert.ok(adjustPlan(plan, s, 'strength', 1));
+  assert.equal(adjustPlan(plan, s, 'charisma', 1), false, 'only one free attribute point');
+  for (let i = 0; i < 3; i++) assert.ok(adjustPlan(plan, s, 'build', 1));
+  assert.equal(adjustPlan(plan, s, 'trade', 1), false);
+  assert.equal(plannedDelta(plan, 'build'), 4); // 3 skill + 1 from strength
+  assert.equal(plannedDelta(plan, 'punch'), 1);
+  assert.equal(plannedDelta(plan, 'trade'), 0);
+  const p = savePayload(plan);
+  assert.equal(p.modifier, 'add');
+  assert.deepEqual(JSON.parse(p.data), { attribute_modifications: { strength: 1 }, skill_modifications: { build: 3 }, attribute_points_used: 1, skill_points_used: 3 });
+  assert.ok(adjustPlan(plan, s, 'build', -1));
+  assert.equal(plan.skills.build, 2);
+});
+
+test('quests: captured quest log parses (requirements, rewards, HTML stripped)', () => {
+  const qs = QUESTS.quests.map((q: any) => parseQuest(q, (id) => `#${id}`));
+  const mike = qs.find((q: any) => q.id === 280)!;
+  assert.equal(mike.finishable, true);
+  assert.equal(mike.accepted, true);
+  assert.deepEqual(mike.requirements, [{ solved: true, info: 'Trading (30 minutes)', jobId: 36, count: 3600 }]);
+  assert.deepEqual(mike.rewards.map((r: any) => r.text), ['125 Experience points', '50 Dollars']);
+  const horse = qs.find((q: any) => q.id === 3063)!;
+  assert.equal(horse.requirements.filter((r: any) => !r.solved).length, 3);
+  assert.ok(horse.rewards.some((r: any) => r.item === 722000 && r.text === '#722000'));
+  assert.doesNotMatch(horse.description, /<|&hellip;|&nbsp;/);
+  assert.equal(plainText('<p>a&nbsp;b</p><p>c</p>'), 'a b\n\nc');
+  assert.equal(horse.soloTitle, 'Times of trial');
+  const chains = groupByChain(qs);
+  assert.deepEqual(chains.map((c) => [c.title, c.quests.length, c.finishable]), [['Angel of love', 1, 1], ['Repeatable quests', 1, 0], ['The Headless Horseman', 1, 0]]);
+});
+
+test('hotel: rooms sorted, default room like HotelWindow', () => {
+  const h = parseHotel(1421, {
+    hotel_level: 2, town_name: 'Slobozia', own_hotel: true, waytime: '0:00',
+    rooms: {
+      bedroom: { name: 'Bedroom', level: 2, available: true, free: false, costs: 5, energy: 40, health: 30 },
+      cubby: { name: 'Cubby', level: 1, available: true, free: true, costs: 0, energy: 20, health: 15 },
+      hotel_room: { name: 'Hotel room', level: 3, available: false, free: false, costs: 10, energy: 60, health: 50 },
+    },
+  });
+  assert.deepEqual(h.rooms.map((r) => r.key), ['cubby', 'bedroom', 'hotel_room']);
+  assert.equal(defaultRoom(h)?.key, 'bedroom');
+  assert.equal(defaultRoom({ ...h, own: false })?.key, 'cubby');
+});
+
+test('chat long-poll: request format, Status/UserUpdate → character, invalid sid stops', async () => {
+  fakeServer();
+  const state = makeState();
+  let n = 0;
+  routes['/gameservice/chat/'] = (body) => {
+    const req = JSON.parse(decodeURIComponent(body));
+    assert.equal(req.messageid, ++n);
+    assert.deepEqual(req.batch.map((b: any) => b.op), ['nop']);
+    assert.equal(req.clid.length, 22);
+    if (n === 1) {
+      return { timenow: Date.now(), batch: [{ id: 'Status', t: 1, payload: { sessionHash: 'x', clients: [], rooms: [], self: { id: 'client_42', westid: 42, x: 100, y: 100, level: 30, experience: 1000, money: 50 } } }] };
+    }
+    if (n === 2) {
+      return { timenow: Date.now(), batch: [
+        { id: 'UserUpdate', t: 3, payload: { id: 'client_42', x: 555, y: 666, level: 31, experience: 1500, money: 80, deposit: 10, energy: 30, health: 280 } },
+        { id: 'UserUpdate', t: 2, payload: { id: 'client_7', x: 1, y: 1, money: 1 } },
+        { id: 'ReportChanged', t: 4, payload: {} },
+      ] };
+    }
+    return { error: 'invalid sid' };
+  };
+  const poller = new ChatPoller(state.client, { policy: { ...FAST, lane: 'chat' } as any, errorPauseMs: 10 });
+  state.live = poller;
+  poller.on('self', (u) => state.applySelf(u));
+  let invalid = '';
+  poller.on('invalid', (w) => (invalid = w));
+  assert.equal(await poller.pollOnce(), true);
+  assert.equal(poller.myId, 'client_42');
+  assert.equal(await poller.pollOnce(), true);
+  assert.deepEqual(state.character.position, { x: 555, y: 666 });
+  assert.equal(state.character.level, 31);
+  assert.equal(state.character.experience, 1500);
+  assert.equal(state.character.cash, 80);
+  assert.equal(state.character.energy, 30);
+  assert.equal(await poller.pollOnce(), false);
+  assert.match(invalid, /invalid sid/);
+  const call = calls.find((c) => c.url === `${WORLD}/gameservice/chat/`)!;
+  assert.match(call.body, /^%7B%22messageid%22%3A1/);
+  assert.equal(encodeChatRequest({ a: 'x\ny' }), encodeURIComponent('{"a":"x\\ny"}'));
+  assert.match(makeClientId(1793696400339, () => 0.5), /^[a-z0-9]{18}0339$/);
+});
+
+test('chat lane: a pending long-poll does not block game requests', async () => {
+  let release!: () => void;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.endsWith('/gameservice/chat/')) {
+      await new Promise<void>((r) => (release = r));
+      return Response.json({ batch: [] });
+    }
+    return Response.json({ ok: true });
+  }) as typeof fetch;
+  const poll = throttledFetch(`${WORLD}/gameservice/chat/`, { method: 'POST' }, { ...FAST, lane: 'chat' });
+  await new Promise((r) => setTimeout(r, 20));
+  const t0 = Date.now();
+  const game = await throttledFetch(`${WORLD}/game.php?window=task&mode=get_tasks`, { method: 'POST' }, FAST);
+  assert.equal(game.status, 200);
+  assert.ok(Date.now() - t0 < 500);
+  release();
+  await poll;
+});
+
+test('state: wear/unwear, skills save, quest accept/finish, sleep send the client requests', async () => {
+  fakeServer();
+  const state = makeState();
+  routes['/game.php?window=skill&mode=overview'] = () => ({ attributes: SKILL_DATA.attributes, skills: SKILL_DATA.skills, attributeBonuspoints: {}, skillBonuspoints: {}, open_attrPoints: 1, open_skillPoints: 3 });
+  routes['/game.php?window=work&mode=index'] = () => ({ jobs: {} });
+  routes['/game.php?window=map&ajax=get_minimap'] = () => ({ towns: {}, job_groups: {} });
+  routes['/game.php?window=inventory&action=carry'] = () => ({ changes: [{ item_id: 16000, count: 0, inv_id: 1592886, type: 'right_arm' }, { item_id: 54997000, count: 1, inv_id: 99999999, type: 'right_arm' }], speed: 0.8, wearSets: {}, bonus: { allBonuspoints: {} } });
+  routes['/game.php?window=inventory&action=uncarry'] = () => ({ changes: [{ item_id: 54994000, count: 1, inv_id: 99999998, type: 'animal' }], wearSets: {}, bonus: { allBonuspoints: {} } });
+  routes['/game.php?window=skill&action=save_skill_changes'] = () => ({ error: false, msg: 'Skills changed.' });
+  routes['/game.php?window=building_quest&mode=get_open_quests'] = () => QUESTS;
+  routes['/game.php?window=quest&action=accept_quest'] = () => ({ error: false, finishable: false });
+  routes['/game.php?window=quest&action=finish_quest'] = () => ({ error: false, msg: 'Done', allRewards: [{ isItem: false, info: { text: 125, popup_text: 'Experience points' } }], eval: 'alert(1)' });
+  routes['/game.php?window=building_hotel&mode=get_data'] = () => ({ hotel_level: 1, town_name: 'Slobozia', own_hotel: true, rooms: { cubby: { name: 'Cubby', level: 1, available: true, free: true, energy: 20, health: 10 } } });
+  routes['/game.php?window=task&action=add'] = () => ({ tasks: { 0: { task: { queue_id: 9, type: 'sleep', date_start: 1, date_done: 2, data: { coords: { x: 200, y: 200 }, title: 'Slobozia' } } } } });
+
+  await state.loadItems();
+  assert.equal(state.inventory.wear.get('animal'), 54994000);
+  await state.wear(16000);
+  const carry = calls.find((c) => c.url.includes('action=carry'))!;
+  assert.match(carry.url, /h=abc123/);
+  assert.equal(carry.body, `item_id=16000&last_inv_id=${Math.max(...Object.values<any>(BAG.bag).flat().map((i: any) => i.inv_id))}`);
+  assert.equal(state.inventory.wear.get('right_arm'), 16000);
+  assert.equal(state.inventory.count(16000), 0);
+  assert.equal(state.character.speed, 0.8);
+  await state.unwear('animal');
+  assert.equal(calls.find((c) => c.url.includes('action=uncarry'))!.body, 'last_inv_id=99999999&type=animal');
+  assert.equal(state.inventory.wear.has('animal'), false);
+
+  const plan = emptyPlan();
+  adjustPlan(plan, state.skills, 'trade', 1);
+  assert.ok(await state.saveSkills(plan));
+  const save = calls.find((c) => c.url.includes('save_skill_changes'))!;
+  const form = new URLSearchParams(save.body);
+  assert.equal(form.get('modifier'), 'add');
+  assert.deepEqual(JSON.parse(form.get('data')!).skill_modifications, { trade: 1 });
+
+  await state.loadQuests();
+  const mike = state.quests.find((q) => q.id === 280)!;
+  await state.finishQuest(mike);
+  assert.equal(calls.find((c) => c.url.includes('finish_quest'))!.body, 'quest_id=280&reward_option_id=');
+  assert.ok(state.log.some((l) => /Finished: .*125 Experience points/.test(l.msg)));
+  await state.acceptQuest(state.quests.find((q) => q.id === 3063)!);
+  assert.equal(calls.find((c) => c.url.includes('accept_quest'))!.body, 'quest_id=3063');
+
+  const hotel = (await state.openHotel(1421))!;
+  assert.equal(calls.find((c) => c.url.includes('building_hotel'))!.body, 'town_id=1421');
+  assert.ok(await state.sleep(hotel, hotel.rooms[0]!));
+  const add = calls.find((c) => c.url.includes('task&action=add'))!;
+  assert.equal(decodeURIComponent(add.body), 'tasks[0][town_id]=1421&tasks[0][room]=cubby&tasks[0][taskType]=sleep');
+  assert.equal(state.queue.at(-1)?.type, 'sleep');
+
+  await state.walkToQuestGiver('indianvillage', "Waupee's Indian village", { x: 28002, y: 16658 });
+  const walk = calls.filter((c) => c.url.includes('task&action=add')).at(-1)!;
+  assert.equal(decodeURIComponent(walk.body).replace(/\+/g, ' '), 'tasks[1][unitId]=indianvillage&tasks[1][type]=questgiver&tasks[1][x]=28002&tasks[1][y]=16658&tasks[1][taskType]=walk');
+});
+
+test('TUI: character screen (wear, plan + save skills) and quests screen (finish with confirm), hotel overlay', async () => {
+  fakeServer();
+  const state = makeState();
+  routes['/game.php?window=skill&mode=overview'] = () => ({ attributes: SKILL_DATA.attributes, skills: SKILL_DATA.skills, attributeBonuspoints: SKILL_DATA.attributeBonus, skillBonuspoints: SKILL_DATA.skillBonus, open_attrPoints: 1, open_skillPoints: 3 });
+  routes['/game.php?window=work&mode=index'] = () => ({ jobs: {} });
+  routes['/game.php?window=map&ajax=get_minimap'] = () => ({ towns: {}, job_groups: {} });
+  routes['/game.php?window=inventory&action=carry'] = () => ({ changes: [], wearSets: {}, bonus: { allBonuspoints: {} } });
+  routes['/game.php?window=skill&action=save_skill_changes'] = () => ({ error: false, msg: 'Skills changed.' });
+  routes['/game.php?window=building_quest&mode=get_open_quests'] = () => QUESTS;
+  routes['/game.php?window=building_quest&mode='] = () => ({ questEmployer: [{ key: 'barkeeper', name: 'Barkeeper' }] });
+  routes['/game.php?window=building_quest'] = routes['/game.php?window=building_quest&mode='];
+  routes['/game.php?window=quest&action=finish_quest'] = () => ({ error: false, msg: 'Done', allRewards: [] });
+  routes['/game.php?window=building_hotel&mode=get_data'] = () => ({ hotel_level: 1, town_name: 'Slobozia', own_hotel: true, rooms: { cubby: { name: 'Cubby', level: 1, available: true, free: true, energy: 20, health: 10 } } });
+  await state.loadQuests();
+
+  const stdout = new PassThrough() as PassThrough & { columns: number; rows: number; isTTY: boolean };
+  Object.assign(stdout, { columns: 120, rows: 36, isTTY: true });
+  const stdin = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (m: boolean) => void; ref: () => void; unref: () => void };
+  Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
+  let out = '';
+  stdout.on('data', (d) => (out += d.toString()));
+  const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+  const settle = (ms = 120) => new Promise((r) => setTimeout(r, ms));
+  const keys = async (...ks: string[]) => {
+    for (const k of ks) {
+      stdin.write(k);
+      await settle();
+    }
+  };
+  const app = render(React.createElement(App, { state }), { stdout: stdout as any, stdin: stdin as any, exitOnCtrlC: false, patchConsole: false });
+  try {
+    await settle();
+    assert.match(plain(), /1 quest\(s\) to finish/);
+    await keys('i');
+    await settle(300);
+    assert.match(plain(), /Equipped/);
+    assert.match(plain(), /Vampire's bat/);
+    // Search the bag for the knife and wear it.
+    out = '';
+    await keys('/', 'b', 'o', 'w', 'i', 'e', '\r');
+    assert.match(plain(), /Bowie knife/);
+    await keys('\r');
+    assert.equal(calls.filter((c) => c.url.includes('action=carry')).length, 1);
+    // Skills tab: plan +1 Trading with '+', save with Enter → y.
+    await keys('\x1b[C');
+    assert.match(plain(), /Free: .*1 attribute.*3 skill/);
+    for (let i = 0; i < 21; i++) {
+      stdin.write('j'); // charisma group: row 18, Trading row 21
+      await settle(25);
+    }
+    await keys('+');
+    assert.match(plain(), /Trading.*\+1/);
+    out = '';
+    await keys('?');
+    assert.match(plain(), /shortcuts · character/); // ink redraws only changed cells
+    await keys('x'); // closes help; the plan survives
+    await keys('\r');
+    assert.match(plain(), /permanent\. y \/ n/);
+    await keys('y');
+    await settle(200);
+    const save = calls.find((c) => c.url.includes('save_skill_changes'));
+    assert.ok(save, 'skills saved');
+    assert.deepEqual(JSON.parse(new URLSearchParams(save.body).get('data')!).skill_modifications, { trade: 1 });
+
+    // Quests: finishable quest is listed first; Enter → confirm → finish_quest.
+    await keys('\x1b');
+    await settle(100);
+    await keys('o');
+    assert.match(plain(), /Quest log 3\//);
+    assert.match(plain(), /Mike and Jenny/);
+    assert.match(plain(), /Angel of love\s+1 ✔1/); // chain header with count and ready-to-finish
+    assert.match(plain(), /The Headless Horseman\s+1/);
+    await keys('\r');
+    assert.match(plain(), /Finish "Mike and Jenny/);
+    await keys('y');
+    await settle(200);
+    assert.equal(calls.find((c) => c.url.includes('finish_quest'))!.body, 'quest_id=280&reward_option_id=');
+    await keys('\t');
+    await settle(200);
+    assert.match(plain(), /Barkeeper \(saloon\)/);
+
+    // Hotel overlay from anywhere: s → rooms → Esc.
+    await keys('\x1b', 's');
+    await settle(200);
+    assert.match(plain(), /Hotel · Slobozia/);
+    assert.match(plain(), /Cubby/);
+    await keys('\x1b');
+  } finally {
+    app.unmount();
+    state.stopLive();
+  }
+});
+
+test('quest item sources: jobs whose yields drop the item, nearest first; g marks them on the map', async () => {
+  const state = makeState();
+  const { JobCatalog } = await import('../src/game/jobs.ts');
+  state.catalog = new JobCatalog({ jobs: [
+    { id: 1, groupid: 12, name: 'Tending pigs', malus: 1, level: 4, yields: { 700000: { prop: 0.45 } }, skills: {} },
+    { id: 9, groupid: 3, name: 'Saddler', malus: 5, level: 10, yields: { 1987000: { prop: 0.12 } }, skills: {} },
+    { id: 7, groupid: 4, name: 'Leather work', malus: 5, level: 10, yields: { 1987000: { prop: 0.3 } }, skills: {} },
+  ] });
+  state.jobs = [...state.catalog.byId.values()].map((d) => ({ ...d, jobPoints: 50, workPoints: d.malus + 1, laborPoints: 49, motivation: 1, danger: 0, values: {} }));
+  state.world.jobGroups = new Map([[3, [{ x: 150, y: 100 }]], [4, [{ x: 5000, y: 100 }]], [12, [{ x: 120, y: 100 }]]]);
+  assert.deepEqual(state.catalog.yielding(1987000).map((y) => y.job.id), [7, 9]); // best chance first
+  const horse = parseQuest(QUESTS.quests.find((q: any) => q.id === 3063));
+  const reins = horse.requirements.find((r) => r.itemId === 1987000)!;
+  assert.equal(reins.count, 2);
+  const src = state.requirementSources(reins);
+  assert.deepEqual(src.map((s) => [s.job.name, s.chance]), [['Leather work', 0.3], ['Saddler', 0.12]]);
+  const at = state.highlightQuest(horse);
+  assert.deepEqual(at, { x: 150, y: 100 }); // nearest source location from the queue end (100,100)
+  assert.deepEqual([...state.mapHighlight!.jobIds].sort(), [7, 9]);
+});
+
+test('TUI: loading screen, job filter by product + sort + LP toggle, map layers, quest route + estimates', async () => {
+  fakeServer();
+  const state = makeState();
+  const { JobCatalog } = await import('../src/game/jobs.ts');
+  routes['/game.php?window=building_quest&mode='] = () => ({ questEmployer: [] });
+  routes['/game.php?window=building_quest'] = routes['/game.php?window=building_quest&mode='];
+  state.items = ItemCatalog.fromRaw(ITEMS);
+  state.catalog = new JobCatalog({ jobs: [
+    { id: 1, groupid: 12, name: 'Tending pigs', malus: 1, level: 1, yields: { 700000: { prop: 45 } }, skills: {} },
+    { id: 9, groupid: 3, name: 'Saddler', malus: 500, level: 20, yields: { 1987000: { prop: 12 } }, skills: {} },
+    { id: 7, groupid: 4, name: 'Leather work', malus: 5, level: 10, yields: { 1987000: { prop: 30 } }, skills: {} },
+  ] });
+  const vals = (xp: number, money: number, luck: number, items: { itemId: number; expected: number; percent: number }[]) => ({
+    short: { duration: 15, energy: 1, money: 1, experience: 1, luck: 0, items: items.map((i) => ({ ...i, expected: i.expected / 50, percent: i.percent / 50 })) },
+    long: { duration: 3600, energy: 12, money, experience: xp, luck, items },
+  });
+  const v: Record<number, any> = {
+    1: vals(50, 90, 0.1, [{ itemId: 700000, expected: 2, percent: 200 }]),
+    9: vals(500, 900, 0.9, [{ itemId: 1987000, expected: 1, percent: 100 }]),
+    7: vals(80, 300, 0.5, [{ itemId: 1987000, expected: 1.5, percent: 150 }]),
+  };
+  state.jobs = [...state.catalog.byId.values()].map((d) => ({ ...d, jobPoints: d.id === 9 ? 0 : 50, workPoints: d.malus + 1, laborPoints: d.id === 9 ? -500 : 49, motivation: 1, danger: 0, values: v[d.id] }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  state.world.jobGroups = new Map([[3, [{ x: 150, y: 100 }]], [4, [{ x: 400, y: 100 }]], [12, [{ x: 120, y: 100 }]]]);
+  state.quests = QUESTS.quests.map((q: any) => parseQuest(q, (id: number) => state.itemName(id)));
+  state.startup = { steps: [{ label: 'Jobs and map', status: 'running', startedAt: Date.now() }], done: false };
+
+  const stdout = new PassThrough() as PassThrough & { columns: number; rows: number; isTTY: boolean };
+  Object.assign(stdout, { columns: 130, rows: 40, isTTY: true });
+  const stdin = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (m: boolean) => void; ref: () => void; unref: () => void };
+  Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
+  let out = '';
+  stdout.on('data', (d) => (out += d.toString()));
+  const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+  const settle = (ms = 120) => new Promise((r) => setTimeout(r, ms));
+  const keys = async (...ks: string[]) => {
+    for (const k of ks) {
+      stdin.write(k);
+      await settle();
+    }
+  };
+  const app = render(React.createElement(App, { state }), { stdout: stdout as any, stdin: stdin as any, exitOnCtrlC: false, patchConsole: false });
+  try {
+    await settle();
+    assert.match(plain(), /Jobs and map/);
+    assert.match(plain(), /Esc skip/);
+    await keys('\x1b');
+    await settle(200);
+    // Jobs without enough labor points are hidden until `a`.
+    assert.match(plain(), /enough LP only/);
+    assert.doesNotMatch(plain(), /Saddler/);
+    // Filter by a product name.
+    out = '';
+    await keys('/', 'h', 'a', 'm', '\r');
+    assert.match(plain(), /Tending pigs/);
+    assert.match(plain(), /Drops: Ham 200%/);
+    assert.equal(state.jobOptions('ham').map((o) => o.job.name).join(), 'Tending pigs');
+    await keys('/', '\x1b');
+    await keys('a');
+    assert.equal(state.jobOptions('', { showAll: true }).length, 3);
+    out = '';
+    await keys('S');
+    assert.match(plain(), /sort: XP \(1 h\)/);
+    assert.deepEqual(state.jobOptions('', { sort: 'xp', showAll: true }).map((o) => o.job.id), [9, 7, 1]);
+    assert.deepEqual(state.jobOptions('', { sort: 'money' }).map((o) => o.job.id), [7, 1]);
+    // Map layers.
+    out = '';
+    await keys('m', 'v');
+    assert.match(plain(), /Map layers/);
+    await keys('\r');
+    assert.equal(state.mapLayers.jobs, false);
+    await keys('a');
+    assert.equal(state.mapLayers.jobs, true);
+    await keys('\x1b', 'm');
+    // Quest route: the horse quest needs 2 reins → Leather work (Saddler lacks LP).
+    out = '';
+    await keys('o');
+    await settle(300);
+    assert.match(plain(), /~\d+h/, 'estimate in the quest list');
+    out = '';
+    await keys('R', '3');
+    await settle(200);
+    assert.match(plain(), /Route · all quests/);
+    assert.match(plain(), /Leather work · 2× 1 h/);
+    assert.match(plain(), /item 1990000: no job drops it/);
+  } finally {
+    app.unmount();
+    app.cleanup();
+  }
+});

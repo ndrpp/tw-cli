@@ -1,0 +1,203 @@
+// Runs in its own process (node --test isolates files), so TW_CLI_HOME can point at a temp dir
+// before the modules that read it are imported.
+import { after, before, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { request } from 'node:http';
+import { PassThrough } from 'node:stream';
+
+const home = mkdtempSync(join(tmpdir(), 'twcli-setup-'));
+process.env.TW_CLI_HOME = home;
+delete process.env.TW_FP_PROFILE;
+delete process.env.TW_LOGIN_NAME;
+delete process.env.TW_LOGIN_PASSWORD;
+
+const React = (await import('react')).default;
+const { render } = await import('ink');
+const { startWebServer } = await import('../src/web/server.ts');
+const { hashComponents } = await import('../src/fingerprint/profile.ts');
+const { SetupScreen } = await import('../src/tui/setup.ts');
+const { resetThrottle } = await import('../src/http/throttle.ts');
+const { PROFILE_FILE, SESSION_FILE } = await import('../src/auth/session-store.ts');
+
+const components = [
+  { key: 'language', value: 'en-GB' }, { key: 'color_depth', value: 24 }, { key: 'device_memory', value: 8 },
+  { key: 'hardware_concurrency', value: 8 }, { key: 'resolution', value: [1920, 1080] },
+  { key: 'timezone_offset', value: -60 }, { key: 'cpu_class', value: 'unknown' },
+  { key: 'navigator_platform', value: 'MacIntel' }, { key: 'adblock', value: false },
+  { key: 'has_lied_languages', value: false }, { key: 'has_lied_resolution', value: false },
+  { key: 'has_lied_browser', value: false }, { key: 'touch_support', value: [0, false, false] },
+  { key: 'js_fonts', value: ['Arial'] }, { key: 'audio_fp', value: '35.7' },
+];
+const profile = { capturedAt: 'x', userAgent: 'Mozilla/5.0 Test', languages: ['en-GB', 'en'], webdriver: false, fp: hashComponents(components), components };
+
+function http(url: string, opts: { method?: string; body?: string; host?: string; type?: string } = {}): Promise<{ status: number; body: string; headers: Record<string, any> }> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = request({ host: u.hostname, port: u.port, path: u.pathname + u.search, method: opts.method ?? 'GET',
+      headers: { host: opts.host ?? u.host, ...(opts.body ? { 'content-type': opts.type ?? 'application/json' } : {}) } }, (res) => {
+      let b = '';
+      res.on('data', (d) => (b += d));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: b, headers: res.headers }));
+    });
+    req.on('error', reject);
+    if (opts.body) req.write(opts.body);
+    req.end();
+  });
+}
+
+after(() => rmSync(home, { recursive: true, force: true }));
+
+test('vendored Fingerprint2 is byte-identical to the build in game.php', () => {
+  const gamePhp = fileURLToPath(new URL('../../en32.the_west.net/en32.the-west.net/game.php', import.meta.url));
+  if (!existsSync(gamePhp)) return;
+  const lib = readFileSync(new URL('../src/web/assets/fingerprint2.js', import.meta.url), 'utf8');
+  const body = lib.slice(lib.indexOf('!function(e,t,n)'), lib.lastIndexOf(';'));
+  assert.ok(readFileSync(gamePhp, 'utf8').includes(body));
+});
+
+test('web page: token + host checks, no external assets, fingerprint save, login', async () => {
+  const saved: string[] = [];
+  const logins: string[] = [];
+  const srv = await startWebServer({
+    host: '127.0.0.1', port: 0, log: () => {},
+    onFingerprint: (fp) => saved.push(fp),
+    login: async (name, password, p) => {
+      logins.push(`${name}:${password}:${p.fp}`);
+      if (password !== 'secret') throw new Error('Login rejected: Wrong name or password');
+      return { name: 'shallax', level: 30, world: 'Quebec' };
+    },
+  });
+  try {
+    const base = srv.url.replace(/\/\?t=.*$/, '');
+    assert.equal((await http(`${base}/`)).status, 403);
+    assert.equal((await http(srv.url, { host: 'evil.example:80' })).status, 421);
+
+    const page = await http(srv.url);
+    assert.equal(page.status, 200);
+    assert.match(page.headers['content-security-policy'], /default-src 'self'/);
+    // No remote assets: every src/href/url()/fetch target is same-origin.
+    assert.doesNotMatch(page.body, /(?:src|href|action)\s*=\s*["']?(?:https?:)?\/\//i, 'no remote src/href');
+    assert.doesNotMatch(page.body, /url\(\s*["']?(?:https?:)?\/\/|@import|fetch\(\s*["']https?:/i, 'no remote css/fetch');
+    const lib = await http(`${base}/fingerprint2.js?t=${srv.token}`);
+    assert.equal(lib.status, 200);
+    assert.match(lib.body, /t\.VERSION="1\.8\.0"/);
+
+    // Login before a fingerprint exists is refused.
+    let r = await http(`${base}/api/login?t=${srv.token}`, { method: 'POST', body: JSON.stringify({ name: 'Tester', password: 'secret' }) });
+    assert.equal(r.status, 400);
+    assert.match(r.body, /fingerprint first/);
+
+    // A tampered profile is rejected; a real one is saved 0600.
+    r = await http(`${base}/api/fingerprint?t=${srv.token}`, { method: 'POST', body: JSON.stringify({ ...profile, fp: '0'.repeat(32) }) });
+    assert.equal(r.status, 400);
+    r = await http(`${base}/api/fingerprint?t=${srv.token}`, { method: 'POST', body: JSON.stringify(profile) });
+    assert.equal(r.status, 200);
+    assert.deepEqual(saved, [profile.fp]);
+    assert.equal(statSync(PROFILE_FILE).mode & 0o777, 0o600);
+    assert.equal(JSON.parse(readFileSync(PROFILE_FILE, 'utf8')).fp, profile.fp);
+
+    r = await http(`${base}/api/login?t=${srv.token}`, { method: 'POST', body: 'name=x', type: 'application/x-www-form-urlencoded' });
+    assert.equal(r.status, 415);
+    r = await http(`${base}/api/login?t=${srv.token}`, { method: 'POST', body: JSON.stringify({ name: 'Tester', password: 'nope' }) });
+    assert.equal(r.status, 401);
+    r = await http(`${base}/api/login?t=${srv.token}`, { method: 'POST', body: JSON.stringify({ name: 'Tester', password: 'secret' }) });
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.body), { ok: true, name: 'shallax', level: 30, world: 'Quebec' });
+    assert.deepEqual(logins.at(-1), `Tester:secret:${profile.fp}`);
+  } finally {
+    await srv.close();
+  }
+});
+
+// Fake portal + game for the in-TUI login.
+const PORTAL = 'https://www.the-west.net';
+const GAME = 'https://en32.the-west.net';
+let realFetch: typeof fetch;
+before(() => {
+  realFetch = globalThis.fetch;
+});
+after(() => {
+  globalThis.fetch = realFetch;
+});
+
+test('TUI setup: type fingerprint + User-Agent, log in with name/password', async () => {
+  rmSync(PROFILE_FILE, { force: true });
+  resetThrottle();
+  const seen: { url: string; body: string; ua: string | null }[] = [];
+  globalThis.fetch = (async (input: string | URL, init: RequestInit = {}) => {
+    const url = String(input);
+    const headers = new Headers(init.headers);
+    const body = typeof init.body === 'string' ? init.body : '';
+    seen.push({ url, body, ua: headers.get('user-agent') });
+    const cookie = headers.get('cookie') ?? '';
+    const res = (status: number, h: [string, string][] = [], text: string | null = null) => new Response(text, { status, headers: h });
+    if (url === `${PORTAL}/`) return res(200, [['set-cookie', 'PHPSESSID=p; path=/']], '<html>');
+    if (url.includes('check_login')) {
+      const f = new URLSearchParams(body);
+      if (f.get('password') !== 'secret') return Response.json({ error: 'Wrong name or password' });
+      return Response.json({ player_id: 42, password: 'tok', playerWorlds: { 38: [38, 1] } });
+    }
+    if (url.endsWith('action=login')) return res(302, [['location', `${GAME}/game.php?sid=s1`]]);
+    if (url.includes('game.php?sid=')) return res(302, [['location', '/game.php'], ['set-cookie', 'sid=s1; path=/']]);
+    if (url === `${GAME}/game.php`) {
+      if (!cookie.includes('sid=s1')) return res(302, [['location', `${PORTAL}/`]]);
+      return res(200, [], '<script>Game.init({"currentWorldName":"Quebec","jobs":[]});Player.init({"h":"0b89b1"});Character.init({"playerId":42,"name":"shallax","level":30,"pos":{"x":1,"y":1},"taskQueue":[]});</script>');
+    }
+    if (url.includes('record_fp')) return Response.json({ error: false });
+    return res(404, [], 'unexpected');
+  }) as typeof fetch;
+
+  const stdout = new PassThrough() as PassThrough & { columns: number; rows: number; isTTY: boolean };
+  Object.assign(stdout, { columns: 110, rows: 34, isTTY: true });
+  const stdin = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (m: boolean) => void; ref: () => void; unref: () => void };
+  Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
+  let out = '';
+  stdout.on('data', (d) => (out += d.toString()));
+  const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+  const settle = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+  const type = async (s: string) => {
+    for (const ch of s) {
+      stdin.write(ch);
+      await settle(15);
+    }
+  };
+
+  let ready: any = null;
+  const app = render(React.createElement(SetupScreen, { onReady: (g: any) => (ready = g), onQuit: () => {}, policy: { concurrency: 1, minIntervalMs: 0, jitterMs: 0, maxRetries: 0, baseBackoffMs: 0, maxBackoffMs: 0, breakerThreshold: 100, breakerCooldownMs: 0, timeoutMs: 5000 } }), { stdout: stdout as any, stdin: stdin as any, exitOnCtrlC: false, patchConsole: false });
+  try {
+    await settle();
+    assert.match(plain(), /Fingerprint\s+✘/);
+    await type('l');
+    assert.match(plain(), /fingerprint first/);
+
+    await type('f');
+    await type(profile.fp);
+    await type('\r');
+    await type('a');
+    await type('Mozilla/5.0 Test');
+    await type('\r');
+    await settle();
+    assert.match(plain(), new RegExp(`✔ ${profile.fp}`));
+    assert.match(plain(), /hash only/);
+
+    await type('l');
+    await type('Tester\r');
+    await type('secret');
+    await settle(150);
+    assert.match(plain(), /Password: ••••••/);
+    assert.doesNotMatch(plain(), /secret/);
+    await type('\r');
+    for (let i = 0; i < 50 && !ready; i++) await settle(50);
+    assert.ok(ready, 'login finished');
+    assert.equal(ready.bootstrap.character.name, 'shallax');
+    assert.ok(seen.every((s) => s.ua === 'Mozilla/5.0 Test'));
+    assert.equal(seen.find((s) => s.url.includes('record_fp'))!.body, `fp=${profile.fp}&gv=&wd=false`);
+    assert.ok(existsSync(SESSION_FILE));
+  } finally {
+    app.unmount();
+  }
+});

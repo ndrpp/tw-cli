@@ -1,0 +1,27 @@
+{
+  "name": "tw-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=26.12.1"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "node --test test/*.test.ts",
+    "endpoints": "node scripts/extract-endpoints.ts",
+    "tw": "node src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "@types/react": "^19.3.0",
+    "typescript": "5.9.3"
+  },
+  "bin": {
+    "tw": "src/cli.ts"
+  },
+  "dependencies": {
+    "ink": "^8.0.0",
+    "react": "^19.3.1"
+  }
+}

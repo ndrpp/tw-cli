@@ -1,0 +1,79 @@
+{
+ "bag": {
+  "right_arm": [
+   {
+    "count": 1,
+    "item_id": 16000,
+    "inv_id": 1592886,
+    "type": "right_arm"
+   },
+   {
+    "count": 1,
+    "item_id": 52000,
+    "inv_id": 1520049,
+    "type": "right_arm"
+   },
+   {
+    "count": 1,
+    "item_id": 75000,
+    "inv_id": 1433504,
+    "type": "right_arm"
+   }
+  ],
+  "head": [
+   {
+    "count": 1,
+    "item_id": 262000,
+    "inv_id": 910419,
+    "type": "head"
+   },
+   {
+    "count": 1,
+    "item_id": 42039000,
+    "inv_id": 1584670,
+    "type": "head"
+   },
+   {
+    "count": 1,
+    "item_id": 42051000,
+    "inv_id": 1459696,
+    "type": "head"
+   }
+  ],
+  "yield": [
+   {
+    "count": 1,
+    "item_id": 700000,
+    "inv_id": 777542,
+    "type": "yield"
+   },
+   {
+    "count": 3,
+    "item_id": 701000,
+    "inv_id": 709577,
+    "type": "yield"
+   },
+   {
+    "count": 2,
+    "item_id": 702000,
+    "inv_id": 1614984,
+    "type": "yield"
+   }
+  ]
+ },
+ "wear": [
+  54994000,
+  54990000,
+  54993000,
+  110001,
+  54988000,
+  2716001,
+  54997000,
+  54989000,
+  54981000,
+  11118000
+ ],
+ "setItems": [],
+ "itemCooldown": {},
+ "itemLifetime": {}
+}

@@ -1,0 +1,4254 @@
+{
+ "source": "tw2game.en_DK.js",
+ "count": 280,
+ "endpoints": [
+  {
+   "kind": "remoteCall",
+   "window": "<Trader.type=='item_trader'?'item_trader':Trader.types[Trader.type]>",
+   "action": "sell",
+   "sites": [
+    {
+     "offset": 1165098,
+     "context": "Trader.sellItem",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "<Trader.types[Trader.type]>",
+   "action": "buy",
+   "sites": [
+    {
+     "offset": 1163923,
+     "context": "Trader.buyItem",
+     "fields": [
+      "item_id",
+      "town_id",
+      "last_inv_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "<Trader.types[type]+(type!=\"item_trader\"?\"&town_id=\"+Trader.id:'')>",
+   "action": "<(type==\"item_trader\"?'index':'')>",
+   "sites": [
+    {
+     "offset": 1161478,
+     "context": "Trader.open",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "achievement",
+   "action": "",
+   "sites": [
+    {
+     "offset": 1416914,
+     "context": "AchievementExplorer.prototype.init",
+     "fields": [
+      "playerid"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "achievement",
+   "action": "forward_to",
+   "sites": [
+    {
+     "offset": 1420152,
+     "context": "AchievementExplorer.prototype.forwardTo",
+     "fields": [
+      "achievement_id",
+      "playerid"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "achievement",
+   "action": "get_achieved",
+   "sites": [
+    {
+     "offset": 1416111,
+     "context": "req",
+     "fields": [
+      "playerid"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "achievement",
+   "action": "get_achievements",
+   "sites": [
+    {
+     "offset": 1408626,
+     "context": "achieved_popup",
+     "fields": [
+      "achvids"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "achievement",
+   "action": "get_list",
+   "sites": [
+    {
+     "offset": 1419772,
+     "context": "AchievementExplorer.prototype.showContentOf",
+     "fields": [
+      "folder",
+      "playerid"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "achievement",
+   "action": "get_overview",
+   "sites": [
+    {
+     "offset": 1413069,
+     "context": "AchievementOverview.init",
+     "fields": [
+      "playerid"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "achievement",
+   "action": "get_statistic",
+   "sites": [
+    {
+     "offset": 1421034,
+     "context": "AchievementStatistic.init",
+     "fields": [
+      "playerid"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "achievement",
+   "action": "track",
+   "sites": [
+    {
+     "offset": 726733,
+     "context": "trackAchievement",
+     "fields": [
+      "achvid"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "achievement",
+   "action": "untrack",
+   "sites": [
+    {
+     "offset": 726982,
+     "context": "untrackAchievement",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "achievement",
+   "action": "update_achievement_slot",
+   "sites": [
+    {
+     "offset": 126227,
+     "context": "addAchievement2RewardBox",
+     "fields": [
+      "achieveId",
+      "del"
+     ]
+    },
+    {
+     "offset": 1415427,
+     "context": "req",
+     "fields": [
+      "achieveId",
+      "slot",
+      "del"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "advent",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 2026613,
+     "context": "AdventCalendarWindow.initData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "advent",
+   "action": "open_door",
+   "sites": [
+    {
+     "offset": 2026992,
+     "context": "openCalendarDoor",
+     "fields": [
+      "door",
+      "doit"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "alliance",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 1784719,
+     "context": "AllianceWindow.initData",
+     "fields": [
+      "alliance_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "alliance",
+   "action": "save_description",
+   "sites": [
+    {
+     "offset": 1785765,
+     "context": "submitnew",
+     "fields": [
+      "desc"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "get",
+   "window": "blackboard",
+   "action": "getRandomCities",
+   "sites": [
+    {
+     "offset": 2041776,
+     "context": "getCities",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "get",
+   "window": "blackboard",
+   "action": "getRandomPlayers",
+   "sites": [
+    {
+     "offset": 2041947,
+     "context": "getPlayers",
+     "fields": [
+      "level",
+      "cclass"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "blackboard",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 2041487,
+     "context": "get",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "blackboard",
+   "action": "invite_player",
+   "sites": [
+    {
+     "offset": 2043034,
+     "context": "sendInvite",
+     "fields": [
+      "playerId"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "blackboard",
+   "action": "join_town",
+   "sites": [
+    {
+     "offset": 2042753,
+     "context": "sendJoin",
+     "fields": [
+      "townId"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "blackboard",
+   "action": "set_hiring",
+   "sites": [
+    {
+     "offset": 2042143,
+     "context": "sendHiring",
+     "fields": [
+      "hiring"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "blackboard",
+   "action": "set_searching",
+   "sites": [
+    {
+     "offset": 2042485,
+     "context": "sendSearching",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "bugreport",
+   "action": "",
+   "sites": [
+    {
+     "offset": 1797150,
+     "context": "BugreportWindow.List.init",
+     "fields": []
+    },
+    {
+     "offset": 1800865,
+     "context": "BugreportWindow.Known.init",
+     "fields": [
+      "confirmed"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "bugreport",
+   "action": "report",
+   "sites": [
+    {
+     "offset": 1800461,
+     "context": "BugreportWindow.Report.send",
+     "fields": [
+      "details",
+      "other"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_bank",
+   "action": "city_deposit",
+   "sites": [
+    {
+     "offset": 1232765,
+     "context": "BankWindow.TownTransactions.add",
+     "fields": [
+      "town_id",
+      "amount"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_bank",
+   "action": "deposit",
+   "sites": [
+    {
+     "offset": 1223115,
+     "context": "BankWindow.Balance.add",
+     "fields": [
+      "town_id",
+      "amount"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_bank",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 1223642,
+     "context": "BankWindow.Balance.initData",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_bank",
+   "action": "get_own_log",
+   "sites": [
+    {
+     "offset": 1226226,
+     "context": "BankWindow.Transactions.initData",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_bank",
+   "action": "get_town_log",
+   "sites": [
+    {
+     "offset": 1233313,
+     "context": "BankWindow.TownTransactions.initData",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_bank",
+   "action": "transfer",
+   "sites": [
+    {
+     "offset": 1231205,
+     "context": "BankWindow.Transfer.transfer",
+     "fields": [
+      "town_id",
+      "player",
+      "dollar",
+      "purpose",
+      "agree"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_church",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 1235699,
+     "context": "ChurchWindow.init",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_cinema",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 2031746,
+     "context": "initData",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cinema",
+   "action": "videoRewardChosen",
+   "sites": [
+    {
+     "offset": 2035364,
+     "context": "chooseRewardClicked",
+     "fields": [
+      "town_id",
+      "vrid",
+      "hash",
+      "reward"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "",
+   "sites": [
+    {
+     "offset": 1240631,
+     "context": "CityhallWindow.Build.init",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "<'invitation_delete_'+(isName?'player':'email')>",
+   "sites": [
+    {
+     "offset": 1257607,
+     "context": "CityhallWindow.Invitations.cancel",
+     "fields": [
+      "inv_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "<'invitation_invite_'+invType>",
+   "sites": [
+    {
+     "offset": 1257212,
+     "context": "CityhallWindow.Invitations.invite",
+     "fields": [
+      "player_name"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "accept_alliance_invitation",
+   "sites": [
+    {
+     "offset": 1276347,
+     "context": "CityhallWindow.Alliance.Invitations.accept",
+     "fields": [
+      "alliance_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_cityhall",
+   "action": "administration",
+   "sites": [
+    {
+     "offset": 1258154,
+     "context": "CityhallWindow.Administration.init",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_cityhall",
+   "action": "alliance",
+   "sites": [
+    {
+     "offset": 1263597,
+     "context": "CityhallWindow.Alliance.init",
+     "fields": []
+    },
+    {
+     "offset": 1270349,
+     "context": "CityhallWindow.Alliance.Invitations.init",
+     "fields": []
+    },
+    {
+     "offset": 1277497,
+     "context": "CityhallWindow.Alliance.Log.init",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "change_alliance_rights",
+   "sites": [
+    {
+     "offset": 1269203,
+     "context": "CityhallWindow.Alliance.changeRights",
+     "fields": [
+      "town_id",
+      "right"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "change_rank",
+   "sites": [
+    {
+     "offset": 1250649,
+     "context": "changeRankRequest",
+     "fields": [
+      "player_id",
+      "rank"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "create_alliance",
+   "sites": [
+    {
+     "offset": 1268422,
+     "context": "CityhallWindow.Alliance.create",
+     "fields": [
+      "alliance_name"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "decline_alliance_invitation",
+   "sites": [
+    {
+     "offset": 1276812,
+     "context": "CityhallWindow.Alliance.Invitations.decline",
+     "fields": [
+      "alliance_id",
+      "message"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "demand_ally_founder",
+   "sites": [
+    {
+     "offset": 1268086,
+     "context": "CityhallWindow.Alliance.demandFounder",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "demand_founder",
+   "sites": [
+    {
+     "offset": 1251851,
+     "context": "CityhallWindow.Residents.demandFounder",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "fire",
+   "sites": [
+    {
+     "offset": 1251555,
+     "context": "CityhallWindow.Residents.fire",
+     "fields": [
+      "citizen_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "invite_town",
+   "sites": [
+    {
+     "offset": 1275431,
+     "context": "CityhallWindow.Alliance.Invitations.invite",
+     "fields": [
+      "town_name",
+      "message"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "leave_alliance",
+   "sites": [
+    {
+     "offset": 1269644,
+     "context": "CityhallWindow.Alliance.leaveAlliance",
+     "fields": [
+      "town_id",
+      "message"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_cityhall",
+   "action": "list_invitations",
+   "sites": [
+    {
+     "offset": 1254305,
+     "context": "CityhallWindow.Invitations.init",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_cityhall",
+   "action": "list_log",
+   "sites": [
+    {
+     "offset": 1253163,
+     "context": "CityhallWindow.Log.fetchLog",
+     "fields": [
+      "town_id",
+      "page"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_cityhall",
+   "action": "list_residents",
+   "sites": [
+    {
+     "offset": 1242897,
+     "context": "CityhallWindow.Residents.init",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "preview_description",
+   "sites": [
+    {
+     "offset": 1261395,
+     "context": "CityhallWindow.Administration.previewProfile",
+     "fields": [
+      "text"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "remove_town_logo",
+   "sites": [
+    {
+     "offset": 1262968,
+     "context": "CityhallWindow.Administration.removeLogo",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "rename_alliance",
+   "sites": [
+    {
+     "offset": 1268805,
+     "context": "CityhallWindow.Alliance.rename",
+     "fields": [
+      "alliance_name"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "rename_town",
+   "sites": [
+    {
+     "offset": 1260482,
+     "context": "CityhallWindow.Administration.rename",
+     "fields": [
+      "town_name"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "resign_town",
+   "sites": [
+    {
+     "offset": 1250264,
+     "context": "CityhallWindow.Residents.resign",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "retract_alliance_invitation",
+   "sites": [
+    {
+     "offset": 1275930,
+     "context": "CityhallWindow.Alliance.Invitations.cancel",
+     "fields": [
+      "town_id",
+      "message"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_cityhall",
+   "action": "save_description",
+   "sites": [
+    {
+     "offset": 1260888,
+     "context": "CityhallWindow.Administration.changeProfile",
+     "fields": [
+      "text"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_hotel",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 1516144,
+     "context": "HotelWindow.init",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "<action>",
+   "sites": [
+    {
+     "offset": 1689361,
+     "context": "refreshList",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "get",
+   "window": "building_market",
+   "action": "<action>",
+   "sites": [
+    {
+     "offset": 1689757,
+     "context": "refreshList",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "bid",
+   "sites": [
+    {
+     "offset": 1726246,
+     "context": "func",
+     "fields": [
+      "bidtype",
+      "bid",
+      "market_offer_id",
+      "direction"
+     ]
+    },
+    {
+     "offset": 1727013,
+     "context": "func",
+     "fields": [
+      "bidtype",
+      "bid",
+      "market_offer_id",
+      "direction"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "delete_from_watchlist",
+   "sites": [
+    {
+     "offset": 1732033,
+     "context": "deleteFromWatchlist",
+     "fields": [
+      "offer_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "fetch",
+   "sites": [
+    {
+     "offset": 1730844,
+     "context": "fetch",
+     "fields": [
+      "market_offer_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "fetch_all",
+   "sites": [
+    {
+     "offset": 1729940,
+     "context": "MarketWindow.fetchAll",
+     "fields": [
+      "townId"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "fetch_bids",
+   "sites": [
+    {
+     "offset": 1703996,
+     "context": "MarketWindow.Offer.initData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "fetch_offers",
+   "sites": [
+    {
+     "offset": 1692622,
+     "context": "MarketWindow.Sell.initData",
+     "fields": [
+      "page"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "get_other_offers",
+   "sites": [
+    {
+     "offset": 1732913,
+     "context": "MarketWindow.createMarketOffer",
+     "fields": [
+      "item_id",
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "get_own_buy_offers",
+   "sites": [
+    {
+     "offset": 1692325,
+     "context": "MarketWindow.BuyItem.initData",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "get_watchlist",
+   "sites": [
+    {
+     "offset": 1712734,
+     "context": "MarketWindow.Watchlist.initData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "offtake",
+   "sites": [
+    {
+     "offset": 1724602,
+     "context": "deleteFromMarket",
+     "fields": [
+      "offer_id",
+      "direction"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "putup",
+   "sites": [
+    {
+     "offset": 1755576,
+     "context": "MarketWindow.Offer.send",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "search",
+   "sites": [
+    {
+     "offset": 1719996,
+     "context": "searchForMarketOffers",
+     "fields": null
+    },
+    {
+     "offset": 1722965,
+     "context": "searchOffersByItemId",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "search_accordion",
+   "sites": [
+    {
+     "offset": 1716180,
+     "context": "searchItems4Accordion",
+     "fields": [
+      "pattern",
+      "type",
+      "direction"
+     ]
+    },
+    {
+     "offset": 1716858,
+     "context": "searchItems4AccordionBuyOffers",
+     "fields": [
+      "pattern",
+      "type",
+      "direction"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "search_hot",
+   "sites": [
+    {
+     "offset": 1666817,
+     "context": "MarketWindow.WhatIsHot.initData",
+     "fields": [
+      "sort",
+      "level_range_min",
+      "level_range_max",
+      "usable",
+      "has_effect",
+      "visibility",
+      "direction_sell",
+      "direction_buy"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_market",
+   "action": "to_watchlist",
+   "sites": [
+    {
+     "offset": 1731637,
+     "context": "add2Watchlist",
+     "fields": [
+      "offer_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_mortician",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 1774706,
+     "context": "MorticianWindow.init",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_quest",
+   "action": "",
+   "sites": [
+    {
+     "offset": 2011474,
+     "context": "getSaloonData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_quest",
+   "action": "get_open_quests",
+   "sites": [
+    {
+     "offset": 2190594,
+     "context": "updateQuestLog",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_quest",
+   "action": "get_solved_groups",
+   "sites": [
+    {
+     "offset": 1203058,
+     "context": "QuestWindow.showSolvedGroups",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_quest",
+   "action": "get_solved_quests",
+   "sites": [
+    {
+     "offset": 1206686,
+     "context": "QuestGroupWindow.showSolvedGroups",
+     "fields": [
+      "group"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_saloon",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 1280423,
+     "context": "SaloonWindow.initData",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_sheriff",
+   "action": "create_wanted",
+   "sites": [
+    {
+     "offset": 1771898,
+     "context": "createWantedPosterButtonClicked",
+     "fields": [
+      "player_name",
+      "reason_id",
+      "reward",
+      "dead"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "building_sheriff",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 1768318,
+     "context": "initData4OwnSheriff",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "building_sheriff",
+   "action": "load_page",
+   "sites": [
+    {
+     "offset": 1772997,
+     "context": "switchPage4WantedList",
+     "fields": [
+      "page",
+      "type"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "cashshop",
+   "action": "checkout",
+   "sites": [
+    {
+     "offset": 1627703,
+     "context": "",
+     "fields": [
+      "product_id",
+      "origin"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "cashshop",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 1629146,
+     "context": "",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "character",
+   "action": "accept_friendship",
+   "sites": [
+    {
+     "offset": 1493391,
+     "context": "acceptFriendship",
+     "fields": [
+      "friend_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "character",
+   "action": "add_friend",
+   "sites": [
+    {
+     "offset": 1493873,
+     "context": "FriendslistWindow.inviteIngameFriend",
+     "fields": [
+      "friend_name"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "character",
+   "action": "ajax_get_buffs",
+   "sites": [
+    {
+     "offset": 855295,
+     "context": "BuffList.refresh",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "character",
+   "action": "cancel_friendship",
+   "sites": [
+    {
+     "offset": 1492781,
+     "context": "denyFriendshipRequest",
+     "fields": [
+      "friend_id"
+     ]
+    },
+    {
+     "offset": 1494412,
+     "context": "FriendslistWindow.deleteFromFriendList",
+     "fields": [
+      "friend_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "character",
+   "action": "change_avatar",
+   "sites": [
+    {
+     "offset": 1102503,
+     "context": "AvatarMake.save",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "character",
+   "action": "get_avatar_blacklist",
+   "sites": [
+    {
+     "offset": 1106614,
+     "context": "AvatarMake.init",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "character",
+   "action": "get_friends",
+   "sites": [
+    {
+     "offset": 1479075,
+     "context": "initData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "character",
+   "action": "get_info",
+   "sites": [
+    {
+     "offset": 1546094,
+     "context": "CharacterWindow.Overview.init",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "get",
+   "window": "character",
+   "action": "get_notebook",
+   "sites": [
+    {
+     "offset": 1208248,
+     "context": "obj.get",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "character",
+   "action": "get_open_requests",
+   "sites": [
+    {
+     "offset": 1488919,
+     "context": "FriendslistWindow.Requests.init",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "character",
+   "action": "inventory_read",
+   "sites": [
+    {
+     "offset": 1178196,
+     "context": "Inventory.open",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "character",
+   "action": "invite_mail",
+   "sites": [
+    {
+     "offset": 1496415,
+     "context": "sentRequest",
+     "fields": [
+      "player_name",
+      "friend_name",
+      "mail_address",
+      "message"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "character",
+   "action": "save_notebook",
+   "sites": [
+    {
+     "offset": 1208662,
+     "context": "obj.save",
+     "fields": [
+      "notebook"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "character",
+   "action": "switch_title",
+   "sites": [
+    {
+     "offset": 1550194,
+     "context": "CharacterWindow.Overview.switchTitle",
+     "fields": [
+      "title_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "character",
+   "action": "track_startup_time",
+   "sites": [
+    {
+     "offset": 791953,
+     "context": "obj.submitStartupTime",
+     "fields": [
+      "time",
+      "first_login"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "character",
+   "action": "track_tutorial",
+   "sites": [
+    {
+     "offset": 816194,
+     "context": "Tutorial.track",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "cityhall_build",
+   "action": "build",
+   "sites": [
+    {
+     "offset": 1087222,
+     "context": "BuildWindow.initData4Town",
+     "fields": [
+      "x",
+      "y",
+      "building"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "class_choose",
+   "action": "",
+   "sites": [
+    {
+     "offset": 1551282,
+     "context": "CharacterWindow.CharacterClasses.init",
+     "fields": []
+    },
+    {
+     "offset": 2021416,
+     "context": "init",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "class_choose",
+   "action": "choose",
+   "sites": [
+    {
+     "offset": 1556273,
+     "context": "CharacterWindow.CharacterClasses._chooseRequest",
+     "fields": [
+      "charclass"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "communityevent",
+   "action": "get_event",
+   "sites": [
+    {
+     "offset": 485266,
+     "context": "requestMapData",
+     "fields": [
+      "event_id"
+     ]
+    },
+    {
+     "offset": 510733,
+     "context": "getRewards",
+     "fields": [
+      "event_id"
+     ]
+    },
+    {
+     "offset": 528049,
+     "context": "requestMapData",
+     "fields": [
+      "event_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "communityevent",
+   "action": "get_event_list",
+   "sites": [
+    {
+     "offset": 509747,
+     "context": "requestInitData",
+     "fields": []
+    },
+    {
+     "offset": 570749,
+     "context": "requestInitData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "communityevent",
+   "action": "get_status",
+   "sites": [
+    {
+     "offset": 510385,
+     "context": "requestHeartsCount",
+     "fields": [
+      "event_id"
+     ]
+    },
+    {
+     "offset": 571312,
+     "context": "requestFlowersCount",
+     "fields": [
+      "event_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "crafting",
+   "action": "",
+   "sites": [
+    {
+     "offset": 1562360,
+     "context": "CharacterWindow.Crafting._initContent",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "crafting",
+   "action": "choose_profession",
+   "sites": [
+    {
+     "offset": 1570235,
+     "context": "Crafting.setProfession",
+     "fields": [
+      "profession_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "crafting",
+   "action": "start_craft",
+   "sites": [
+    {
+     "offset": 1572498,
+     "context": "Crafting.startCraft",
+     "fields": [
+      "recipe_id",
+      "amount"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "daily",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 1653073,
+     "context": "DailyActivitiesWindow.List.initData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "daily",
+   "action": "log",
+   "sites": [
+    {
+     "offset": 1657190,
+     "context": "DailyActivitiesWindow.Log.initData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "data",
+   "action": "item_sets",
+   "sites": [
+    {
+     "offset": 195321,
+     "context": "onResponse",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "data",
+   "action": "items",
+   "sites": [
+    {
+     "offset": 191716,
+     "context": "onResponse",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "duel",
+   "action": "duel_npc",
+   "sites": [
+    {
+     "offset": 1402955,
+     "context": "npcDuelButtonClicked",
+     "fields": [
+      "duelnpc_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "duel",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 1383882,
+     "context": "getNewJsonData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "duel",
+   "action": "reload",
+   "sites": [
+    {
+     "offset": 1407477,
+     "context": "getNewNpcList",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "duel",
+   "action": "save_settings",
+   "sites": [
+    {
+     "offset": 1406948,
+     "context": "saveTacticSettings",
+     "fields": [
+      "settings"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "duel",
+   "action": "search_op",
+   "sites": [
+    {
+     "offset": 1404390,
+     "context": "getNewPlayerOpponents",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fair",
+   "action": "deliverResources",
+   "sites": [
+    {
+     "offset": 992234,
+     "context": "spend",
+     "fields": [
+      "id",
+      "amount"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fair",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 991820,
+     "context": "get",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort",
+   "action": "display",
+   "sites": [
+    {
+     "offset": 1801897,
+     "context": "FortWindow",
+     "fields": [
+      "fortid",
+      "x",
+      "y"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_battlepage",
+   "action": "<maneuver?'maneuver':'index'>",
+   "sites": [
+    {
+     "offset": 1887723,
+     "context": "FortBattleWindow",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_battlepage",
+   "action": "declareWar",
+   "sites": [
+    {
+     "offset": 1894929,
+     "context": "FortBattleWindow.declareWar",
+     "fields": [
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_battlepage",
+   "action": "getPlayerDatasheet",
+   "sites": [
+    {
+     "offset": 1948220,
+     "context": "flashShowCharacterInfo",
+     "fields": [
+      "fort_id",
+      "playerId",
+      "isDefender"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_battlepage",
+   "action": "joinBattle",
+   "sites": [
+    {
+     "offset": 1889106,
+     "context": "joinBattle",
+     "fields": [
+      "fort_id",
+      "side"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_battlepage",
+   "action": "updatechars",
+   "sites": [
+    {
+     "offset": 1926429,
+     "context": "FortBattleWindow.savePosition",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_battlepage",
+   "action": "updatePrivileges",
+   "sites": [
+    {
+     "offset": 860199,
+     "context": "PreBattle.savePrivileges",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_battleresultpage",
+   "action": "",
+   "sites": [
+    {
+     "offset": 1638786,
+     "context": "CemeteryWindow.initData",
+     "fields": [
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_battleresultpage",
+   "action": "get_battle",
+   "sites": [
+    {
+     "offset": 1643860,
+     "context": "callback",
+     "fields": [
+      "battle_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_building_barracks",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 1863704,
+     "context": "initData",
+     "fields": [
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_building_flag",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 1879279,
+     "context": "initData",
+     "fields": [
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_flag",
+   "action": "rename_county",
+   "sites": [
+    {
+     "offset": 1881731,
+     "context": "renameButtonClicked",
+     "fields": [
+      "fort_id",
+      "county_name"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_flag",
+   "action": "upload_fort_logo",
+   "sites": [
+    {
+     "offset": 1882570,
+     "context": "deleteButtonClicked",
+     "fields": [
+      "fort_id",
+      "del_logo"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_building_headquarter",
+   "action": "ajax_get_invitations",
+   "sites": [
+    {
+     "offset": 1852763,
+     "context": "FortHeadquarterWindow.updateInvitationTable",
+     "fields": [
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_building_headquarter",
+   "action": "ajax_get_members",
+   "sites": [
+    {
+     "offset": 1860383,
+     "context": "FortHeadquarterWindow.getTownMember",
+     "fields": [
+      "town_id",
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_headquarter",
+   "action": "enable_next_stage",
+   "sites": [
+    {
+     "offset": 1840582,
+     "context": "this.unlockBuildingButtonClicked",
+     "fields": [
+      "building",
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_headquarter",
+   "action": "fort_invitation_delete_town",
+   "sites": [
+    {
+     "offset": 1842086,
+     "context": "this.removeTownInvitation",
+     "fields": [
+      "town_id",
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_headquarter",
+   "action": "fort_invitation_invite_town",
+   "sites": [
+    {
+     "offset": 1841413,
+     "context": "this.inviteTownButtonClicked",
+     "fields": [
+      "town_name",
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_building_headquarter",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 1857002,
+     "context": "FortHeadquarterWindow.initData",
+     "fields": [
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_headquarter",
+   "action": "leave_fort",
+   "sites": [
+    {
+     "offset": 1842401,
+     "context": "this.leaveFortButtonClicked",
+     "fields": [
+      "town_id",
+      "fort_id"
+     ]
+    },
+    {
+     "offset": 1858700,
+     "context": "FortHeadquarterWindow.kickTown",
+     "fields": [
+      "town_id",
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_building_headquarter",
+   "action": "list_log",
+   "sites": [
+    {
+     "offset": 1850325,
+     "context": "FortHeadquarterWindow.updateLogTable",
+     "fields": [
+      "page",
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_headquarter",
+   "action": "preview_description",
+   "sites": [
+    {
+     "offset": 1843511,
+     "context": "this.previewProfiletextButtonClicked",
+     "fields": [
+      "text",
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_headquarter",
+   "action": "rename_fort",
+   "sites": [
+    {
+     "offset": 1842714,
+     "context": "this.renameFortButtonClicked",
+     "fields": [
+      "fort_name",
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_headquarter",
+   "action": "save_description",
+   "sites": [
+    {
+     "offset": 1843096,
+     "context": "this.editProfiletextButtonClicked",
+     "fields": [
+      "text",
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_storage",
+   "action": "delete",
+   "sites": [
+    {
+     "offset": 1873960,
+     "context": "FortStorageOverview.drop",
+     "fields": [
+      "fort_id",
+      "item_id",
+      "count"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_building_storage",
+   "action": "get_log",
+   "sites": [
+    {
+     "offset": 1877724,
+     "context": "FortStorageHistory.init",
+     "fields": [
+      "fort_id",
+      "page"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "fort_building_storage",
+   "action": "get_storage",
+   "sites": [
+    {
+     "offset": 1870375,
+     "context": "FortStorageOverview.update",
+     "fields": [
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_storage",
+   "action": "payin",
+   "sites": [
+    {
+     "offset": 1873127,
+     "context": "FortStorageOverview.payin",
+     "fields": [
+      "fort_id",
+      "payin"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_building_storage",
+   "action": "putin",
+   "sites": [
+    {
+     "offset": 1875209,
+     "context": "FortStorageOverview.putin",
+     "fields": [
+      "fort_id",
+      "inv_id",
+      "lid",
+      "count"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_overview",
+   "action": "",
+   "sites": [
+    {
+     "offset": 1080211,
+     "context": "FortOverviewWindow.createContent",
+     "fields": [
+      "offset",
+      "this.options.offset?this.options.offset"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "fort_overview",
+   "action": "search_fort",
+   "sites": [
+    {
+     "offset": 1084531,
+     "context": "FortOverviewWindow.searchFort",
+     "fields": [
+      "fortNames"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "friendsbar",
+   "action": "event",
+   "sites": [
+    {
+     "offset": 200258,
+     "context": "activateEvent",
+     "fields": [
+      "player_id",
+      "event"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "friendsbar",
+   "action": "event_all",
+   "sites": [
+    {
+     "offset": 200742,
+     "context": "activateEventAll",
+     "fields": [
+      "event"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "friendsbar",
+   "action": "search",
+   "sites": [
+    {
+     "offset": 203599,
+     "context": "load_",
+     "fields": [
+      "search_type",
+      "search_term"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "gameServiceRequest",
+   "window": "getfortmap",
+   "action": "",
+   "sites": [
+    {
+     "offset": 1898393,
+     "context": "FortBattleWindow.showPreBattle",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "headquarter_build",
+   "action": "build",
+   "sites": [
+    {
+     "offset": 1086858,
+     "context": "BuildWindow.initData4Fort",
+     "fields": [
+      "fort_id",
+      "x",
+      "y",
+      "fortbuilding"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "headquarter_invite",
+   "action": "accept_invitation",
+   "sites": [
+    {
+     "offset": 1886748,
+     "context": "acceptInvitation",
+     "fields": [
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "headquarter_invite",
+   "action": "ajax_get_invitation",
+   "sites": [
+    {
+     "offset": 1884917,
+     "context": "initData",
+     "fields": [
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "headquarter_invite",
+   "action": "reject_invitation",
+   "sites": [
+    {
+     "offset": 1887159,
+     "context": "deleteInvitation",
+     "fields": [
+      "fort_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "inventory",
+   "action": "carry",
+   "sites": [
+    {
+     "offset": 1174233,
+     "context": "Wear.carry",
+     "fields": [
+      "item_id",
+      "last_inv_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "inventory",
+   "action": "delete_equip",
+   "sites": [
+    {
+     "offset": 843217,
+     "context": "EquipManager.deleteEquip",
+     "fields": [
+      "id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "inventory",
+   "action": "get_equip",
+   "sites": [
+    {
+     "offset": 836578,
+     "context": "EquipManager.view",
+     "fields": [
+      "id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "inventory",
+   "action": "inventory_changed",
+   "sites": [
+    {
+     "offset": 657887,
+     "context": "handleInventoryChange",
+     "fields": [
+      "inv_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "inventory",
+   "action": "replace_equip",
+   "sites": [
+    {
+     "offset": 841518,
+     "context": "EquipManager.replaceEquip",
+     "fields": [
+      "id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "inventory",
+   "action": "save_equip",
+   "sites": [
+    {
+     "offset": 840045,
+     "context": "EquipManager.save",
+     "fields": [
+      "name"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "inventory",
+   "action": "show_equip",
+   "sites": [
+    {
+     "offset": 834864,
+     "context": "EquipManager.showPopup",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "inventory",
+   "action": "switch_equip",
+   "sites": [
+    {
+     "offset": 840352,
+     "context": "EquipManager.switchEquip",
+     "fields": [
+      "id",
+      "last_inv_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "inventory",
+   "action": "uncarry",
+   "sites": [
+    {
+     "offset": 1173655,
+     "context": "Wear.uncarry",
+     "fields": [
+      "last_inv_id",
+      "type"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "inventory",
+   "action": "validate_itemstats",
+   "sites": [
+    {
+     "offset": 193865,
+     "context": "validateBackend",
+     "fields": [
+      "data",
+      "level"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "invitations",
+   "action": "accept_invitation",
+   "sites": [
+    {
+     "offset": 2051635,
+     "context": "accept",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "invitations",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 2049958,
+     "context": "initData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "invitations",
+   "action": "reject_all_invitation",
+   "sites": [
+    {
+     "offset": 2052132,
+     "context": "reject_all",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "invitations",
+   "action": "reject_invitation",
+   "sites": [
+    {
+     "offset": 2051969,
+     "context": "reject",
+     "fields": [
+      "town_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "item_trader",
+   "action": "refresh",
+   "sites": [
+    {
+     "offset": 1162868,
+     "context": "Trader.updateTimer",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "item_upgrade",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 2185813,
+     "context": "requestInitData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "item_upgrade",
+   "action": "upgrade",
+   "sites": [
+    {
+     "offset": 2186871,
+     "context": "doUpgradeRequest",
+     "fields": [
+      "item_id",
+      "upgrade_amount"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "itemuse",
+   "action": "use_item",
+   "sites": [
+    {
+     "offset": 822897,
+     "context": "doIt",
+     "fields": [
+      "item_id",
+      "item_count",
+      "lastInvId"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "job",
+   "action": "job",
+   "sites": [
+    {
+     "offset": 1520264,
+     "context": "JobWindow.initData",
+     "fields": [
+      "jobId",
+      "x",
+      "y"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "linearquest",
+   "action": "accept_linear_quest",
+   "sites": [
+    {
+     "offset": 785578,
+     "context": "LinearQuest.accept",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "linearquest",
+   "action": "finish_linear_quest",
+   "sites": [
+    {
+     "offset": 785904,
+     "context": "LinearQuest.finish",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "linearquest",
+   "action": "update_linear_quest",
+   "sites": [
+    {
+     "offset": 786692,
+     "context": "LinearQuest.update",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "loginbonus",
+   "action": "<null>",
+   "sites": [
+    {
+     "offset": 621917,
+     "context": "init",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "loginbonus",
+   "action": "collect",
+   "sites": [
+    {
+     "offset": 622082,
+     "context": "collectReward",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "loginbonus",
+   "action": "collect_item",
+   "sites": [
+    {
+     "offset": 622376,
+     "context": "collectItem",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "gameServiceRequest",
+   "window": "maneuver",
+   "action": "",
+   "sites": [
+    {
+     "offset": 1926227,
+     "context": "FortBattleWindow.savePosition",
+     "fields": null
+    },
+    {
+     "offset": 2005206,
+     "context": "ManeuverWindow.start",
+     "fields": null
+    },
+    {
+     "offset": 2005518,
+     "context": "ManeuverWindow.updateOverview",
+     "fields": null
+    },
+    {
+     "offset": 2009608,
+     "context": "ManeuverWindow.setRole",
+     "fields": null
+    },
+    {
+     "offset": 2009739,
+     "context": "begin",
+     "fields": null
+    },
+    {
+     "offset": 2009880,
+     "context": "cancel",
+     "fields": null
+    },
+    {
+     "offset": 2010297,
+     "context": "join",
+     "fields": null
+    },
+    {
+     "offset": 2010751,
+     "context": "leave",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "map",
+   "action": "addMarker",
+   "sites": [
+    {
+     "offset": 869260,
+     "context": "obj.add",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "map",
+   "action": "deleteMarker",
+   "sites": [
+    {
+     "offset": 869823,
+     "context": "obj.remove",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "get",
+   "window": "map",
+   "action": "get_complete_data",
+   "sites": [
+    {
+     "offset": 420908,
+     "context": "sendRequest",
+     "fields": [
+      "tiles"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "get",
+   "window": "map",
+   "action": "get_minimap",
+   "sites": [
+    {
+     "offset": 1813421,
+     "context": "initData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "map",
+   "action": "updateMarker",
+   "sites": [
+    {
+     "offset": 869566,
+     "context": "obj.update",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "<type>",
+   "sites": [
+    {
+     "offset": 1311941,
+     "context": "addToList",
+     "fields": [
+      "type"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "add_player",
+   "sites": [
+    {
+     "offset": 1303493,
+     "context": "MessagesWindow.Telegram.add_player",
+     "fields": [
+      "to",
+      "head_id",
+      "forcesend"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "add_to_addressbook",
+   "sites": [
+    {
+     "offset": 1312635,
+     "context": "MessagesWindow.Telegram.add_to_addressbook",
+     "fields": [
+      "player_name"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "block_player",
+   "sites": [
+    {
+     "offset": 1295580,
+     "context": "MessagesWindow.Telegram.blockPlayer",
+     "fields": [
+      "block_name"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "delete_all_messages",
+   "sites": [
+    {
+     "offset": 1305332,
+     "context": "MessagesWindow.Telegram.deleteAll",
+     "fields": [
+      "folder"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "delete_from_addressbook",
+   "sites": [
+    {
+     "offset": 1312182,
+     "context": "MessagesWindow.Telegram.delete_from_addressbook",
+     "fields": [
+      "addressee"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "delete_messages",
+   "sites": [
+    {
+     "offset": 1305540,
+     "context": "MessagesWindow.Telegram.deleteTelegram",
+     "fields": [
+      "messages"
+     ]
+    },
+    {
+     "offset": 1327585,
+     "context": "TelegramWindow.deleteTelegram",
+     "fields": [
+      "messages"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "get_addressbook",
+   "sites": [
+    {
+     "offset": 1313268,
+     "context": "MessagesWindow.Telegram.refresh_addressbook",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "get_message",
+   "sites": [
+    {
+     "offset": 1323710,
+     "context": "TelegramWindow",
+     "fields": [
+      "tid",
+      "page"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "get_messages",
+   "sites": [
+    {
+     "offset": 1296549,
+     "context": "MessagesWindow.Telegram.fetchTelegrams",
+     "fields": [
+      "folder_id",
+      "page",
+      "visibles",
+      "include_blocked"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "move_messages",
+   "sites": [
+    {
+     "offset": 1305828,
+     "context": "MessagesWindow.Telegram.changeFolder",
+     "fields": [
+      "messages",
+      "folder"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "preview",
+   "sites": [
+    {
+     "offset": 1308001,
+     "context": "MessagesWindow.Telegram.preview",
+     "fields": [
+      "text"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "reply",
+   "sites": [
+    {
+     "offset": 1326958,
+     "context": "TelegramWindow.answer",
+     "fields": [
+      "message_id",
+      "text"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "send",
+   "sites": [
+    {
+     "offset": 1306677,
+     "context": "MessagesWindow.Telegram.send",
+     "fields": [
+      "to",
+      "subject",
+      "text",
+      "masstelegramm"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "messages",
+   "action": "switch",
+   "sites": [
+    {
+     "offset": 1327318,
+     "context": "TelegramWindow.browse",
+     "fields": [
+      "id",
+      "folder",
+      "direction"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "messages",
+   "action": "unblock",
+   "sites": [
+    {
+     "offset": 1296201,
+     "context": "MessagesWindow.Telegram.removeBlocked",
+     "fields": [
+      "blocked_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "players",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 1195702,
+     "context": "PlayerlistWindow.initData",
+     "fields": [
+      "x",
+      "y",
+      "sortby",
+      "page"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "premium",
+   "action": "freeHalveway",
+   "sites": [
+    {
+     "offset": 2029888,
+     "context": "correctDayOpened",
+     "fields": [
+      "vid",
+      "hash",
+      "queueId"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "premium",
+   "action": "log",
+   "sites": [
+    {
+     "offset": 1620536,
+     "context": "requestLogData",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "premium",
+   "action": "use",
+   "sites": [
+    {
+     "offset": 676507,
+     "context": "actionUse",
+     "fields": [
+      "bonus",
+      "payload"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "premium_buy",
+   "action": "",
+   "sites": [
+    {
+     "offset": 1616300,
+     "context": "requestFrameData",
+     "fields": [
+      "origin",
+      "ep"
+     ]
+    },
+    {
+     "offset": 1636634,
+     "context": "requestFrameData",
+     "fields": [
+      "origin",
+      "ep"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "premium_purchase",
+   "action": "",
+   "sites": [
+    {
+     "offset": 628789,
+     "context": "init",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "premium_purchase",
+   "action": "claim",
+   "sites": [
+    {
+     "offset": 628994,
+     "context": "claim",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "profile",
+   "action": "init",
+   "sites": [
+    {
+     "offset": 1467852,
+     "context": "PlayerProfileWindow",
+     "fields": [
+      "name",
+      "playerId"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "profile",
+   "action": "invite_player",
+   "sites": [
+    {
+     "offset": 1199330,
+     "context": "PlayerlistWindow.invitePlayer",
+     "fields": [
+      "player_id"
+     ]
+    },
+    {
+     "offset": 1474013,
+     "context": "addInteract",
+     "fields": [
+      "player_id"
+     ]
+    },
+    {
+     "offset": 1497997,
+     "context": "invite2Town",
+     "fields": [
+      "player_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "profile",
+   "action": "set_config",
+   "sites": [
+    {
+     "offset": 672262,
+     "context": "Config.set",
+     "fields": [
+      "data"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "protection",
+   "action": "trigger_protection",
+   "sites": [
+    {
+     "offset": 634925,
+     "context": "trigger_",
+     "fields": [
+      "k"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "quest",
+   "action": "",
+   "sites": [
+    {
+     "offset": 2190939,
+     "context": "updateQuest",
+     "fields": [
+      "quest_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "quest",
+   "action": "accept_quest",
+   "sites": [
+    {
+     "offset": 1204336,
+     "context": "QuestWindow.acceptQuest",
+     "fields": [
+      "quest_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "quest",
+   "action": "cancel_quest",
+   "sites": [
+    {
+     "offset": 1203295,
+     "context": "QuestWindow.cancelQuest",
+     "fields": [
+      "quest_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "quest",
+   "action": "finish_quest",
+   "sites": [
+    {
+     "offset": 1204840,
+     "context": "QuestWindow.finishQuest",
+     "fields": [
+      "quest_id",
+      "reward_option_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "quest",
+   "action": "update_quest_requirements",
+   "sites": [
+    {
+     "offset": 1201571,
+     "context": "QuestEmployerWindow.updateQuest",
+     "fields": [
+      "quest_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "quest_employer",
+   "action": "",
+   "sites": [
+    {
+     "offset": 1200553,
+     "context": "QuestEmployerWindow.updateQuestList",
+     "fields": [
+      "employer",
+      "x",
+      "y"
+     ]
+    },
+    {
+     "offset": 1200972,
+     "context": "QuestEmployerWindow.showEmployer",
+     "fields": [
+      "employer",
+      "x",
+      "y"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "randomevent",
+   "action": "get_random_event",
+   "sites": [
+    {
+     "offset": 1048192,
+     "context": "Response.UserUpdate",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "ranking",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 1113853,
+     "context": "RankingWindow.Experience.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1115998,
+     "context": "RankingWindow.search",
+     "fields": [
+      "rank",
+      "search",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1118692,
+     "context": "RankingWindow.Duels.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1121275,
+     "context": "RankingWindow.FortBattles.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1123847,
+     "context": "RankingWindow.Crafting.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1126384,
+     "context": "RankingWindow.Construction.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1129053,
+     "context": "RankingWindow.Adventures.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1131348,
+     "context": "RankingWindow.Achievements.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1134144,
+     "context": "RankingWindow.Cities.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1137652,
+     "context": "RankingWindow.Skills.initData",
+     "fields": [
+      "page",
+      "tab",
+      "skill",
+      "entries_per_page"
+     ]
+    },
+    {
+     "offset": 1437656,
+     "context": "RankingWindow.Experience.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1439801,
+     "context": "RankingWindow.search",
+     "fields": [
+      "rank",
+      "search",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1442495,
+     "context": "RankingWindow.Duels.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1445078,
+     "context": "RankingWindow.FortBattles.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1447650,
+     "context": "RankingWindow.Crafting.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1450187,
+     "context": "RankingWindow.Construction.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1452856,
+     "context": "RankingWindow.Adventures.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1455151,
+     "context": "RankingWindow.Achievements.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1457947,
+     "context": "RankingWindow.Cities.initData",
+     "fields": [
+      "page",
+      "tab"
+     ]
+    },
+    {
+     "offset": 1461455,
+     "context": "RankingWindow.Skills.initData",
+     "fields": [
+      "page",
+      "tab",
+      "skill",
+      "entries_per_page"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "ranking",
+   "action": "get_hof",
+   "sites": [
+    {
+     "offset": 1140219,
+     "context": "RankingWindow.HallofFame.initData",
+     "fields": [
+      "page",
+      "level"
+     ]
+    },
+    {
+     "offset": 1464022,
+     "context": "RankingWindow.HallofFame.initData",
+     "fields": [
+      "page",
+      "level"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "reports",
+   "action": "change_publish",
+   "sites": [
+    {
+     "offset": 1341972,
+     "context": "changePublish",
+     "fields": [
+      "reportIds",
+      "selectedMode"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "reports",
+   "action": "delete_reports",
+   "sites": [
+    {
+     "offset": 1321600,
+     "context": "MessagesWindow.Report.multiDelete",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "reports",
+   "action": "delete_single_report",
+   "sites": [
+    {
+     "offset": 1319916,
+     "context": "MessagesWindow.Report.deleteReport",
+     "fields": [
+      "report",
+      "type",
+      "deleted",
+      ")?true"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "reports",
+   "action": "get_\"+(next?\"next\":\"previous\")+\"_report",
+   "sites": [
+    {
+     "offset": 1339248,
+     "context": "ReportWindow.browse",
+     "fields": [
+      "report_id",
+      "type"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "reports",
+   "action": "get_reports",
+   "sites": [
+    {
+     "offset": 1313463,
+     "context": "MessagesWindow.Report.init",
+     "fields": [
+      "page",
+      "folder"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "reports",
+   "action": "mark_as_read",
+   "sites": [
+    {
+     "offset": 776954,
+     "context": "OnGoingReportReceivedEntry",
+     "fields": [
+      "report_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "reports",
+   "action": "show_report",
+   "sites": [
+    {
+     "offset": 1329305,
+     "context": "ReportWindow.init",
+     "fields": [
+      "report_id",
+      "hash",
+      "animated",
+      "simpleheader"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "reports",
+   "action": "undelete_single_report",
+   "sites": [
+    {
+     "offset": 1320604,
+     "context": "MessagesWindow.Report.undeleteReport",
+     "fields": [
+      "report",
+      "hash"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "serverinfo",
+   "action": "announcement_read",
+   "sites": [
+    {
+     "offset": 1427946,
+     "context": "ServerInfoWindow.Announcements.read",
+     "fields": [
+      "custom"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "serverinfo",
+   "action": "claim_reward",
+   "sites": [
+    {
+     "offset": 1427426,
+     "context": "ServerInfoWindow.Announcements.getReward",
+     "fields": [
+      "camp_id",
+      "type"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "serverinfo",
+   "action": "dismiss_campaign",
+   "sites": [
+    {
+     "offset": 1423959,
+     "context": "ServerInfoWindow.onDestroy",
+     "fields": [
+      "camp_id",
+      "type"
+     ]
+    },
+    {
+     "offset": 1424115,
+     "context": "ServerInfoWindow.onDestroy",
+     "fields": [
+      "camp_id",
+      "type"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "serverinfo",
+   "action": "get_worldsettings",
+   "sites": [
+    {
+     "offset": 1430821,
+     "context": "ServerInfoWindow.WorldSettings.init",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "serverinfo",
+   "action": "track_allow",
+   "sites": [
+    {
+     "offset": 1427160,
+     "context": "ServerInfoWindow.Announcements.readCRM",
+     "fields": [
+      "camp_id",
+      "type"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "serverinfo",
+   "action": "track_view",
+   "sites": [
+    {
+     "offset": 1425845,
+     "context": "ServerInfoWindow.Announcements.init",
+     "fields": [
+      "camp_id",
+      "type"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "ses",
+   "action": "log",
+   "sites": [
+    {
+     "offset": 477110,
+     "context": "requestLogData",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "activate_holiday",
+   "sites": [
+    {
+     "offset": 1345571,
+     "context": "OptionsButler.activateVacation",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "bonus",
+   "sites": [
+    {
+     "offset": 1346001,
+     "context": "OptionsButler.activateRedeem",
+     "fields": [
+      "code"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "change_email",
+   "sites": [
+    {
+     "offset": 1344570,
+     "context": "OptionsButler.changeEmail",
+     "fields": [
+      "email",
+      "password"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "change_locale",
+   "sites": [
+    {
+     "offset": 1344812,
+     "context": "OptionsButler.changeLocale",
+     "fields": [
+      "new_locale"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "change_password",
+   "sites": [
+    {
+     "offset": 1344293,
+     "context": "OptionsButler.changePassword",
+     "fields": [
+      "password",
+      "password_repeat",
+      "old_password"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "delete",
+   "sites": [
+    {
+     "offset": 1345785,
+     "context": "OptionsButler.deleteAccount",
+     "fields": [
+      "password"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "get_parsed_text",
+   "sites": [
+    {
+     "offset": 1354764,
+     "context": "ProfileSub.prototype.setPreview",
+     "fields": [
+      "text"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "migrate_wallet",
+   "sites": [
+    {
+     "offset": 1347260,
+     "context": "OptionsButler.migrateWallet",
+     "fields": [
+      "password"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "request_migration",
+   "sites": [
+    {
+     "offset": 1346932,
+     "context": "OptionsButler.submitMigration",
+     "fields": [
+      "world_id",
+      "resource_id",
+      "password"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "save_signature_text",
+   "sites": [
+    {
+     "offset": 1345344,
+     "context": "OptionsButler.saveSignature",
+     "fields": [
+      "text"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "save_text",
+   "sites": [
+    {
+     "offset": 1345046,
+     "context": "OptionsButler.changeProfileText",
+     "fields": [
+      "text"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "settings",
+   "sites": [
+    {
+     "offset": 1344076,
+     "context": "OptionsButler.init",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "settings",
+   "action": "submit_ponyExpress",
+   "sites": [
+    {
+     "offset": 1346650,
+     "context": "OptionsButler.updatePonyExpress",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "shop_trader",
+   "action": "buy",
+   "sites": [
+    {
+     "offset": 2130351,
+     "context": "requestBuy",
+     "fields": [
+      "item_id",
+      "category",
+      "currency"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "shop_trader",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 2124565,
+     "context": "getDynamicData",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "shop_trader",
+   "action": "mtrader_view",
+   "sites": [
+    {
+     "offset": 377390,
+     "context": "handleView",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "shop_trader",
+   "action": "sell",
+   "sites": [
+    {
+     "offset": 2131133,
+     "context": "requestSell",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "shop_trader",
+   "action": "set_renewal",
+   "sites": [
+    {
+     "offset": 389567,
+     "context": "handleExtendToggle",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "shop_trader",
+   "action": "track_shop_choose_item",
+   "sites": [
+    {
+     "offset": 2129707,
+     "context": "trackBuyItem",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "skill",
+   "action": "overview",
+   "sites": [
+    {
+     "offset": 1583271,
+     "context": "getNewJsonData",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "skill",
+   "action": "save_skill_changes",
+   "sites": [
+    {
+     "offset": 1597151,
+     "context": "butExpertOkClicked",
+     "fields": [
+      "modifier",
+      "data"
+     ]
+    },
+    {
+     "offset": 1598164,
+     "context": "butShamanOkClicked",
+     "fields": [
+      "modifier",
+      "data"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "get",
+   "window": "suggestion",
+   "action": "get_data",
+   "sites": [
+    {
+     "offset": 180990,
+     "context": "setUpPopupData",
+     "fields": [
+      "window_name",
+      "extended_name",
+      "player_name"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "suggestion",
+   "action": "ignore_player",
+   "sites": [
+    {
+     "offset": 177553,
+     "context": "ignore_player",
+     "fields": [
+      "player_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "suggestion",
+   "action": "submit_suggestion",
+   "sites": [
+    {
+     "offset": 174844,
+     "context": "submit",
+     "fields": null
+    },
+    {
+     "offset": 175442,
+     "context": "handleChatResponse",
+     "fields": [
+      "window_name",
+      "extended_name",
+      "suggest_desc"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "survey",
+   "action": "cancelvote",
+   "sites": [
+    {
+     "offset": 1795750,
+     "context": "Survey.cancel",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "survey",
+   "action": "vote",
+   "sites": [
+    {
+     "offset": 1795119,
+     "context": "Survey.vote",
+     "fields": [
+      "answers"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "task",
+   "action": "add",
+   "sites": [
+    {
+     "offset": 697180,
+     "context": "obj.sendAdd",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "task",
+   "action": "cancel",
+   "sites": [
+    {
+     "offset": 696574,
+     "context": "obj.sendCancel",
+     "fields": [
+      "tasks"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "task",
+   "action": "get_tasks",
+   "sites": [
+    {
+     "offset": 698659,
+     "context": "obj.handlePlayerDeath",
+     "fields": []
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "town",
+   "action": "get_town",
+   "sites": [
+    {
+     "offset": 1144310,
+     "context": "initData",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "wheeloffortune",
+   "action": "gamble",
+   "sites": [
+    {
+     "offset": 552857,
+     "context": "requestData",
+     "fields": null
+    },
+    {
+     "offset": 944441,
+     "context": "process",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "wheeloffortune",
+   "action": "init",
+   "sites": [
+    {
+     "offset": 944894,
+     "context": "load",
+     "fields": null
+    }
+   ]
+  },
+  {
+   "kind": "remoteCall",
+   "window": "work",
+   "action": "get_nearest_job",
+   "sites": [
+    {
+     "offset": 2244712,
+     "context": "startNearestJob",
+     "fields": [
+      "job_id"
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "remoteCallMode",
+   "window": "work",
+   "action": "index",
+   "sites": [
+    {
+     "offset": 2228397,
+     "context": "initData",
+     "fields": []
+    }
+   ]
+  }
+ ]
+}

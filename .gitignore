@@ -1,0 +1,9 @@
+node_modules/
+*.local.json
+# private: browser fingerprint profile, session, credentials, caches
+fingerprint-profile.json
+.fingerprint
+session.json
+cache/
+.env
+.DS_Store

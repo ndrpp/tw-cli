@@ -1,0 +1,232 @@
+{
+ "capacity": 30,
+ "quests": [
+  {
+   "id": 3063,
+   "duel": {
+    "isNPCDuel": false
+   },
+   "isChallenge": false,
+   "employer": "sheriff",
+   "employer_name": "Sheriff John Fitzburn",
+   "employer_image": "sheriff_zombie",
+   "employer_coords": false,
+   "accessable": true,
+   "accepted": true,
+   "solved": false,
+   "limited": "This quest is only available from 28.10.2026 at 00:00 until the 16.11.2026 at 12:00.",
+   "group": 193,
+   "groupTitle": "The Headless Horseman",
+   "title": "Times of trial (The Headless Horseman)",
+   "soloTitle": "Times of trial",
+   "requirements": [
+    {
+     "solved": false,
+     "info": "Equip Saddle 0/1",
+     "helpicons": null,
+     "jsInfo": {
+      "type": "wear_changed",
+      "id": 787000,
+      "count": 1
+     }
+    },
+    {
+     "solved": false,
+     "info": "Robust reins 0/2",
+     "helpicons": null,
+     "jsInfo": {
+      "type": "inventory_changed",
+      "id": 1987000,
+      "count": 2
+     }
+    },
+    {
+     "solved": false,
+     "info": "Hip flask 0/1",
+     "helpicons": null,
+     "jsInfo": {
+      "type": "inventory_changed",
+      "id": 1990000,
+      "count": 1
+     }
+    },
+    {
+     "solved": true,
+     "info": "Item 'White horse' bought",
+     "helpicons": null,
+     "jsInfo": null
+    }
+   ],
+   "description": "<p><em>You enter the saloon and see the Sheriff leaning over a glass of whiskey. He seems to be deeply troubled. You walk over to him and ask what happened.</em></p>\n<p>Oh, hello dear friend. We are entering the 19th century, and in criminal investigation nothing changes. I want to become more&hellip; scientific. I believe science can help to find, for example, a murderer. Think about examining the corpses...</p>\n<p><em>John drinks another glass of whiskey.</em><br>It's my time to try. I'm going to Jacksonville. In the last few days, four people were killed and decapitated. But I don't think I can solve the puzzle myself. Do you want to help me? Thanks, I knew I can always depend&nbsp;on you. Be ready to leave tomorrow morning. Prepare your horse, pack your food...</p>",
+   "questRewards": [
+    {
+     "isItem": false,
+     "hidden": false,
+     "info": {
+      "css": "reward_exp",
+      "text": 500,
+      "popup_text": "Experience points"
+     }
+    },
+    {
+     "isItem": true,
+     "hidden": false,
+     "info": {
+      "css": "reward_item",
+      "text": 722000
+     }
+    }
+   ],
+   "questRewardsOptions": null,
+   "questCompletionText": "",
+   "questCompletionHint": "",
+   "questHint": "<p>To get some items you need to work with other players. Check out the market!</p>",
+   "finishable": false,
+   "priority": 4,
+   "finishDate": null,
+   "rank": 0,
+   "redrawMap": false
+  },
+  {
+   "id": 280,
+   "duel": {
+    "isNPCDuel": false
+   },
+   "isChallenge": false,
+   "employer": "lady",
+   "employer_name": "Maya Roalstad",
+   "employer_image": "lady_zombie",
+   "employer_coords": false,
+   "accessable": true,
+   "accepted": true,
+   "solved": false,
+   "limited": false,
+   "group": 36,
+   "groupTitle": "Angel of love",
+   "title": "Mike and Jenny (Angel of love)",
+   "soloTitle": "Mike and Jenny",
+   "requirements": [
+    {
+     "solved": true,
+     "info": "Trading (30 minutes)",
+     "helpicons": [
+      "/images/map/jobicon_23.png"
+     ],
+     "jsInfo": {
+      "type": "task-finish-job",
+      "id": 36,
+      "count": 3600
+     }
+    }
+   ],
+   "description": "Hello shallax, could you help me? My friend Jenny has a problem... Her husband Mike is a trader and is selling a new product throughout the entire country, but unfortunately this means he no longer has any time for her. Do you think you might fill in for him for a few hours so that the two of them can spend a little time together?",
+   "questRewards": [
+    {
+     "isItem": false,
+     "hidden": false,
+     "info": {
+      "css": "reward_exp",
+      "text": 125,
+      "popup_text": "Experience points"
+     }
+    },
+    {
+     "isItem": false,
+     "hidden": false,
+     "info": {
+      "css": "reward_dollar",
+      "text": 50,
+      "popup_text": "Dollars"
+     }
+    }
+   ],
+   "questRewardsOptions": null,
+   "questCompletionText": "",
+   "questCompletionHint": "",
+   "questHint": null,
+   "finishable": true,
+   "priority": 2,
+   "finishDate": null,
+   "rank": 0,
+   "redrawMap": false
+  },
+  {
+   "id": 10068,
+   "duel": {
+    "isNPCDuel": false
+   },
+   "isChallenge": false,
+   "employer": "paper",
+   "employer_name": "Tasks",
+   "employer_image": "paper",
+   "employer_coords": false,
+   "accessable": false,
+   "accepted": true,
+   "solved": false,
+   "limited": false,
+   "group": 62,
+   "groupTitle": "Repeatable quests",
+   "title": "Apples, but not the good kind (Repeatable quests)",
+   "soloTitle": "Apples, but not the good kind",
+   "requirements": [
+    {
+     "solved": true,
+     "info": "After accepting the quest Apples, but not the good kind (Repeatable quests) you must wait 24 hours.",
+     "helpicons": null,
+     "jsInfo": null
+    },
+    {
+     "solved": false,
+     "info": "Mucking out the stables (0/4)",
+     "helpicons": [
+      "/images/map/jobicon_13.png"
+     ],
+     "jsInfo": {
+      "type": "task-finish-job",
+      "id": 92,
+      "count": 4
+     }
+    }
+   ],
+   "description": "Howdy, <br /><br />I had some riders over last night. You look like you could do with some dollars? Take the pitchfork and muck out the stables.<br /><br />-Henry ",
+   "questRewards": [
+    {
+     "isItem": false,
+     "hidden": false,
+     "info": {
+      "css": "reward_exp",
+      "text": 20,
+      "popup_text": "Experience points"
+     }
+    },
+    {
+     "isItem": false,
+     "hidden": false,
+     "info": {
+      "css": "reward_dollar",
+      "text": 65,
+      "popup_text": "Dollars"
+     }
+    },
+    {
+     "isItem": false,
+     "hidden": false,
+     "info": {
+      "css": "reward_bond",
+      "text": 1,
+      "popup_text": "Bond"
+     }
+    }
+   ],
+   "questRewardsOptions": null,
+   "questCompletionText": "",
+   "questCompletionHint": "",
+   "questHint": null,
+   "finishable": false,
+   "priority": 1,
+   "finishDate": null,
+   "rank": 0,
+   "redrawMap": false
+  }
+ ]
+}
