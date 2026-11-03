@@ -102,8 +102,11 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
     if (input === 'J') return setScroll((s) => s + 3);
     if (input === 'K') return setScroll((s) => Math.max(0, s - 3));
     if (key.return) return void open(idx);
-    if (input === '>' || input === '<') {
-      const page = (list?.page ?? 1) + (input === '>' ? 1 : -1);
+    // Kitty-protocol terminals report Shift+, / Shift+. as the base keys with the shift flag.
+    const nextPage = input === '>' || (key.shift && input === '.');
+    const prevPage = input === '<' || (key.shift && input === ',');
+    if (nextPage || prevPage) {
+      const page = (list?.page ?? 1) + (nextPage ? 1 : -1);
       if (page < 1 || page > (list?.pages ?? 1)) return;
       setSel(0);
       setOpened(null);

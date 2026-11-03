@@ -164,6 +164,58 @@ test('mail: reports and telegrams requests, HTML/BBCode to text, errors from [ok
   assert.match(state.log.at(-1)!.msg, /Player not found/);
 });
 
+test('mail: < > change report and telegram pages', async () => {
+  fakeServer();
+  mailRoutes();
+  routes['/game.php?window=reports&action=get_reports'] = (body) => {
+    const p = new URLSearchParams(body);
+    if (p.get('page') === '2') {
+      return { page: 2, count: 2, reports: [{ report_id: 601, title: 'Page two report', hash: 'h601', read: true, date_received: '11:00', popupData: '' }] };
+    }
+    return REPORTS;
+  };
+  routes['/game.php?window=messages&action=get_messages'] = (body) => {
+    const p = new URLSearchParams(body);
+    if (p.get('page') === '2') {
+      return { page: 2, count: 2, messages: [{ message_id: 88, subject: 'Page two telegram', partner_name: ['Bob'], partner_id: [9], own_status: 2, last_post_date: '11:00' }] };
+    }
+    return { ...TELEGRAMS, count: 2 };
+  };
+  const state = makeState();
+  const t = tui(state);
+  try {
+    await t.keys('M');
+    await t.settle(400);
+    assert.match(t.plain(), /page 1\/2/);
+    await t.keys('>');
+    await t.settle(300);
+    assert.equal(state.reports?.page, 2);
+    assert.match(t.plain(), /Page two report/);
+    await t.keys('<');
+    await t.settle(300);
+    assert.equal(state.reports?.page, 1);
+    // Kitty keyboard protocol: Shift+. / Shift+, arrive as "." / "," with shift.
+    await t.keys('\x1b[46:62;2u');
+    await t.settle(300);
+    assert.equal(state.reports?.page, 2);
+    await t.keys('\x1b[44:60;2u');
+    await t.settle(300);
+    assert.equal(state.reports?.page, 1);
+
+    await t.keys('\t');
+    await t.settle(200);
+    await t.keys('>');
+    await t.settle(300);
+    assert.equal(state.telegrams?.page, 2);
+    assert.match(t.plain(), /Page two telegram/);
+    await t.keys('<');
+    await t.settle(300);
+    assert.equal(state.telegrams?.page, 1);
+  } finally {
+    t.done();
+  }
+});
+
 test('job report formatter: dedupes values, inlines fields and compacts items', () => {
   const report = [
     'Motivation', '70 %', '70 %', 'Time', '15s', 'Money', '$ 35',
