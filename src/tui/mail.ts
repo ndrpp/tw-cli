@@ -102,8 +102,11 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
     if (input === 'J') return setScroll((s) => s + 3);
     if (input === 'K') return setScroll((s) => Math.max(0, s - 3));
     if (key.return) return void open(idx);
-    if (input === '>' || input === '<') {
-      const page = (list?.page ?? 1) + (input === '>' ? 1 : -1);
+    // Kitty-protocol terminals report Shift+, / Shift+. as the base keys with the shift flag.
+    const nextPage = input === '>' || (key.shift && input === '.');
+    const prevPage = input === '<' || (key.shift && input === ',');
+    if (nextPage || prevPage) {
+      const page = (list?.page ?? 1) + (nextPage ? 1 : -1);
       if (page < 1 || page > (list?.pages ?? 1)) return;
       setSel(0);
       setOpened(null);
@@ -139,7 +142,7 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
     : `page ${list?.page ?? 1}/${list?.pages ?? 1} (< >) · n new`;
   const rows = tab === 'reports'
     ? reports.slice(start, end).map((r, i) => h(Text, { key: r.id, inverse: start + i === idx, bold: !r.read, wrap: 'truncate' },
-      `${r.read ? ' ' : '•'} ${truncate(r.title, leftW - 18)} `, h(Text, { dimColor: true }, truncate(r.date, 12))))
+      `${r.read ? ' ' : '•'} ${truncate(r.title, leftW - 19)} `, h(Text, { dimColor: true }, truncate(r.date, 12))))
     : telegrams.slice(start, end).map((t, i) => h(Text, { key: t.id, inverse: start + i === idx, bold: t.unread, wrap: 'truncate' },
       `${t.unread ? '•' : t.answered ? '↩' : ' '} ${truncate(t.subject, leftW - 30)} `,
       h(Text, { color: 'magenta' }, truncate(t.partners.length ? t.partners.join(', ') : 'System', 12)), ' ',

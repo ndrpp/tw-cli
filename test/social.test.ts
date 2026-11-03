@@ -23,7 +23,7 @@ const { ItemCatalog } = await import('../src/game/items.ts');
 const { parseQuest } = await import('../src/game/quests.ts');
 const { ChatPoller } = await import('../src/realtime/chat.ts');
 const { MarketApi, parseOffer, depositFee, marketFee, buyOrderProblem, suggestedBid, DEFAULT_FILTER } = await import('../src/game/trade.ts');
-const { bbText } = await import('../src/game/mail.ts');
+const { bbText, formatReport } = await import('../src/game/mail.ts');
 const { planRoute } = await import('../src/game/route.ts');
 const { App } = await import('../src/tui/app.ts');
 
@@ -131,7 +131,7 @@ const TELEGRAMS = { page: 1, count: 1, folders: [], messages: [
 
 function mailRoutes() {
   routes['/game.php?window=reports&action=get_reports'] = () => REPORTS;
-  routes['/game.php?window=reports&mode=show_report'] = () => ({ title: 'Job report: Tending pigs', date_received: '10:12', reportType: 'job', page: '<page><div>You earned <b>$ 90</b><br/>and 50 XP</div></page>' });
+  routes['/game.php?window=reports&mode=show_report'] = () => ({ title: 'Job report: Tending pigs', date_received: '10:12', reportType: 'job', page: '<page><div>You earned <b>&#036; 90</b><br/>and 50 XP</div><table><tr><td>Motivation</td><td>82 &#37;</td></tr><tr><td>Money</td><td>&#036; 47</td></tr></table></page>' });
   routes['/game.php?window=messages&action=get_messages'] = () => TELEGRAMS;
   routes['/game.php?window=messages&action=get_message'] = () => ({ subject: 'Hello there', page: 0, pages: 1, head_id: 77, posts: [{ name: 'Bob', post_date: '09:00', text: 'Want to [b]trade[/b] some ham?', player_id: 9 }] });
   routes['/game.php?window=messages&action=send'] = () => [true, 'sent'];
@@ -148,7 +148,7 @@ test('mail: reports and telegrams requests, HTML/BBCode to text, errors from [ok
   assert.equal(state.unread.reports, false);
   assert.deepEqual(Object.fromEntries(params(callTo('get_reports')[0]!.body)), { page: '1', folder: 'job' });
   const r = await state.openReport(state.reports!.reports[0]!);
-  assert.equal(r!.text, 'You earned $ 90\nand 50 XP');
+  assert.equal(r!.text, 'You earned $ 90\nand 50 XP\nMotivation: 82%\nMoney: $47');
   assert.equal(params(callTo('show_report')[0]!.body).get('hash'), 'h501');
   await state.deleteReport(state.reports!.reports[0]!);
   assert.deepEqual(Object.fromEntries(params(callTo('delete_single_report')[0]!.body)), { report: '501', type: 'job', deleted: 'false' });
@@ -162,6 +162,76 @@ test('mail: reports and telegrams requests, HTML/BBCode to text, errors from [ok
   routes['/game.php?window=messages&action=send'] = () => [false, 'Player not found', ['not_found', ['Bobb']]];
   assert.equal(await state.sendTelegram('Bobb', 'Hi', 'hello'), false);
   assert.match(state.log.at(-1)!.msg, /Player not found/);
+});
+
+test('mail: < > change report and telegram pages', async () => {
+  fakeServer();
+  mailRoutes();
+  routes['/game.php?window=reports&action=get_reports'] = (body) => {
+    const p = new URLSearchParams(body);
+    if (p.get('page') === '2') {
+      return { page: 2, count: 2, reports: [{ report_id: 601, title: 'Page two report', hash: 'h601', read: true, date_received: '11:00', popupData: '' }] };
+    }
+    return REPORTS;
+  };
+  routes['/game.php?window=messages&action=get_messages'] = (body) => {
+    const p = new URLSearchParams(body);
+    if (p.get('page') === '2') {
+      return { page: 2, count: 2, messages: [{ message_id: 88, subject: 'Page two telegram', partner_name: ['Bob'], partner_id: [9], own_status: 2, last_post_date: '11:00' }] };
+    }
+    return { ...TELEGRAMS, count: 2 };
+  };
+  const state = makeState();
+  const t = tui(state);
+  try {
+    await t.keys('M');
+    await t.settle(400);
+    assert.match(t.plain(), /page 1\/2/);
+    await t.keys('>');
+    await t.settle(300);
+    assert.equal(state.reports?.page, 2);
+    assert.match(t.plain(), /Page two report/);
+    await t.keys('<');
+    await t.settle(300);
+    assert.equal(state.reports?.page, 1);
+    // Kitty keyboard protocol: Shift+. / Shift+, arrive as "." / "," with shift.
+    await t.keys('\x1b[46:62;2u');
+    await t.settle(300);
+    assert.equal(state.reports?.page, 2);
+    await t.keys('\x1b[44:60;2u');
+    await t.settle(300);
+    assert.equal(state.reports?.page, 1);
+
+    await t.keys('\t');
+    await t.settle(200);
+    await t.keys('>');
+    await t.settle(300);
+    assert.equal(state.telegrams?.page, 2);
+    assert.match(t.plain(), /Page two telegram/);
+    await t.keys('<');
+    await t.settle(300);
+    assert.equal(state.telegrams?.page, 1);
+  } finally {
+    t.done();
+  }
+});
+
+test('job report formatter: dedupes values, inlines fields and compacts items', () => {
+  const report = [
+    'Motivation', '70 %', '70 %', 'Time', '15s', 'Money', '$ 35',
+    'Pacific Bonds', '0', 'Experience', '71 Points', 'Luck', '$ 0',
+    'Cempasúchil', '3', 'Items Found', 'No items were found.',
+  ].join('\n');
+  assert.equal(formatReport(report, 'job'), [
+    'Motivation: 70%', 'Time: 15s', 'Money: $35', 'Pacific Bonds: 0',
+    'Experience: 71 Points', 'Luck: $0', 'Cempasúchil: 3', 'Items: none',
+  ].join('\n'));
+  assert.equal(
+    formatReport(['Items Found', 'Canvas', '3', 'Bowie knife', '1'].join('\n'), 'job'),
+    'Items: Canvas x 3, Bowie knife x 1',
+  );
+  assert.equal(formatReport('Items Found\nNo items were found.', 'job'), 'Items: none');
+  assert.equal(formatReport('Motivation 70 %', 'duel'), 'Motivation 70 %');
 });
 
 test('trade: bank deposit, shop buy/sell, item use and market requests', async () => {
@@ -437,6 +507,9 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
     assert.match(t.plain(), /Job report: Tending pigs/);
     await t.keys('\r');
     assert.match(t.plain(), /You earned \$ 90/);
+    assert.match(t.plain(), /Motivation: 82%/);
+    assert.match(t.plain(), /Money: \$47/);
+    assert.doesNotMatch(t.plain(), /&#/);
     await t.keys('\t', '\r');
     assert.match(t.plain(), /Want to trade some ham\?/);
     await t.keys('n');
@@ -519,6 +592,32 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
   } finally {
     t.done();
   }
+});
+
+test('job detail: danger and motivation come from job/job, concurrent loads are deduped', async () => {
+  fakeServer();
+  routes['/game.php?window=job&mode=job'] = (body) => {
+    const p = new URLSearchParams(body);
+    assert.equal(p.get('jobId'), '1');
+    return { id: 1, danger: 37, motivation: 0.55 };
+  };
+  const state = makeState();
+  state.jobs = [{
+    id: 1, groupid: 12, name: 'Tending pigs', shortname: 'swine', level: 4, malus: 1,
+    skills: {}, durations: { short: 15, middle: 600, long: 3600 }, yields: {},
+    jobPoints: 50, workPoints: 2, laborPoints: 49, motivation: 1, danger: null,
+    luckValue: [0, 400], values: {},
+  }];
+  state.world.jobGroups = new Map([[12, [{ x: 120, y: 100 }]]]);
+  const option = state.jobOptions('pigs')[0]!;
+  assert.ok(option.at);
+  assert.equal(option.job.danger, null);
+  await Promise.all([state.loadJobDetail(option.job, option.at), state.loadJobDetail(option.job, option.at)]);
+  assert.equal(option.job.danger, 37);
+  assert.equal(option.job.motivation, 0.55);
+  assert.equal(calls.filter((c) => c.url.includes('window=job&mode=job')).length, 1);
+  await state.loadJobDetail(option.job, option.at);
+  assert.equal(calls.filter((c) => c.url.includes('window=job&mode=job')).length, 2);
 });
 
 test('sync: background game.php re-read updates health/money and flags a drop (no push after being dueled)', async () => {

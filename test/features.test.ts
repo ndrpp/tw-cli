@@ -230,6 +230,9 @@ test('quests: captured quest log parses (requirements, rewards, HTML stripped)',
   assert.ok(horse.rewards.some((r: any) => r.item === 722000 && r.text === '#722000'));
   assert.doesNotMatch(horse.description, /<|&hellip;|&nbsp;/);
   assert.equal(plainText('<p>a&nbsp;b</p><p>c</p>'), 'a b\n\nc');
+  assert.equal(plainText('<div>Motivation</div><div>82 &#37;</div>', { compact: true }), 'Motivation\n82 %');
+  assert.equal(plainText('<table><tr><td>Money</td><td>&#036; 47</td></tr></table>', { compact: true }), 'Money $ 47');
+  assert.equal(plainText('Cempas&uacute;chil &amp; co'), 'Cempasúchil & co');
   assert.equal(horse.soloTitle, 'Times of trial');
   const chains = groupByChain(qs);
   assert.deepEqual(chains.map((c) => [c.title, c.quests.length, c.finishable]), [['Angel of love', 1, 1], ['Repeatable quests', 1, 0], ['The Headless Horseman', 1, 0]]);
@@ -483,6 +486,10 @@ test('quest item sources: jobs whose yields drop the item, nearest first; g mark
 
 test('TUI: loading screen, job filter by product + sort + LP toggle, map layers, quest route + estimates', async () => {
   fakeServer();
+  routes['/game.php?window=job&mode=job'] = (body) => {
+    const p = new URLSearchParams(body);
+    return { id: Number(p.get('jobId')), danger: 37, motivation: 0.55 };
+  };
   const state = makeState();
   const { JobCatalog } = await import('../src/game/jobs.ts');
   routes['/game.php?window=building_quest&mode='] = () => ({ questEmployer: [] });
@@ -536,7 +543,11 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     out = '';
     await keys('/', 'h', 'a', 'm', '\r');
     assert.match(plain(), /Tending pigs/);
+    assert.match(plain(), /Luck \$400/);
     assert.match(plain(), /Drops: Ham 200%/);
+    await settle(500);
+    assert.match(plain(), /motiv 55%/);
+    assert.match(plain(), /danger 37%/);
     assert.equal(state.jobOptions('ham').map((o) => o.job.name).join(), 'Tending pigs');
     await keys('/', '\x1b');
     await keys('a');

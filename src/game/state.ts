@@ -10,7 +10,7 @@ import type { GameClient } from '../http/game-client.ts';
 import { CharacterState, type Position } from './character.ts';
 import { ServerClock } from './clock.ts';
 import {
-  fetchJobInfos, JobCatalog, nearestLocation, wayTime,
+  fetchJobDetail, fetchJobInfos, JobCatalog, nearestLocation, parseJobDetail, wayTime,
   type DurationKey, type JobInfo, type JobLocations,
 } from './jobs.ts';
 import { jobPost, parseQueue, sleepPost, TaskApi, walkPost, type QueuedTask } from './tasks.ts';
@@ -85,6 +85,7 @@ export class GameState extends EventEmitter {
   worldName = '';
   queue: QueuedTask[] = [];
   jobs: JobInfo[] = [];
+  private jobDetailLoading = new Set<number>();
   world = new WorldMap();
   tiles = new TileCache();
   log: LogEntry[] = [];
@@ -687,6 +688,34 @@ export class GameState extends EventEmitter {
       this.world = WorldMap.fromMinimap(minimap);
       if (!quiet) this.info(`Loaded ${jobs.length} jobs.`);
     });
+  }
+
+  /**
+   * job/job is the only endpoint that returns danger, and it also carries the live motivation.
+   * Refreshes the selected job only: the browser does the same when its job window opens.
+   */
+  async loadJobDetail(job: JobInfo, at: Position): Promise<void> {
+    if (this.jobDetailLoading.has(job.id)) return;
+    this.jobDetailLoading.add(job.id);
+    try {
+      const detail = parseJobDetail(await fetchJobDetail(this.client, job.id, at));
+      const current = this.jobs.find((j) => j.id === job.id);
+      if (!current) return;
+      let changed = false;
+      if (detail.danger !== null && detail.danger !== current.danger) {
+        current.danger = detail.danger;
+        changed = true;
+      }
+      if (detail.motivation !== null && detail.motivation !== current.motivation) {
+        current.motivation = detail.motivation;
+        changed = true;
+      }
+      if (changed) this.changed();
+    } catch (err) {
+      this.error(`Job detail: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      this.jobDetailLoading.delete(job.id);
+    }
   }
 
   /** Product names a job drops (static yields + per-duration drops), for search and display. */

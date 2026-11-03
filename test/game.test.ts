@@ -13,7 +13,7 @@ import { jqueryParam } from '../src/http/form.ts';
 import { GameState } from '../src/game/state.ts';
 import { ServerClock } from '../src/game/clock.ts';
 import { CharacterState, levelProgress, levelStartXp } from '../src/game/character.ts';
-import { nearestLocation, wayTime } from '../src/game/jobs.ts';
+import { nearestLocation, parseDanger, parseJobDetail, wayTime } from '../src/game/jobs.ts';
 import { jobPost, parseQueue, TaskLimitError } from '../src/game/tasks.ts';
 import { App } from '../src/tui/app.ts';
 import { formatDuration, scrollWindow } from '../src/tui/format.ts';
@@ -92,6 +92,14 @@ test('way time and nearest location follow GameMap.calcWayTime', () => {
   assert.equal(wayTime({ x: 0, y: 0 }, { x: 300, y: 400 }, 0.9, 0.5), 225);
   assert.deepEqual(nearestLocation([{ x: 10, y: 0 }, { x: 2, y: 2 }], { x: 0, y: 0 }), { x: 2, y: 2 });
   assert.equal(nearestLocation([], { x: 0, y: 0 }), null);
+});
+
+test('job detail parses danger and motivation; missing values stay null', () => {
+  assert.deepEqual(parseJobDetail({ danger: '37', motivation: 0.55 }), { danger: 37, motivation: 0.55 });
+  assert.deepEqual(parseJobDetail({}), { danger: null, motivation: null });
+  assert.equal(parseDanger(0), 0);
+  assert.equal(parseDanger('0'), 0);
+  assert.equal(parseDanger(undefined), null);
 });
 
 test('task/add body matches jQuery serialisation of TaskQueue.sendAdd', () => {

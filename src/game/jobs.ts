@@ -43,7 +43,8 @@ export interface JobInfo extends JobDef {
   /** Labor points as shown in game: jobSkillPoints − malus (live work/index sends it as `workpoints`). */
   laborPoints: number;
   motivation: number;
-  danger: number;
+  /** Danger 0–100; null until the selected job's job/job detail is loaded (work/index omits it). */
+  danger: number | null;
   /** minMaxItemVal: $ value range of a lucky item find (job window "$min-$max"; list sorts by max = maxLuck). */
   luckValue: [number, number];
   values: Partial<Record<DurationKey, JobDurationValues>>;
@@ -85,6 +86,27 @@ export class JobCatalog {
   }
 }
 
+/** Danger is only part of the job/job detail reply; work/index may leave it out. */
+export function parseDanger(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export interface JobDetail {
+  danger: number | null;
+  motivation: number | null;
+}
+
+/** job/job → the live values the browser's job window shows for one job at one location. */
+export function parseJobDetail(raw: Record<string, any>): JobDetail {
+  const motivation = raw.motivation === null || raw.motivation === undefined ? NaN : Number(raw.motivation);
+  return {
+    danger: parseDanger(raw.danger),
+    motivation: Number.isFinite(motivation) ? motivation : null,
+  };
+}
+
 /** work/index → per-character job values merged onto the static definitions. */
 export async function fetchJobInfos(client: GameClient, catalog: JobCatalog): Promise<JobInfo[]> {
   const json = await client.remoteCallMode('work', 'index');
@@ -115,7 +137,7 @@ export async function fetchJobInfos(client: GameClient, catalog: JobCatalog): Pr
       workPoints: def.malus + 1,
       laborPoints: typeof be.workpoints === 'number' ? be.workpoints : be.jobSkillPoints - def.malus,
       motivation: be.motivation,
-      danger: parseInt(be.danger, 10) || 0,
+      danger: parseDanger(be.danger),
       luckValue: Array.isArray(be.minMaxItemVal) ? [Number(be.minMaxItemVal[0]) || 0, Number(be.minMaxItemVal[1]) || 0] : [0, 0],
       values,
     });
