@@ -123,6 +123,7 @@ function JobDetail({ option, state }: { option: JobOption | undefined; state: Ga
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', paddingX: 1, flexShrink: 0 },
     h(Text, { bold: true, wrap: 'truncate' }, `${job.name}  (lvl ${job.level})`),
     h(Text, { wrap: 'truncate' }, `${job.laborPoints} LP · motiv ${Math.round((job.motivation ?? 0) * 100)}% · danger ${job.danger}`),
+    h(Text, { wrap: 'truncate' }, h(Text, { color: 'yellow' }, 'Luck '), job.luckValue[1] > 0 ? money(job.luckValue[1]) : '—'),
     h(Text, { dimColor: true, wrap: 'truncate' }, at ? `at ${at.x},${at.y} · travel ${formatDuration(way ?? 0)}` : 'No location known'),
     ...durRows,
     h(Text, { color: 'magenta', wrap: 'truncate' }, `Drops: ${state.jobProducts(job).map((p) => `${p.name}${p.percent !== null ? ` ${p.percent}%` : ''}`).join(' · ') || '—'}`),
@@ -489,8 +490,8 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
 
   const leftW = Math.max(30, Math.floor(width * 0.5));
   const rightW = Math.max(24, width - leftW);
-  // JobDetail: 2 border + 3 info lines + 3 durations (+1 when the queue is full).
-  const detailH = 9 + (state.queue.length >= state.taskLimit ? 1 : 0);
+  // JobDetail: 2 border + 4 info lines + 3 durations (+1 when the queue is full).
+  const detailH = 10 + (state.queue.length >= state.taskLimit ? 1 : 0);
   // Jobs/detail/queue keep what the detail and a few queue rows need; the rest goes to chat.
   const topMin = detailH + 6;
   const chatSpace = bodyH - Math.max(topMin, Math.ceil(bodyH * 0.55));

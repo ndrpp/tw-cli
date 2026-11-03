@@ -536,6 +536,7 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     out = '';
     await keys('/', 'h', 'a', 'm', '\r');
     assert.match(plain(), /Tending pigs/);
+    assert.match(plain(), /Luck \$400/);
     assert.match(plain(), /Drops: Ham 200%/);
     assert.equal(state.jobOptions('ham').map((o) => o.job.name).join(), 'Tending pigs');
     await keys('/', '\x1b');
