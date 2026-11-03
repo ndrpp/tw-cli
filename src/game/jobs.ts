@@ -44,6 +44,8 @@ export interface JobInfo extends JobDef {
   laborPoints: number;
   motivation: number;
   danger: number;
+  /** minMaxItemVal: $ value range of a lucky item find (job window "$min-$max"; list sorts by max = maxLuck). */
+  luckValue: [number, number];
   values: Partial<Record<DurationKey, JobDurationValues>>;
 }
 
@@ -114,6 +116,7 @@ export async function fetchJobInfos(client: GameClient, catalog: JobCatalog): Pr
       laborPoints: typeof be.workpoints === 'number' ? be.workpoints : be.jobSkillPoints - def.malus,
       motivation: be.motivation,
       danger: parseInt(be.danger, 10) || 0,
+      luckValue: Array.isArray(be.minMaxItemVal) ? [Number(be.minMaxItemVal[0]) || 0, Number(be.minMaxItemVal[1]) || 0] : [0, 0],
       values,
     });
   }

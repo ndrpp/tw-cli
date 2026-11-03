@@ -41,6 +41,7 @@ In the TUI, press `?` for help on any screen.
 
 | Key | Screen |
 |---|---|
+| `W` | jobs & queue (main view) |
 | `m` | map ⇄ jobs |
 | `1` `2` `3` | start the selected job (short / medium / long) |
 | `i` | inventory & skills |
@@ -48,7 +49,8 @@ In the TUI, press `?` for help on any screen.
 | `$` | bank, shops, market |
 | `M` | reports & telegrams |
 | `D` | duels |
-| `C` | chat (`L` turns live updates on) |
+| `Tab` | jobs → queue → chat (Enter to write, ←/→ room) |
+| `C` | full chat with whispers (`L` turns live updates on) |
 | `s` | sleep in a hotel |
 | `A` | account setup |
 | `q` | quit |

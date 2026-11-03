@@ -468,7 +468,7 @@ test('quest item sources: jobs whose yields drop the item, nearest first; g mark
     { id: 9, groupid: 3, name: 'Saddler', malus: 5, level: 10, yields: { 1987000: { prop: 0.12 } }, skills: {} },
     { id: 7, groupid: 4, name: 'Leather work', malus: 5, level: 10, yields: { 1987000: { prop: 0.3 } }, skills: {} },
   ] });
-  state.jobs = [...state.catalog.byId.values()].map((d) => ({ ...d, jobPoints: 50, workPoints: d.malus + 1, laborPoints: 49, motivation: 1, danger: 0, values: {} }));
+  state.jobs = [...state.catalog.byId.values()].map((d) => ({ ...d, jobPoints: 50, workPoints: d.malus + 1, laborPoints: 49, motivation: 1, danger: 0, luckValue: [0, 0] as [number, number], values: {} }));
   state.world.jobGroups = new Map([[3, [{ x: 150, y: 100 }]], [4, [{ x: 5000, y: 100 }]], [12, [{ x: 120, y: 100 }]]]);
   assert.deepEqual(state.catalog.yielding(1987000).map((y) => y.job.id), [7, 9]); // best chance first
   const horse = parseQuest(QUESTS.quests.find((q: any) => q.id === 3063));
@@ -502,7 +502,7 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     9: vals(500, 900, 0.9, [{ itemId: 1987000, expected: 1, percent: 100 }]),
     7: vals(80, 300, 0.5, [{ itemId: 1987000, expected: 1.5, percent: 150 }]),
   };
-  state.jobs = [...state.catalog.byId.values()].map((d) => ({ ...d, jobPoints: d.id === 9 ? 0 : 50, workPoints: d.malus + 1, laborPoints: d.id === 9 ? -500 : 49, motivation: 1, danger: 0, values: v[d.id] }))
+  state.jobs = [...state.catalog.byId.values()].map((d) => ({ ...d, jobPoints: d.id === 9 ? 0 : 50, workPoints: d.malus + 1, laborPoints: d.id === 9 ? -500 : 49, motivation: 1, danger: 0, luckValue: [0, { 1: 400, 9: 20, 7: 250 }[d.id]!] as [number, number], values: v[d.id] }))
     .sort((a, b) => a.name.localeCompare(b.name));
   state.world.jobGroups = new Map([[3, [{ x: 150, y: 100 }]], [4, [{ x: 400, y: 100 }]], [12, [{ x: 120, y: 100 }]]]);
   state.quests = QUESTS.quests.map((q: any) => parseQuest(q, (id: number) => state.itemName(id)));
@@ -546,6 +546,8 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     assert.match(plain(), /sort: XP \(1 h\)/);
     assert.deepEqual(state.jobOptions('', { sort: 'xp', showAll: true }).map((o) => o.job.id), [9, 7, 1]);
     assert.deepEqual(state.jobOptions('', { sort: 'money' }).map((o) => o.job.id), [7, 1]);
+    // Luck sorts by the $ value of a lucky find (maxLuck), not the duration's luck chance.
+    assert.deepEqual(state.jobOptions('', { sort: 'luck' }).map((o) => o.job.id), [1, 7]);
     // Map layers.
     out = '';
     await keys('m', 'v');

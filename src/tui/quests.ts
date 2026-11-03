@@ -117,6 +117,7 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
         if (Number.isInteger(d) && d >= 1 && d <= n) return setConfirm({ ...confirm, choice: d - 1 });
       }
       setConfirm(null);
+      if (confirm.kind === 'route' && input === 'a') return void state.queueRoute(confirm.plan, { auto: true, label: route ? SCOPE_LABEL[route.scope] : 'route' });
       if (input !== 'y') return;
       if (confirm.kind === 'route') void state.queueRoute(confirm.plan);
       else if (confirm.kind === 'finish') void state.finishQuest(confirm.quest, confirm.quest.rewardOptions[confirm.choice]?.id);
@@ -131,6 +132,7 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
       if (input === 'e') return setRoute({ ...route, objective: route.objective === 'energy' ? 'time' : 'energy' });
       if (input === 'J') return setScroll((s) => s + 3);
       if (input === 'K') return setScroll((s) => Math.max(0, s - 3));
+      if (input === 'x' && state.autoRoute) return state.stopAutoRoute();
       if (!plan?.stops.length) return;
       if (key.return) return setConfirm({ kind: 'route', plan });
       if (input === 'g') {
@@ -267,10 +269,10 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
         h(Text, { color: 'yellow', wrap: 'truncate' }, `Finish "${confirm.quest.title}"? Choose a reward (← → or 1-${confirm.quest.rewardOptions.length}), then y:`),
         ...confirm.quest.rewardOptions.map((o, i) => h(Text, { key: o.id, inverse: i === confirm.choice, color: i === confirm.choice ? 'green' : undefined, wrap: 'truncate' }, ` ${i + 1}) ${o.text}`)))
       : h(Text, { color: 'yellow', wrap: 'truncate' }, confirm.kind === 'route'
-        ? `Queue ${Math.min(confirm.plan.fitRuns, Math.max(0, state.taskLimit - state.queue.length))} of ${confirm.plan.totals.runs} route jobs? y / n`
+        ? `Queue ${Math.min(confirm.plan.fitRuns, Math.max(0, state.taskLimit - state.queue.length))} of ${confirm.plan.totals.runs} route jobs? y yes · a yes + auto-queue the rest when queue space and energy allow · n no`
         : `${confirm.kind === 'finish' ? 'Finish' : 'Cancel'} "${confirm.quest.title}"${confirm.kind === 'finish' && confirm.quest.rewardOptions.length === 1 ? ` (reward: ${confirm.quest.rewardOptions[0]!.text})` : ''}? y / n`)
     : route
-      ? h(Text, { dimColor: true, wrap: 'truncate' }, '1 quest · 2 chain · 3 all · e energy/time · Enter queue · g map · J/K · Esc')
+      ? h(Text, { dimColor: true, wrap: 'truncate' }, `${state.autoRoute ? `auto: ${state.autoRoute.runs.length} left, x stop · ` : ''}1 quest · 2 chain · 3 all · e energy/time · Enter queue · g map · J/K · Esc`)
       : h(Text, { dimColor: true, wrap: 'truncate' }, quest
         ? `${quest.accepted ? (quest.finishable ? 'Enter finish · ' : '') + 'x cancel quest · R route' : 'a/Enter accept'} · g jobs on map${quest.employerAt ? ' · w walk to giver' : ''} · J/K scroll`
         : 'Enter open · R route · Esc back');

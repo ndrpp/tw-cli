@@ -58,14 +58,18 @@ function saveMapLayers(layers: Record<string, boolean>): void {
   }
 }
 
+/** One planned route job: the task/add post, its energy cost and name. */
+type RouteRun = { post: ReturnType<typeof jobPost>; energy: number; title: string };
+
 export type JobSort = 'name' | 'xp' | 'money' | 'luck' | 'distance';
 export const JOB_SORTS: JobSort[] = ['name', 'xp', 'money', 'luck', 'distance'];
 
-/** Value a job is sorted by: the 1 h (else longest known) duration's XP / money / luck. */
+/** Value a job is sorted by: the 1 h (else longest known) duration's XP / money; luck = max $ find (maxLuck). */
 export function jobSortValue(job: JobInfo, sort: JobSort): number {
+  if (sort === 'luck') return job.luckValue[1];
   const v = job.values.long ?? job.values.middle ?? job.values.short;
   if (!v) return -Infinity;
-  return sort === 'xp' ? v.experience : sort === 'money' ? v.money : sort === 'luck' ? v.luck : 0;
+  return sort === 'xp' ? v.experience : sort === 'money' ? v.money : 0;
 }
 
 export interface StartupStep { label: string; status: 'running' | 'done' | 'error'; startedAt: number; endedAt?: number }
@@ -292,7 +296,8 @@ export class GameState extends EventEmitter {
     poller.on('quests', () => void this.loadQuests(true));
     poller.on('reports', () => {
       this.unread.reports = true;
-      this.info('New report.');
+      void this.announceNewReport();
+      void this.syncCharacter('report');
     });
     poller.on('read', (p: Record<string, any>) => {
       this.unread.reports = !p.reports;
@@ -344,6 +349,70 @@ export class GameState extends EventEmitter {
     if (u.energy !== undefined) c.setEnergy(u.energy, u.energyAt);
     if (u.health !== undefined) c.setHealth(u.health, u.healthAt);
     this.changed();
+  }
+
+  /** Server time (ms) of the last successful syncCharacter(); 0 before the first. */
+  lastSync = 0;
+  private syncing = false;
+
+  /**
+   * Re-reads the character from a fresh game.php (the only place the browser gets the full set:
+   * Character.init). Duels by other players change health/money server-side without a UserUpdate
+   * push, so the header would otherwise keep showing regenerated, pre-attack values.
+   * Runs in the background: no busy lock, errors only logged.
+   */
+  async syncCharacter(why = ''): Promise<void> {
+    if (this.syncing) return;
+    this.syncing = true;
+    try {
+      const { bootstrap } = await this.reopen();
+      const data = bootstrap.character;
+      if (!data) return;
+      const fresh = CharacterState.fromInit(data, this.clock);
+      const c = this.character;
+      const hpBefore = c.health;
+      const cashBefore = c.cash;
+      if (fresh.level > c.level) this.info(`Level up: ${fresh.level}!`);
+      c.level = fresh.level;
+      c.experience = fresh.experience;
+      c.cash = fresh.cash;
+      c.deposit = fresh.deposit;
+      c.nuggets = fresh.nuggets;
+      c.position = fresh.position;
+      c.homeTown = fresh.homeTown;
+      c.duelLevel = fresh.duelLevel;
+      c.maxEnergy = fresh.maxEnergy;
+      c.maxHealth = fresh.maxHealth;
+      c.healthRegen = fresh.healthRegen;
+      c.energyRegen = fresh.energyRegen;
+      c.setEnergy(data.energy);
+      c.setHealth(data.health);
+      if (data.taskQueue) this.queue = parseQueue(data.taskQueue);
+      this.lastSync = Date.now();
+      // Regen estimate vs. the server: a real drop means something happened to us.
+      const lost = hpBefore - c.health;
+      if (lost > Math.max(2, c.maxHealth * 0.01)) {
+        const cash = cashBefore > c.cash ? `, cash $${cashBefore} → $${c.cash}` : '';
+        this.error(`⚔ Health ${hpBefore} → ${c.health}${cash}. Attacked? See reports (M).`);
+      }
+      this.changed();
+    } catch (err) {
+      this.error(`Sync${why ? ` (${why})` : ''}: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  /** Newest unread report title (duels show up here: "Duel: X vs Y"). */
+  private async announceNewReport(): Promise<void> {
+    try {
+      const list = await this.mail.reports(1, 'all');
+      const r = list.reports.find((x) => !x.read);
+      if (r) this.info(`New report: ${r.title}`);
+      else this.info('New report.');
+    } catch {
+      this.info('New report.');
+    }
   }
 
   // ---- inventory & skills -------------------------------------------------------------------
@@ -585,6 +654,7 @@ export class GameState extends EventEmitter {
   async reload(): Promise<void> {
     await this.guard('Reload', async () => {
       this.apply(await this.reopen());
+      this.lastSync = Date.now();
       this.info('Reloaded game state.');
     });
     await this.loadJobs(false, true);
@@ -690,15 +760,36 @@ export class GameState extends EventEmitter {
     });
   }
 
-  /** Queues the route's runs in order, as many as fit in the task queue (one task/add call). */
-  async queueRoute(plan: RoutePlan): Promise<number> {
+  /**
+   * Auto-route: the planned runs not queued yet. The 1 s ticker calls autoRouteStep(), which adds
+   * the next ones (in route order) whenever the queue has room and there is energy for them.
+   */
+  autoRoute: { label: string; runs: RouteRun[]; total: number; retryAt: number } | null = null;
+
+  private routeRuns(plan: RoutePlan): RouteRun[] {
+    return plan.stops.flatMap((s) => {
+      const v = s.job.values[s.duration];
+      const run = { post: jobPost(s.job.id, s.at, v?.duration ?? s.job.durations[s.duration]), energy: v?.energy ?? Math.ceil(s.energy / Math.max(1, s.runs)), title: s.job.name };
+      return Array.from({ length: s.runs }, () => run);
+    });
+  }
+
+  /** Queues the route's runs in order, as many as fit (one task/add call); `auto` keeps queueing the rest later. */
+  async queueRoute(plan: RoutePlan, opts: { auto?: boolean; label?: string } = {}): Promise<number> {
+    const runs = this.routeRuns(plan);
     const free = this.taskLimit - this.queue.length;
+    if (opts.auto) {
+      this.autoRoute = { label: opts.label ?? 'route', runs, total: runs.length, retryAt: 0 };
+      const added = await this.autoRouteStep();
+      if (this.autoRoute) this.info(`Auto-route on: ${this.autoRoute.runs.length} more job(s) get queued as queue space and energy allow (R, then x stops).`);
+      return added;
+    }
     if (free <= 0) {
       this.queueFull();
       return 0;
     }
     // Only what the current energy pays for: the server would refuse the rest.
-    const posts = plan.stops.flatMap((s) => Array.from({ length: s.runs }, () => jobPost(s.job.id, s.at, s.job.values[s.duration]?.duration ?? s.job.durations[s.duration]))).slice(0, Math.min(free, plan.fitRuns));
+    const posts = runs.map((r) => r.post).slice(0, Math.min(free, plan.fitRuns));
     if (!posts.length) {
       this.error(`Not enough energy for the first route job (${this.character.energy} energy). Sleep or wait, then press R again.`);
       return 0;
@@ -714,6 +805,58 @@ export class GameState extends EventEmitter {
       return res.added.length;
     });
     return r ?? 0;
+  }
+
+  /** Adds the next auto-route runs that fit in the queue and the current energy; no request otherwise. */
+  async autoRouteStep(): Promise<number> {
+    const auto = this.autoRoute;
+    if (!auto || this.busy || Date.now() < auto.retryAt) return 0;
+    if (!auto.runs.length) {
+      this.autoRoute = null;
+      this.info(`Auto-route done: all ${auto.total} job(s) queued.`);
+      return 0;
+    }
+    const free = this.taskLimit - this.queue.length;
+    let energy = this.character.energy;
+    const batch: RouteRun[] = [];
+    for (const run of auto.runs) {
+      if (batch.length >= free || run.energy > energy) break;
+      batch.push(run);
+      energy -= run.energy;
+    }
+    if (!batch.length) return 0;
+    const added = await this.guard('Auto-route', async () => {
+      const res = await this.tasks.add(this.queue.length, batch.map((b) => b.post), this.taskLimit);
+      // Jobs cost their energy when queued; without a server value, subtract what was accepted.
+      if (res.energy !== undefined) this.character.setEnergy(res.energy);
+      else if (res.added.length) this.character.setEnergy(this.character.energy - batch.slice(0, res.added.length).reduce((a, b) => a + b.energy, 0));
+      this.queue.push(...res.added);
+      return res;
+    });
+    if (this.autoRoute !== auto) return added?.added.length ?? 0; // stopped meanwhile
+    if (!added || !added.added.length) {
+      // Refused (energy/queue out of sync, job gone, …): retry in a minute instead of hammering.
+      for (const e of added?.errors ?? []) this.error(`Auto-route: ${e}`);
+      auto.retryAt = Date.now() + 60_000;
+      void this.refreshQueue();
+      return 0;
+    }
+    for (const e of added.errors) this.error(`Auto-route: ${e}`);
+    auto.runs = auto.runs.slice(added.added.length);
+    this.info(`Auto-route: queued ${added.added.map((t) => t.title).join(', ')} (${auto.runs.length} left).`);
+    if (!auto.runs.length) {
+      this.autoRoute = null;
+      this.info(`Auto-route done: all ${auto.total} job(s) queued.`);
+    }
+    this.changed();
+    return added.added.length;
+  }
+
+  stopAutoRoute(): void {
+    if (!this.autoRoute) return;
+    this.info(`Auto-route stopped (${this.autoRoute.runs.length} job(s) not queued).`);
+    this.autoRoute = null;
+    this.changed();
   }
 
   /** Marks the route's jobs on the map. */

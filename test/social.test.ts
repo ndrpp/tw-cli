@@ -420,6 +420,17 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
   const t = tui(state);
   try {
     await t.settle();
+    // Main view: chat strip under jobs/queue; Tab Tab focuses it, Enter + typing does not trigger shortcuts.
+    assert.match(t.plain(), /Slobozia/);
+    assert.match(t.plain(), /Bob: anyone selling ham\?/);
+    await t.keys('\t', '\t');
+    assert.match(t.plain(), /Enter write · ←\/→ room/);
+    await t.keys('\r');
+    await t.type('more ham m q');
+    await t.keys('\r');
+    assert.deepEqual(said, ['more ham m q']);
+    said.length = 0;
+    await t.keys('\t');
     // Mail: reports listed, Enter opens one, Tab → telegrams, Enter reads, n composes and sends.
     await t.keys('M');
     await t.settle(300);
@@ -478,7 +489,10 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
     await t.keys('D');
     await t.settle(300);
     assert.match(t.plain(), /Dusty Joe/);
-    await t.keys('\x1b');
+    // W jumps back to the jobs view from any screen.
+    t.reset();
+    await t.keys('W');
+    assert.match(t.plain(), /Task queue/);
 
     // Chat: history shown; Enter, type, Enter sends.
     await t.keys('C');
@@ -505,4 +519,95 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
   } finally {
     t.done();
   }
+});
+
+test('sync: background game.php re-read updates health/money and flags a drop (no push after being dueled)', async () => {
+  const b = bootstrap();
+  const client = new GameClient({ worldUrl: WORLD, h: b.h, jar: new CookieJar(), identity: { userAgent: 'UA', acceptLanguage: 'en' }, policy: FAST });
+  let next = b;
+  let reopened = 0;
+  const s = new GameState({ client, bootstrap: b }, async () => (reopened++, { client: {} as any, bootstrap: next }));
+  assert.equal(s.character.health, 300);
+
+  next = bootstrap();
+  next.character = { ...next.character, health: 120, cash: 20, experience: 1500, pos: { x: 200, y: 200 }, taskQueue: [] };
+  await s.syncCharacter();
+  assert.equal(reopened, 1);
+  assert.equal(s.character.health, 120);
+  assert.equal(s.character.cash, 20);
+  assert.equal(s.character.experience, 1500);
+  assert.deepEqual(s.character.position, { x: 200, y: 200 });
+  assert.equal(s.client, client, 'keeps the live client');
+  assert.ok(s.lastSync > 0);
+  assert.match(s.log.at(-1)!.msg, /Health 300 → 120, cash \$50 → \$20\. Attacked\?/);
+
+  // Nothing changed: no warning.
+  const n = s.log.length;
+  await s.syncCharacter();
+  assert.equal(s.log.length, n);
+
+  // Failure is logged, not thrown, and does not lock other actions.
+  const bad = new GameState({ client, bootstrap: bootstrap() }, async () => { throw new Error('down'); });
+  await bad.syncCharacter('report');
+  assert.match(bad.log.at(-1)!.msg, /Sync \(report\): down/);
+  assert.equal(bad.busy, false);
+});
+
+test('auto-route: queues the rest of a route as queue space and energy allow, in order', async () => {
+  fakeServer();
+  const s = makeState();
+  let nextId = 100;
+  const added: number[] = [];
+  routes['/game.php?window=task&action=add'] = (body) => {
+    const idx = [...new Set([...params(body).keys()].map((k) => k.match(/^tasks\[(\d+)\]/)?.[1]).filter(Boolean))] as string[];
+    const tasks: Record<string, unknown> = {};
+    for (const i of idx) {
+      const jobId = Number(params(body).get(`tasks[${i}][jobId]`));
+      added.push(jobId);
+      tasks[i] = { task: { queue_id: nextId++, type: 'job', date_start: 1, date_done: 2, data: { job_id: jobId, title: `job${jobId}`, coords: { x: 1, y: 1 } } } };
+    }
+    return { tasks };
+  };
+  const job = (id: number): any => ({ id, groupid: 1, name: `job${id}`, durations: { long: 3600 }, values: { long: { duration: 3600, energy: 12, money: 1, experience: 1, luck: 0, items: [] } } });
+  const stop = (id: number, runs: number) => ({ job: job(id), at: { x: 1, y: 1 }, duration: 'long', runs, travel: 0, gains: {}, energy: 12 * runs, seconds: 0, xp: 0, money: 0 });
+  const plan: any = { needs: [], stops: [stop(1, 2), stop(2, 3)], unmet: [], leftover: {}, totals: { energy: 60, seconds: 0, travel: 0, xp: 0, money: 0, runs: 5 }, fitRuns: 3, energyShort: 24 };
+
+  s.character.setEnergy(40); // 3 × 12 fit; queue limit 4 (no automation)
+  await s.queueRoute(plan, { auto: true, label: 'this quest' });
+  assert.deepEqual(added, [1, 1, 2]);
+  assert.equal(s.queue.length, 3);
+  assert.equal(s.autoRoute?.runs.length, 2);
+
+  // No energy for the next run: no request.
+  const n = calls.length;
+  await s.autoRouteStep();
+  assert.equal(calls.length, n);
+
+  // Energy back, but only one free slot.
+  s.character.setEnergy(100);
+  await s.autoRouteStep();
+  assert.deepEqual(added, [1, 1, 2, 2]);
+  assert.equal(s.autoRoute?.runs.length, 1);
+
+  // Queue full: no request. A task finishes → the last run goes in and auto-route ends.
+  await s.autoRouteStep();
+  assert.equal(added.length, 4);
+  s.queue.shift();
+  await s.autoRouteStep();
+  assert.deepEqual(added, [1, 1, 2, 2, 2]);
+  assert.equal(s.autoRoute, null);
+  assert.match(s.log.at(-1)!.msg, /Auto-route done: all 5 job\(s\) queued/);
+
+  // Refused by the server: retried later, not every second; x (stop) clears it.
+  routes['/game.php?window=task&action=add'] = () => ({ tasks: { 0: { error: true, msg: 'Not enough energy' } } });
+  routes['/game.php?window=task&mode=get_tasks'] = () => ({ queue: [] });
+  s.queue = [];
+  await s.queueRoute(plan, { auto: true });
+  assert.ok(s.log.some((l) => /Auto-route: Not enough energy/.test(l.msg)));
+  assert.ok((s.autoRoute as any).retryAt > Date.now());
+  const m = calls.length;
+  await s.autoRouteStep();
+  assert.equal(calls.length, m);
+  s.stopAutoRoute();
+  assert.equal(s.autoRoute, null);
 });

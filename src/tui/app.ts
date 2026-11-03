@@ -1,5 +1,5 @@
 // Full-screen TUI (ink, without JSX so Node can run the TypeScript directly).
-// Layout: status header · jobs list + job details | task queue · log · key help.
+// Layout: status header · screen nav bar · jobs list + job details | task queue · chat strip · log · key help.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useWindowSize } from 'ink';
 import { JOB_SORTS, type GameState, type JobOption, type JobSort } from '../game/state.ts';
@@ -12,14 +12,17 @@ import { QuestsScreen } from './quests.ts';
 import { MailScreen } from './mail.ts';
 import { TradeScreen } from './trade.ts';
 import { DuelsScreen } from './duels.ts';
-import { ChatScreen } from './chat.ts';
+import { ChatPanel, ChatScreen, chatRoomIds } from './chat.ts';
 import { defaultRoom } from '../game/hotel.ts';
 import { poisNear } from '../game/poi.ts';
 
 const h = React.createElement;
 const QUEUE_POLL_MS = 60_000;
+/** Full character re-read: other players' duels change health/money with no live push. */
+const SYNC_MS = 3 * 60_000;
 
-type Focus = 'jobs' | 'queue';
+type Focus = 'jobs' | 'queue' | 'chat';
+const FOCUS_ORDER: Focus[] = ['jobs', 'queue', 'chat'];
 const LIVE_COLOR = { off: 'gray', connecting: 'yellow', on: 'green', error: 'red' } as const;
 
 function useGameState(state: GameState): number {
@@ -48,6 +51,7 @@ function Header({ state }: { state: GameState }) {
         state.unread.messages ? h(Text, { color: 'yellow' }, ' · new telegram (M)') : '',
         state.live?.unreadRooms.size ? h(Text, { color: 'cyan' }, ` · chat ${state.live.unreadRooms.size} (C)`) : '',
         state.quests.some((q) => q.finishable) ? h(Text, { color: 'green' }, ` · ${state.quests.filter((q) => q.finishable).length} quest(s) to finish`) : '',
+        state.autoRoute ? h(Text, { color: 'magenta' }, ` · auto-route ${state.autoRoute.runs.length} left`) : '',
         state.busy ? ' · working…' : ''),
     ),
     h(Text, { wrap: 'truncate' },
@@ -56,6 +60,7 @@ function Header({ state }: { state: GameState }) {
       h(Text, { color: 'green' }, 'XP '), xpText(c),
       h(Text, { color: 'green' }, money(c.cash)), ` bank ${money(c.deposit)}   `,
       h(Text, { dimColor: true }, `pos ${c.position.x},${c.position.y}`),
+      state.lastSync ? h(Text, { dimColor: true }, ` · synced ${formatDuration(Math.floor((Date.now() - state.lastSync) / 1000))} ago`) : '',
     ),
   );
 }
@@ -74,7 +79,7 @@ function sortCell(o: JobOption, sort: JobSort): string {
   if (!v) return '';
   if (sort === 'xp') return `${v.experience}xp`;
   if (sort === 'money') return money(v.money);
-  if (sort === 'luck') return `${Math.round(v.luck * 100)}%`;
+  if (sort === 'luck') return money(o.job.luckValue[1]);
   return '';
 }
 
@@ -170,6 +175,8 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   const [questsOnGivers, setQuestsOnGivers] = useState(false);
   const capture = useRef(false);
   const [focus, setFocus] = useState<Focus>('jobs');
+  const [chatRoom, setChatRoom] = useState(0);
+  const [chatDraft, setChatDraft] = useState<string | null>(null);
   const [jobSel, setJobSel] = useState(0);
   const [queueSel, setQueueSel] = useState(0);
   const [filter, setFilter] = useState('');
@@ -188,11 +195,17 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   // 1 s ticker: countdowns, regen, local task completion (like TaskQueueUi.tick); poll queue.
   useEffect(() => {
     let lastPoll = Date.now();
+    let lastSync = Date.now();
     const timer = setInterval(() => {
       const finished = state.tick();
-      if (finished || Date.now() - lastPoll > QUEUE_POLL_MS) {
+      if (Date.now() - Math.max(lastSync, state.lastSync) > SYNC_MS) {
+        lastSync = lastPoll = Date.now();
+        void state.syncCharacter();
+      } else if (finished || Date.now() - lastPoll > QUEUE_POLL_MS) {
         lastPoll = Date.now();
         void state.refreshQueue();
+      } else if (state.autoRoute) {
+        void state.autoRouteStep();
       }
       setTick((t) => t + 1);
     }, 1000);
@@ -210,7 +223,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   const width = columns || 100;
   const height = rows || 30;
   const logLines = height >= 32 ? 5 : 3;
-  const bodyH = Math.max(10, height - 4 - logLines - 1);
+  const bodyH = Math.max(10, height - 4 - 1 - logLines - 1);
   const grid = mapGridSize(width, bodyH);
 
   const options = useMemo(() => state.jobOptions(filter, { sort: jobSort, showAll: showAllJobs }), [state, state.jobs, state.world, state.items, state.queue.length, filter, jobSort, showAllJobs]);
@@ -297,6 +310,18 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       return;
     }
     if (overlay === 'help') return setOverlay(null);
+    if (chatDraft !== null && mode === 'main') {
+      if (key.escape) return setChatDraft(null);
+      if (key.return) {
+        const room = chatRoomIds(state)[chatRoom];
+        setChatDraft(null);
+        if (room && chatDraft.trim()) void state.chatSay(room, chatDraft);
+        return;
+      }
+      if (key.backspace || key.delete) return setChatDraft(chatDraft.slice(0, -1));
+      if (input && !key.ctrl && !key.meta) setChatDraft(chatDraft + input);
+      return;
+    }
     if (filtering) {
       if (key.return || key.escape) setFiltering(false);
       if (key.escape) setFilter('');
@@ -354,6 +379,11 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       return openScreen('quests');
     }
     if (input === 'L') return state.live?.active ? state.stopLive() : state.startLive();
+    if (input === 'W') {
+      capture.current = false;
+      setMapPanel(false);
+      return setMode('main');
+    }
     if (input === 'M') return openScreen('mail');
     if (input === '$') return openScreen('trade');
     if (input === 'D') return openScreen('duels');
@@ -410,7 +440,21 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       return;
     }
 
-    if (key.tab) return setFocus((f) => (f === 'jobs' ? 'queue' : 'jobs'));
+    if (key.tab) {
+      const order = chatH ? FOCUS_ORDER : FOCUS_ORDER.filter((f) => f !== 'chat');
+      return setFocus((f) => order[(order.indexOf(f) + (key.shift ? order.length - 1 : 1)) % order.length]!);
+    }
+    if (focus === 'chat') {
+      const n = chatRoomIds(state).length;
+      if (key.leftArrow || input === 'h') return setChatRoom((i) => (n ? (Math.min(i, n - 1) + n - 1) % n : 0));
+      if (key.rightArrow || input === 'l') return setChatRoom((i) => (n ? (Math.min(i, n - 1) + 1) % n : 0));
+      if (key.return) {
+        if (!state.live?.active) return state.error('Live updates are off: press L to connect to chat.');
+        if (!n) return state.error('No chat room yet (still connecting).');
+        return setChatDraft('');
+      }
+      return;
+    }
     const move = (d: number) => {
       if (focus === 'jobs') setJobSel(Math.max(0, Math.min(options.length - 1, jobIdx + d)));
       else setQueueSel(Math.max(0, Math.min(state.queue.length - 1, queueIdx + d)));
@@ -439,6 +483,11 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   const rightW = Math.max(24, width - leftW);
   // JobDetail: 2 border + 3 info lines + 3 durations (+1 when the queue is full).
   const detailH = 9 + (state.queue.length >= state.taskLimit ? 1 : 0);
+  // Jobs/detail/queue keep what the detail and a few queue rows need; the rest goes to chat.
+  const topMin = detailH + 6;
+  const chatSpace = bodyH - Math.max(topMin, Math.ceil(bodyH * 0.55));
+  const chatH = chatSpace >= 5 ? chatSpace : 0;
+  const topH = bodyH - chatH;
   const help = filtering
     ? 'type to filter · Enter keep · Esc clear'
     : searching
@@ -446,14 +495,18 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       : mode === 'map'
         ? mapPanel
           ? '↑↓ select · 1/2/3 start job · w walk · o quests · s hotel · Esc back · ? help'
-          : `arrows pan · +/- zoom · . me · / find · p places · v layers · Enter select${state.mapHighlight ? ' · x clear !' : ''} · m jobs · ? help`
+          : `arrows pan · +/- zoom · . me · / find · v layers · Enter select${state.mapHighlight ? ' · x clear !' : ''}`
         : mode === 'char'
           ? '← → tab · Tab pane · Enter wear/take off · +/- skills · i/Esc back · ? help'
           : mode === 'quests'
             ? 'Tab log/givers · Enter finish/accept · x cancel · w walk · o/Esc back · ? help'
             : onScreen
               ? `${{ mail: 'M', trade: '$', duels: 'D', chat: 'C' }[mode as 'mail']}/Esc back · ? help`
-              : 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel · m map · o quests · M mail · $ trade · D duels · C chat · ? help';
+              : chatDraft !== null
+                ? 'type a message · Enter send · Esc cancel'
+                : focus === 'chat'
+                  ? 'Enter write · ←/→ room · Tab pane · C full chat · ? help'
+                  : 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel';
 
   let body;
   if (overlay === 'help') body = h(HelpOverlay, { mode, width, height: bodyH });
@@ -464,12 +517,15 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   else if (mode === 'map') {
     body = h(MapScreen, { state, view, width, height: bodyH, entries, selected: mapIdx, panelFocused: mapPanel, search, searching });
   } else {
-    body = h(Box, { height: bodyH },
-      h(JobsPane, { options, selected: jobIdx, focused: focus === 'jobs', height: bodyH, width: leftW, filter, filtering, sort: jobSort, showAll: showAllJobs }),
-      h(Box, { flexDirection: 'column', width: rightW },
-        h(JobDetail, { option: options[jobIdx], state }),
-        h(QueuePane, { state, selected: queueIdx, focused: focus === 'queue', width: rightW, confirm: confirmCancel, maxRows: Math.max(1, bodyH - detailH - 3) }),
+    body = h(Box, { flexDirection: 'column', height: bodyH },
+      h(Box, { height: topH },
+        h(JobsPane, { options, selected: jobIdx, focused: focus === 'jobs', height: topH, width: leftW, filter, filtering, sort: jobSort, showAll: showAllJobs }),
+        h(Box, { flexDirection: 'column', width: rightW },
+          h(JobDetail, { option: options[jobIdx], state }),
+          h(QueuePane, { state, selected: queueIdx, focused: focus === 'queue', width: rightW, confirm: confirmCancel, maxRows: Math.max(1, topH - detailH - 3) }),
+        ),
       ),
+      chatH ? h(ChatPanel, { state, width, height: chatH, focused: focus === 'chat', roomIdx: chatRoom, draft: chatDraft }) : null,
     );
   }
 
@@ -490,10 +546,43 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
 
   return h(Box, { flexDirection: 'column', width, height },
     h(Header, { state }),
+    h(NavBar, { mode, overlay, width }),
     body,
     screen,
     h(LogPane, { state, lines: logLines }),
     h(Text, { dimColor: true, wrap: 'truncate' }, ` ${help}`),
+  );
+}
+
+/** Screens and their jump keys; the key is highlighted, the open screen shown inverted. */
+const NAV: { key: string; label: string; mode?: Mode; overlay?: string }[] = [
+  { key: 'W', label: 'jobs', mode: 'main' },
+  { key: 'm', label: 'map', mode: 'map' },
+  { key: 'i', label: 'character', mode: 'char' },
+  { key: 'o', label: 'quests', mode: 'quests' },
+  { key: 'M', label: 'mail', mode: 'mail' },
+  { key: '$', label: 'trade', mode: 'trade' },
+  { key: 'D', label: 'duels', mode: 'duels' },
+  { key: 'C', label: 'chat', mode: 'chat' },
+  { key: 's', label: 'sleep', overlay: 'hotel' },
+  { key: 'p', label: 'places', overlay: 'poi' },
+  { key: '?', label: 'help', overlay: 'help' },
+];
+
+function NavBar({ mode, overlay, width }: { mode: Mode; overlay: string | null; width: number }) {
+  const items = NAV.map((n) => {
+    const active = overlay ? n.overlay === overlay : n.mode === mode;
+    return { ...n, active };
+  });
+  return h(Box, { width, paddingX: 1 },
+    h(Text, { wrap: 'truncate' },
+      ...items.flatMap((n, i) => [
+        i ? h(Text, { key: `s${i}` }, '  ') : null,
+        h(Text, { key: n.label, inverse: n.active, color: n.active ? 'cyan' : undefined },
+          h(Text, { bold: true, color: n.active ? undefined : 'yellow' }, `${n.key} `),
+          h(Text, { dimColor: !n.active }, n.label)),
+      ]),
+    ),
   );
 }
 

@@ -88,3 +88,44 @@ export function ChatScreen({ state, width, height, onCapture, onExit, active = t
   );
   return h(Box, { width, height }, left, right);
 }
+
+/** Rooms (town, saloon, …) then whispers, in the order both chat views show them. */
+export function chatRoomIds(state: ScreenProps['state']): string[] {
+  const live = state.live;
+  return live ? [...live.rooms.keys(), ...[...live.history.keys()].filter((k) => k.startsWith('tell:'))] : [];
+}
+
+/**
+ * Chat strip of the main view: one room's latest lines and an input line. The App owns the
+ * room index and draft (Tab focuses it, ←/→ switch room, Enter write); C opens the full screen.
+ */
+export function ChatPanel({ state, width, height, focused, roomIdx, draft }: {
+  state: ScreenProps['state']; width: number; height: number; focused: boolean; roomIdx: number; draft: string | null;
+}) {
+  const live = state.live;
+  const ids = chatRoomIds(state);
+  const room = ids[Math.min(roomIdx, Math.max(0, ids.length - 1))];
+  const lines = room && live ? live.history.get(room) ?? [] : [];
+  useEffect(() => {
+    if (room && live?.unreadRooms.delete(room)) state.changed();
+  }, [room, lines.length]);
+
+  const tw = Math.max(10, width - 4);
+  const wrapped = lines.flatMap((l) => {
+    const time = new Date(l.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return wrap(`${time} ${l.from}: ${l.text}`, tw).map((t) => ({ t, own: l.own }));
+  });
+  const shown = wrapped.slice(-Math.max(1, height - 4));
+  const others = ids.filter((id) => id !== room && live?.unreadRooms.has(id)).length;
+  const title = room && live ? live.roomTitle(room) : 'Chat';
+  const status = !live?.active ? 'live updates off (L)' : ids.length ? `${Math.min(roomIdx, ids.length - 1) + 1}/${ids.length}${others ? ` · ${others} unread` : ''}` : 'connecting…';
+  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: focused ? 'cyan' : 'gray', width, height, paddingX: 1, flexShrink: 0 },
+    h(Text, { bold: true, wrap: 'truncate' }, `${ids.length > 1 ? '◂ ' : ''}${title}${ids.length > 1 ? ' ▸' : ''}`, h(Text, { dimColor: true, bold: false }, `  ${status}`)),
+    ...shown.map((l, i) => h(Text, { key: i, color: l.own ? 'cyan' : undefined, wrap: 'truncate' }, l.t || ' ')),
+    lines.length || !room ? null : h(Text, { dimColor: true }, 'No messages since you connected.'),
+    h(Box, { flexGrow: 1 }),
+    draft !== null
+      ? h(Text, { wrap: 'truncate' }, h(Text, { color: 'cyan' }, '> '), `${draft}▏`)
+      : h(Text, { dimColor: true, wrap: 'truncate' }, focused ? 'Enter write · ←→ room · C full chat (whispers)' : 'Tab here to chat'),
+  );
+}
