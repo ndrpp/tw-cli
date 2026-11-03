@@ -483,6 +483,10 @@ test('quest item sources: jobs whose yields drop the item, nearest first; g mark
 
 test('TUI: loading screen, job filter by product + sort + LP toggle, map layers, quest route + estimates', async () => {
   fakeServer();
+  routes['/game.php?window=job&mode=job'] = (body) => {
+    const p = new URLSearchParams(body);
+    return { id: Number(p.get('jobId')), danger: 37, motivation: 0.55 };
+  };
   const state = makeState();
   const { JobCatalog } = await import('../src/game/jobs.ts');
   routes['/game.php?window=building_quest&mode='] = () => ({ questEmployer: [] });
@@ -538,6 +542,9 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     assert.match(plain(), /Tending pigs/);
     assert.match(plain(), /Luck \$400/);
     assert.match(plain(), /Drops: Ham 200%/);
+    await settle(500);
+    assert.match(plain(), /motiv 55%/);
+    assert.match(plain(), /danger 37%/);
     assert.equal(state.jobOptions('ham').map((o) => o.job.name).join(), 'Tending pigs');
     await keys('/', '\x1b');
     await keys('a');

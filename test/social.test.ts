@@ -521,6 +521,32 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
   }
 });
 
+test('job detail: danger and motivation come from job/job, concurrent loads are deduped', async () => {
+  fakeServer();
+  routes['/game.php?window=job&mode=job'] = (body) => {
+    const p = new URLSearchParams(body);
+    assert.equal(p.get('jobId'), '1');
+    return { id: 1, danger: 37, motivation: 0.55 };
+  };
+  const state = makeState();
+  state.jobs = [{
+    id: 1, groupid: 12, name: 'Tending pigs', shortname: 'swine', level: 4, malus: 1,
+    skills: {}, durations: { short: 15, middle: 600, long: 3600 }, yields: {},
+    jobPoints: 50, workPoints: 2, laborPoints: 49, motivation: 1, danger: null,
+    luckValue: [0, 400], values: {},
+  }];
+  state.world.jobGroups = new Map([[12, [{ x: 120, y: 100 }]]]);
+  const option = state.jobOptions('pigs')[0]!;
+  assert.ok(option.at);
+  assert.equal(option.job.danger, null);
+  await Promise.all([state.loadJobDetail(option.job, option.at), state.loadJobDetail(option.job, option.at)]);
+  assert.equal(option.job.danger, 37);
+  assert.equal(option.job.motivation, 0.55);
+  assert.equal(calls.filter((c) => c.url.includes('window=job&mode=job')).length, 1);
+  await state.loadJobDetail(option.job, option.at);
+  assert.equal(calls.filter((c) => c.url.includes('window=job&mode=job')).length, 2);
+});
+
 test('sync: background game.php re-read updates health/money and flags a drop (no push after being dueled)', async () => {
   const b = bootstrap();
   const client = new GameClient({ worldUrl: WORLD, h: b.h, jar: new CookieJar(), identity: { userAgent: 'UA', acceptLanguage: 'en' }, policy: FAST });

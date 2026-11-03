@@ -18,6 +18,8 @@ import { poisNear } from '../game/poi.ts';
 
 const h = React.createElement;
 const QUEUE_POLL_MS = 60_000;
+/** danger is only in job/job and motivation changes as jobs repeat; refresh the selected job. */
+const JOB_DETAIL_POLL_MS = 60_000;
 /** Full character re-read: other players' duels change health/money with no live push. */
 const SYNC_MS = 3 * 60_000;
 
@@ -113,6 +115,7 @@ function state0(filter: string, showAll: boolean): string {
 function JobDetail({ option, state }: { option: JobOption | undefined; state: GameState }) {
   if (!option) return h(Box, { borderStyle: 'round', borderColor: 'gray', paddingX: 1 }, h(Text, { dimColor: true }, 'No job selected'));
   const { job, at, way } = option;
+  const danger = job.danger === null ? '—' : `${job.danger}%`;
   const durRows = DURATION_KEYS.map((k, i) => {
     const v = job.values[k];
     if (!v) return null;
@@ -122,7 +125,7 @@ function JobDetail({ option, state }: { option: JobOption | undefined; state: Ga
   });
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', paddingX: 1, flexShrink: 0 },
     h(Text, { bold: true, wrap: 'truncate' }, `${job.name}  (lvl ${job.level})`),
-    h(Text, { wrap: 'truncate' }, `${job.laborPoints} LP · motiv ${Math.round((job.motivation ?? 0) * 100)}% · danger ${job.danger}`),
+    h(Text, { wrap: 'truncate' }, `${job.laborPoints} LP · motiv ${Math.round((job.motivation ?? 0) * 100)}% · danger ${danger}`),
     h(Text, { wrap: 'truncate' }, h(Text, { color: 'yellow' }, 'Luck '), job.luckValue[1] > 0 ? money(job.luckValue[1]) : '—'),
     h(Text, { dimColor: true, wrap: 'truncate' }, at ? `at ${at.x},${at.y} · travel ${formatDuration(way ?? 0)}` : 'No location known'),
     ...durRows,
@@ -238,6 +241,21 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   const options = useMemo(() => state.jobOptions(filter, { sort: jobSort, showAll: showAllJobs }), [state, state.jobs, state.world, state.items, state.queue.length, filter, jobSort, showAllJobs]);
   const jobIdx = Math.min(jobSel, Math.max(0, options.length - 1));
   const queueIdx = Math.min(queueSel, Math.max(0, state.queue.length - 1));
+
+  // The job list (work/index) has no danger and stale motivation. Fetch the selected job's
+  // job/job detail when the selection changes, when the queue changes, and once a minute.
+  useEffect(() => {
+    const selected = options[jobIdx];
+    if (mode !== 'main' || !selected?.at) return;
+    const { job, at } = selected;
+    const timer = setTimeout(() => void state.loadJobDetail(job, at), 300);
+    const poll = setInterval(() => void state.loadJobDetail(job, at), JOB_DETAIL_POLL_MS);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(poll);
+    };
+  }, [state, mode, options[jobIdx]?.job.id, options[jobIdx]?.at?.x, options[jobIdx]?.at?.y, state.jobs, state.queue.length]);
+
   const entries = mode === 'map' ? entriesAt(state, view, grid.cols, grid.rows) : [];
   const mapIdx = Math.min(mapSel, Math.max(0, entries.length - 1));
   const pois = overlay === 'poi' ? poisNear(state, view, poiFilter) : [];
