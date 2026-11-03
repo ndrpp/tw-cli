@@ -68,13 +68,14 @@ function decodeEntities(text: string): string {
 /** HTML → plain text for the terminal. `compact` drops blank lines (reports are field lists). */
 export function plainText(html: unknown, opts: { compact?: boolean } = {}): string {
   const text = String(html ?? '')
-    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<br\b[^>]*>/gi, '\n')
     .replace(/<\/(?:p|div|li|tr|h[1-6]|table|thead|tbody|ul|ol|dl|dt|dd|blockquote|section|article|center|pre)\s*>/gi, '\n')
     .replace(/<(?:p|div|li|tr|h[1-6]|table|thead|tbody|ul|ol|dl|dt|dd|blockquote|section|article|center|pre)(?:\s[^>]*)?>/gi, '\n')
     .replace(/<\/t[dh]\s*>/gi, '\t')
     .replace(/<[^>]+>/g, '');
   return decodeEntities(text)
     .replace(/\r\n?/g, '\n')
+    .replace(/\u00a0/g, ' ')
     .replace(/\t+/g, '  ')
     .replace(/[ \t\f\v]+/g, ' ')
     .replace(/ *\n */g, '\n')

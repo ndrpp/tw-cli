@@ -50,6 +50,113 @@ export function bbText(s: unknown): string {
   return plainText(String(s ?? '').replace(/\[\/?(b|i|u|del|quote|player|town|fort|url|color|size)(=[^\]]*)?\]/gi, ''));
 }
 
+const JOB_LABELS = ['Motivation', 'Time', 'Money', 'Pacific Bonds', 'Bonds', 'Experience', 'Luck', 'Items Found'] as const;
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const JOB_LABEL_RE = new RegExp(`^(${JOB_LABELS.map(escapeRe).join('|')})(?![A-Za-z])\\s*:?\\s*(.+)$`, 'i');
+const NUMBER_VALUE_RE = /^\d[\d.,]*(?:\s*%|\s*(?:Points?|s|min|h|hours?|days?))?$/i;
+const MONEY_VALUE_RE = /^[$€£]\s*\d[\d.,]*(?:\s*%|\s*(?:Points?|s|min|h|hours?|days?))?$/i;
+
+const cleanLabel = (s: string) => s.replace(/:\s*$/, '').trim();
+const isValue = (s: string) => NUMBER_VALUE_RE.test(s) || MONEY_VALUE_RE.test(s);
+const isKnownLabel = (s: string) => {
+  const label = cleanLabel(s).toLowerCase();
+  return JOB_LABELS.some((x) => x.toLowerCase() === label);
+};
+const canonicalLabel = (s: string) => {
+  const label = cleanLabel(s).toLowerCase();
+  return JOB_LABELS.find((x) => x.toLowerCase() === label) ?? cleanLabel(s);
+};
+const isGenericLabel = (s: string) => {
+  const label = cleanLabel(s);
+  return label.length >= 2 && label.length <= 30 && /^[A-Z]/.test(label) && !/[.!?]$/.test(label) && !isValue(label);
+};
+const normalizeValue = (s: string) => s.trim()
+  .replace(/^([$€£])\s+/, '$1')
+  .replace(/\s+%$/, '%')
+  .replace(/^([+-])\s+/, '$1')
+  .replace(/\s+(Points?)$/i, ' $1');
+
+function formatItems(lines: string[]): string[] {
+  const items: string[] = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (/^no items? (were|was) found/i.test(line)) return [];
+    if (/^\d+$/.test(line)) {
+      const last = items[items.length - 1];
+      if (last && !/\sx\s\d+$/.test(last)) items[items.length - 1] = `${last} x ${line}`;
+      else items.push(line);
+      continue;
+    }
+    const match = /^(.+?)\s*[x×]\s*(\d+)$/i.exec(line)
+      ?? /^(.+?)\s*\((\d+)\)$/.exec(line)
+      ?? /^(.+?):\s*(\d+)$/.exec(line)
+      ?? /^(.+?)\s+(\d+)$/.exec(line);
+    if (match) items.push(`${match[1]!.trim()} x ${match[2]}`);
+    else items.push(line);
+  }
+  return items;
+}
+
+/** Job report pages are field lists; join label/value pairs and compact the items section. */
+export function formatReport(text: string, type = ''): string {
+  if (type.toLowerCase() !== 'job') return text;
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const out: string[] = [];
+  const push = (line: string) => {
+    const value = line.trim();
+    if (value && out[out.length - 1] !== value) out.push(value);
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (/^items found:?$/i.test(line)) {
+      const raw: string[] = [];
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        if (isKnownLabel(lines[j]!)) break;
+        if (/^no items? (were|was) found/i.test(lines[j]!)) {
+          j++;
+          break;
+        }
+        raw.push(lines[j]!);
+      }
+      const items = formatItems(raw);
+      push(items.length ? `Items: ${items.join(', ')}` : 'Items: none');
+      i = j - 1;
+      continue;
+    }
+    const inlineItems = /^items found:?\s+(.+)$/i.exec(line);
+    if (inlineItems) {
+      const value = inlineItems[1]!.trim();
+      push(`Items: ${/^no items? (were|was) found/i.test(value) ? 'none' : value}`);
+      continue;
+    }
+    const known = JOB_LABEL_RE.exec(line);
+    if (known) {
+      const value = normalizeValue(known[2]!);
+      if (isValue(value)) {
+        push(`${canonicalLabel(known[1]!)}: ${value}`);
+        continue;
+      }
+    }
+    const next = lines[i + 1];
+    if (next) {
+      const knownLabel = isKnownLabel(line);
+      const genericLabel = !knownLabel && isGenericLabel(line) && NUMBER_VALUE_RE.test(next);
+      if ((knownLabel && isValue(next)) || genericLabel) {
+        const value = normalizeValue(next);
+        let j = i + 1;
+        while (j + 1 < lines.length && normalizeValue(lines[j + 1]!) === value) j++;
+        push(`${knownLabel ? canonicalLabel(line) : cleanLabel(line)}: ${value}`);
+        i = j;
+        continue;
+      }
+    }
+    push(line);
+  }
+  return out.join('\n');
+}
+
 function fail(json: any, what: string): never {
   throw new Error(plainText(json?.msg ?? json?.error ?? `${what} failed`));
 }
@@ -77,7 +184,8 @@ export class MailApi {
   async report(id: number, hash = ''): Promise<Report> {
     const json = await this.client.remoteCallMode('reports', 'show_report', { report_id: id, hash, animated: 0, simpleheader: 0 });
     if (json.error) fail(json, 'reports/show_report');
-    return { id, title: plainText(json.title), date: plainText(json.date_received), type: String(json.reportType ?? ''), text: plainText(json.page, { compact: true }) };
+    const type = String(json.reportType ?? '');
+    return { id, title: plainText(json.title), date: plainText(json.date_received), type, text: formatReport(plainText(json.page, { compact: true }), type) };
   }
 
   async deleteReport(id: number, folder: ReportFolder = 'all'): Promise<void> {
