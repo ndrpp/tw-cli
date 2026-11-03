@@ -98,9 +98,43 @@ function formatItems(lines: string[]): string[] {
   return items;
 }
 
-/** Job report pages are field lists; join label/value pairs and compact the items section. */
-export function formatReport(text: string, type = ''): string {
+/**
+ * Found items of a job report: show_report's reportInfo.items is [[itemId, ?, count, type], …]. The page only
+ * has empty placeholders the browser fills from its js (tw2widget.Item(...).setCount(n)).
+ */
+export function reportItems(info: unknown, itemName: (id: number) => string): string[] {
+  const items = (info as { items?: unknown } | null)?.items;
+  if (!Array.isArray(items)) return [];
+  return items.filter((i) => Array.isArray(i) && Number(i[0])).map((i) => `${itemName(Number(i[0]))} x ${Number(i[2]) || 1}`);
+}
+
+/** The report list's popupData shows found items as one <img alt="name"> each: "name x count", in order. */
+export function popupItems(html: unknown): string[] {
+  const counts = new Map<string, number>();
+  for (const m of String(html ?? '').matchAll(/<img[^>]*src="[^"]*\/items\/[^"]*"[^>]*alt="([^"]+)"/g)) {
+    const name = plainText(m[1]);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return [...counts].map(([n, c]) => `${n} x ${c}`);
+}
+
+/**
+ * Job report pages are field lists; join label/value pairs and compact the items section. `items` (from
+ * reportItems) replaces the page's items section, which is empty in the HTML.
+ */
+export function formatReport(text: string, type = '', items: string[] = []): string {
   if (type.toLowerCase() !== 'job') return text;
+  const out = formatJobReport(text);
+  if (!items.length) return out;
+  const line = `Items: ${items.join(', ')}`;
+  const lines = out.split('\n');
+  const at = lines.findIndex((l) => /^Items:/.test(l));
+  if (at >= 0) lines[at] = line;
+  else lines.push(line);
+  return lines.join('\n');
+}
+
+function formatJobReport(text: string): string {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
   const out: string[] = [];
   const push = (line: string) => {
@@ -157,6 +191,25 @@ export function formatReport(text: string, type = ''): string {
   return out.join('\n');
 }
 
+/** popupData field labels are icons (images/job/clock.png …): their words, so the preview is not bare numbers. */
+const POPUP_ICONS: Record<string, string> = {
+  clock: 'Time', dollar: 'Money', upb: 'Bonds', experience: 'XP', danger: 'Danger', motivation: 'Motivation', luck: 'Luck', star: 'XP',
+};
+
+/** The report list's popupData as text: icon labels named, item images left out (popupItems names them). */
+export function popupText(html: unknown): string {
+  const labelled = String(html ?? '')
+    .replace(/<img[^>]*src="[^"]*\/items\/[^"]*"[^>]*>/gi, '')
+    .replace(/<img[^>]*src="[^"]*\/([a-z_]+)\.png"[^>]*>/gi, (_, icon: string) => (POPUP_ICONS[icon.toLowerCase()] ? `${POPUP_ICONS[icon.toLowerCase()]}: ` : ''));
+  return plainText(labelled).replace(/\n{2,}/g, '\n');
+}
+
+/** The list summary's "Found items:" heading is followed by images only: put the names after it. */
+function withItems(summary: string, items: string[]): string {
+  if (!items.length) return summary;
+  return /Found items:/i.test(summary) ? summary.replace(/Found items:/i, `Found items: ${items.join(', ')}`) : `${summary}\nFound items: ${items.join(', ')}`;
+}
+
 function fail(json: any, what: string): never {
   throw new Error(plainText(json?.msg ?? json?.error ?? `${what} failed`));
 }
@@ -164,8 +217,11 @@ function fail(json: any, what: string): never {
 export class MailApi {
   private client: GameClient;
 
-  constructor(client: GameClient) {
+  private itemName: (id: number) => string;
+
+  constructor(client: GameClient, itemName: (id: number) => string = (id) => `item ${id}`) {
     this.client = client;
+    this.itemName = itemName;
   }
 
   async reports(page = 1, folder: ReportFolder = 'all'): Promise<ReportList> {
@@ -176,7 +232,7 @@ export class MailApi {
       pages: Number(json.count) || 1,
       reports: (Array.isArray(json.reports) ? json.reports : []).map((r: any) => ({
         id: Number(r.report_id), title: plainText(r.title), hash: String(r.hash ?? ''), read: !!r.read,
-        date: plainText(r.date_received), summary: plainText(r.popupData ?? ''),
+        date: plainText(r.date_received), summary: withItems(popupText(r.popupData), popupItems(r.popupData)),
       })),
     };
   }
@@ -185,7 +241,7 @@ export class MailApi {
     const json = await this.client.remoteCallMode('reports', 'show_report', { report_id: id, hash, animated: 0, simpleheader: 0 });
     if (json.error) fail(json, 'reports/show_report');
     const type = String(json.reportType ?? '');
-    return { id, title: plainText(json.title), date: plainText(json.date_received), type, text: formatReport(plainText(json.page, { compact: true }), type) };
+    return { id, title: plainText(json.title), date: plainText(json.date_received), type, text: formatReport(plainText(json.page, { compact: true }), type, reportItems(json.reportInfo, this.itemName)) };
   }
 
   async deleteReport(id: number, folder: ReportFolder = 'all'): Promise<void> {

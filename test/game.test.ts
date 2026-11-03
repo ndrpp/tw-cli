@@ -244,3 +244,25 @@ test('TUI renders status, jobs and queue, and keys drive actions', { skip: !HAVE
     app.unmount();
   }
 });
+
+test('loading frame: the connect step shows as running with a timer, then as done with its duration', async () => {
+  const { LoadingFrame } = await import('../src/tui/app.ts');
+  const stdout = new PassThrough() as PassThrough & { columns: number; rows: number; isTTY: boolean };
+  Object.assign(stdout, { columns: 80, rows: 20, isTTY: true });
+  let out = '';
+  stdout.on('data', (d) => (out += d.toString()));
+  const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+  const t0 = Date.now() - 3_000;
+  const app = render(React.createElement(LoadingFrame, { width: 80, height: 20, steps: [{ label: 'Connecting to The West', status: 'running', startedAt: t0 }], keys: 'q quit' }), { stdout: stdout as any, patchConsole: false });
+  try {
+    await new Promise((r) => setTimeout(r, 50));
+    assert.match(plain(), /Connecting to The West\s+3 s/);
+    assert.match(plain(), /q quit/);
+    app.rerender(React.createElement(LoadingFrame, { width: 80, height: 20, steps: [{ label: 'Connecting to The West', status: 'done', startedAt: t0, endedAt: t0 + 1500 }, { label: 'Server clock', status: 'running', startedAt: Date.now() }], keys: 'Esc skip · q quit' }));
+    await new Promise((r) => setTimeout(r, 50));
+    assert.match(plain(), /✔ Connecting to The West\s+1\.5 s/);
+    assert.match(plain(), /Server clock/);
+  } finally {
+    app.unmount();
+  }
+});

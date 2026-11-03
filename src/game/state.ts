@@ -10,7 +10,7 @@ import type { GameClient } from '../http/game-client.ts';
 import { CharacterState, type Position } from './character.ts';
 import { ServerClock } from './clock.ts';
 import {
-  fetchJobDetail, fetchJobInfos, JobCatalog, nearestLocation, parseJobDetail, wayTime,
+  DURATION_KEYS, fetchJobDetail, fetchJobInfos, JobCatalog, nearestLocation, parseJobDetail, wayTime,
   type DurationKey, type JobInfo, type JobLocations,
 } from './jobs.ts';
 import { jobPost, parseQueue, sleepPost, TaskApi, walkPost, type QueuedTask } from './tasks.ts';
@@ -24,13 +24,16 @@ import { QuestApi, type Quest, type QuestEmployer, type QuestRequirement } from 
 import { fetchHotel, type Hotel, type HotelRoom } from './hotel.ts';
 import { ChatPoller, type SelfUpdate } from '../realtime/chat.ts';
 import { cachedJson } from '../util/disk-cache.ts';
-import { planRoute, questNeeds, type RouteObjective, type RoutePlan } from './route.ts';
+import { planRoute, questNeeds, type RouteNeed, type RouteObjective, type RoutePlan } from './route.ts';
 import { MailApi, type Report, type ReportFolder, type ReportList, type ReportRow, type Telegram, type TelegramList } from './mail.ts';
 import {
   buyOrderProblem, DEFAULT_FILTER, deposit, fetchBank, fetchShop, MarketApi, shopBuy, shopSell, useItem,
   type Bank, type MarketFilter, type MarketOffer, type Shop, type ShopKey,
 } from './trade.ts';
 import { DuelApi, duelPost, type DuelData, type DuelOpponent, type NpcDuelResult } from './duels.ts';
+import { loadAutopilot, saveAutopilot, type AutopilotFile } from './autopilot-config.ts';
+import { projectTimeline, type Timeline, type TimelineStep } from './timeline.ts';
+import { AutopilotRunner } from './autopilot-runner.ts';
 
 export interface LogEntry { at: Date; level: 'info' | 'error'; msg: string }
 
@@ -265,8 +268,9 @@ export class GameState extends EventEmitter {
     this.changed();
   }
 
-  async start(opts: { live?: boolean } = {}): Promise<void> {
-    this.startup = { steps: [], done: false };
+  /** `connect`: how long connecting took (shown as the loading screen's first, finished step). */
+  async start(opts: { live?: boolean; connect?: { label: string; startedAt: number; endedAt: number } } = {}): Promise<void> {
+    this.startup = { steps: opts.connect ? [{ ...opts.connect, status: 'done' }] : [], done: false };
     await this.step('Server clock', () => this.guard('Clock sync', () => this.clock.sync(this.client)));
     await this.step('Jobs and map', () => this.loadJobs(true));
     await this.step('Item data', () => this.loadItems());
@@ -288,6 +292,7 @@ export class GameState extends EventEmitter {
   carryOver(prev: GameState): void {
     this.log.unshift(...prev.log.slice(-100));
     if (prev.autoRoute) this.autoRoute = { ...prev.autoRoute, retryAt: 0 };
+    this.autopilot = prev.autopilot;
     this.mapLayers = prev.mapLayers;
   }
 
@@ -895,6 +900,84 @@ export class GameState extends EventEmitter {
     this.changed();
   }
 
+  // ---- autopilot -----------------------------------------------------------------------------
+
+  /** Settings, rules and the last plan (autopilot.json). */
+  autopilot: AutopilotFile = loadAutopilot();
+  /** Plans and carries out; the TUI ticker calls runner.step() every second. */
+  runner = new AutopilotRunner(this);
+
+  /** The quest screen's route shortcut: autopilot on, quests first, limited to these quests. */
+  startAutopilotForQuests(ids: number[], label: string): void {
+    this.stopAutoRoute();
+    this.updateAutopilot((f) => {
+      f.rules.onlyQuests = ids;
+      f.config.running = true;
+      f.config.modules.jobs = true;
+      f.config.priority = ['quests', ...f.config.priority.filter((g) => g !== 'quests')];
+    });
+    this.info(`Autopilot on for ${label}: quests first (G to change, R to pause).`);
+  }
+
+  /** Runs one autopilot request under the busy lock; errors are thrown to the caller (it retries / pauses). */
+  async autopilotCall<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.busy) throw new Error('busy');
+    this.busy = true;
+    this.changed();
+    try {
+      return await fn();
+    } finally {
+      this.busy = false;
+      this.changed();
+    }
+  }
+
+  /** What the Quests goal works on: open quests (or the route's quests), minus excluded ones and chains. */
+  autopilotNeeds(): RouteNeed[] {
+    const { rules, config } = this.autopilot;
+    const quests = this.routeQuests('all').filter((q) =>
+      (!rules.onlyQuests.length || rules.onlyQuests.includes(q.id)) &&
+      !rules.excludedQuests.includes(q.id) &&
+      !config.quests.excludedChains.includes(q.group) &&
+      (config.quests.repeatable || !/repeatable/i.test(q.group)));
+    return questNeeds(quests, (id) => this.inventory.countBase(id), (id) => this.itemName(id), (id) => this.catalog.get(id)?.name ?? `job ${id}`);
+  }
+
+  /** Changes the autopilot file and saves it. */
+  updateAutopilot(fn: (f: AutopilotFile) => void): void {
+    fn(this.autopilot);
+    saveAutopilot(this.autopilot);
+    this.changed();
+  }
+
+  /** A server queue entry as a fixed timeline step; job rewards from the job's values for its duration. */
+  queuedStep(t: QueuedTask): TimelineStep {
+    const fixed = { start: t.start, end: t.end };
+    if (t.type === 'job' && t.jobId !== undefined) {
+      const job = this.jobs.find((j) => j.id === t.jobId);
+      const secs = t.end - (t.way?.end ?? t.start);
+      let v = job?.values.long;
+      let best = Infinity;
+      for (const k of DURATION_KEYS) {
+        const d = job?.values[k];
+        if (d && Math.abs(d.duration - secs) < best) [v, best] = [d, Math.abs(d.duration - secs)];
+      }
+      return { kind: 'job', title: t.title, jobId: t.jobId, at: t.coords, duration: secs, energy: 0, xp: v?.experience ?? 0, money: v?.money ?? 0, fixed };
+    }
+    // Sleep rates are not in the queue entry; base regen until the room's units are known (docs/autopilot.md).
+    if (t.type === 'sleep') return { kind: 'sleep', title: t.title, at: t.coords, energyRate: this.character.energyRegen, healthRate: this.character.healthRegen, fixed };
+    return { kind: 'walk', title: t.title, at: t.coords, fixed };
+  }
+
+  /** Projection of the server queue followed by `planned` steps, from now. */
+  timeline(planned: TimelineStep[] = []): Timeline {
+    const c = this.character;
+    return projectTimeline({
+      now: this.clock.now(), at: c.position, energy: c.energy, maxEnergy: c.maxEnergy, health: c.health, maxHealth: c.maxHealth,
+      energyRegen: c.energyRegen, healthRegen: c.healthRegen, level: c.level, experience: c.experience, maxLevel: c.maxLevel, cash: c.cash,
+    }, [...this.queue.map((t) => this.queuedStep(t)), ...planned], { wayTime: (a, b) => wayTime(a, b, this.travelSpeed, c.speed) });
+  }
+
   /** Marks the route's jobs on the map. */
   highlightRoute(plan: RoutePlan, label: string): { x: number; y: number } | null {
     if (!plan.stops.length) return null;
@@ -952,7 +1035,7 @@ export class GameState extends EventEmitter {
   // ---- mail ---------------------------------------------------------------------------------
 
   private get mail(): MailApi {
-    return new MailApi(this.client);
+    return new MailApi(this.client, (id) => this.itemName(id));
   }
 
   async loadReports(page = 1, folder: ReportFolder = this.reportFolder): Promise<void> {
@@ -1289,8 +1372,15 @@ export class GameState extends EventEmitter {
   }
 
   async fightNpc(npcId: number): Promise<void> {
+    const npc = this.duels?.npcs.find((n) => n.id === npcId);
+    const before = { xp: this.character.experience, energy: this.character.energy };
     await this.guard('NPC duel', async () => {
       const r = await this.duelApi.fightNpc(npcId);
+      // Kept for the autopilot: which NPC levels you beat and what a duel pays / costs.
+      if (npc) {
+        const rec = { at: this.clock.now(), level: npc.level, won: !r.died && !/lost|defeat/i.test(r.result), xp: Math.max(0, (r.experience ?? before.xp) - before.xp), energy: Math.max(0, before.energy - (r.energy ?? before.energy)) };
+        this.updateAutopilot((f) => (f.duels = [...f.duels, rec].slice(-200)));
+      }
       this.lastNpcDuel = r;
       this.duels = r.data;
       const c = this.character;

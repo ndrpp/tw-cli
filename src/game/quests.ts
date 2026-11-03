@@ -13,7 +13,15 @@
 import type { GameClient } from '../http/game-client.ts';
 
 /** jsInfo: inventory_changed / wear_changed {id: item, count}; task-finish-job {id: job, count: seconds}. */
-export interface QuestRequirement { solved: boolean; info: string; itemId?: number; jobId?: number; count?: number }
+/**
+ * kind: item (have it: inventory_changed) · wear (wear it: wear_changed) · job (task-finish-job) · bought ("Item 'X'
+ * bought", no jsInfo; `buy` is the name) · other (anything else: wait timers, visits, duels, …).
+ */
+export interface QuestRequirement {
+  solved: boolean; info: string; itemId?: number; jobId?: number; count?: number;
+  kind?: 'item' | 'wear' | 'job' | 'bought' | 'other';
+  buy?: string;
+}
 export interface QuestReward { item: number | null; text: string }
 
 export interface Quest {
@@ -94,12 +102,22 @@ function rewardText(r: Record<string, any>, itemName?: (id: number) => string): 
 }
 
 function parseRequirement(r: Record<string, any>): QuestRequirement {
-  const req: QuestRequirement = { solved: !!r.solved, info: plainText(r.info) };
+  const req: QuestRequirement = { solved: !!r.solved, info: plainText(r.info), kind: 'other' };
   const js = r.jsInfo;
   if (js && typeof js === 'object' && js.id !== undefined) {
-    if (js.type === 'inventory_changed' || js.type === 'wear_changed') req.itemId = Number(js.id);
-    else if (js.type === 'task-finish-job') req.jobId = Number(js.id);
+    if (js.type === 'inventory_changed' || js.type === 'wear_changed') {
+      req.itemId = Number(js.id);
+      req.kind = js.type === 'wear_changed' ? 'wear' : 'item';
+    } else if (js.type === 'task-finish-job') {
+      req.jobId = Number(js.id);
+      req.kind = 'job';
+    }
     if (js.count !== undefined) req.count = Number(js.count);
+  }
+  const bought = req.kind === 'other' ? req.info.match(/^Item '(.+)' bought$/i) : null;
+  if (bought) {
+    req.kind = 'bought';
+    req.buy = bought[1];
   }
   return req;
 }

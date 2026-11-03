@@ -107,7 +107,7 @@ export interface PlanInput {
 const doable = (j: JobInfo) => j.jobPoints >= j.workPoints;
 
 /** Expected progress of one run of `job` for `duration` towards each need. */
-function runGains(job: JobInfo, duration: DurationKey, needs: RouteNeed[]): Record<string, number> {
+export function runGains(job: JobInfo, duration: DurationKey, needs: RouteNeed[]): Record<string, number> {
   const v = job.values[duration];
   const out: Record<string, number> = {};
   if (!v) return out;

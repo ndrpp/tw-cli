@@ -124,6 +124,13 @@ export class ItemCatalog {
     return (d?.name ?? `item ${itemId}`) + (up ? ` ☆${up}` : '');
   }
 
+  /** Plain item id (`id · 1000`) of the item with this exact name (case-insensitive), if any. */
+  findByName(name: string): number | undefined {
+    const n = name.trim().toLowerCase();
+    for (const d of this.items.values()) if (d.name.toLowerCase() === n) return d.id * 1000;
+    return undefined;
+  }
+
   /** Every item (base definitions; the plain item id is `id · 1000`). */
   all(): ItemDef[] {
     return [...this.items.values()];

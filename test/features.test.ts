@@ -223,7 +223,11 @@ test('quests: captured quest log parses (requirements, rewards, HTML stripped)',
   const mike = qs.find((q: any) => q.id === 280)!;
   assert.equal(mike.finishable, true);
   assert.equal(mike.accepted, true);
-  assert.deepEqual(mike.requirements, [{ solved: true, info: 'Trading (30 minutes)', jobId: 36, count: 3600 }]);
+  assert.deepEqual(mike.requirements, [{ solved: true, info: 'Trading (30 minutes)', kind: 'job', jobId: 36, count: 3600 }]);
+  const kinds = qs.flatMap((q: any) => q.requirements.map((r: any) => r.kind));
+  assert.ok(kinds.includes('wear') && kinds.includes('item') && kinds.includes('bought'), 'wear / item / bought told apart');
+  const bought = qs.flatMap((q: any) => q.requirements).find((r: any) => r.kind === 'bought');
+  assert.equal(bought.buy, 'White horse');
   assert.deepEqual(mike.rewards.map((r: any) => r.text), ['125 Experience points', '50 Dollars']);
   const horse = qs.find((q: any) => q.id === 3063)!;
   assert.equal(horse.requirements.filter((r: any) => !r.solved).length, 3);

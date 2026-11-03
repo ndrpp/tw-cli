@@ -51,6 +51,7 @@ In the TUI, press `?` for help on any screen.
 | `D` | duels |
 | `Tab` | jobs → queue → chat (Enter to write, ←/→ room) |
 | `C` | full chat with whispers (`L` turns live updates on) |
+| `G` | autopilot: priorities, modules, projected queue (see `docs/autopilot.md`) |
 | `s` | sleep in a hotel |
 | `A` | account setup |
 | `q` | quit |

@@ -1,0 +1,421 @@
+// Autopilot runner: the 1 s ticker calls step(). It replans when the inputs' fingerprint changes (checked every
+// 2 s, so bursts of updates cause one replan) and, while running, carries the plan out: sends the planned tasks
+// as queue space allows, deposits on arrival, cancels a sleep at its wake target, and cancels queued tasks when
+// a fresh plan is clearly better. Failures back off 1 → 5 → 15 min; after 3 the step is left out of plans.
+import type { FormValue } from '../http/form.ts';
+import type { GameState } from './state.ts';
+import type { PlannedTask } from './autopilot-config.ts';
+import { duelOutlook, fingerprint } from './autopilot-config.ts';
+import { DuelApi } from './duels.ts';
+import { parseConsumable, planAutopilot, type Consumable, type HotelOption, type Plan } from './autopilot.ts';
+import { fetchHotel } from './hotel.ts';
+import { QuestModule } from './autopilot-quests.ts';
+import { wayTime } from './jobs.ts';
+import { deposit, useItem } from './trade.ts';
+
+const BACKOFF_S = [60, 300, 900];
+const HOTEL_TTL_MS = 10 * 60_000;
+const CHECK_MS = 2_000;
+
+/** Hotel rooms' energy/health as % of max per hour (unverified, docs/autopilot.md). */
+const roomRate = (v: number) => Math.max(0, v) / 100;
+
+export class AutopilotRunner {
+  plan: Plan | null = null;
+  /** Shown before the first replan: the saved plan of the last run. */
+  stale = true;
+  private state: GameState;
+  private lastPrint = '';
+  private lastCheck = 0;
+  private hotels = new Map<number, { at: number; option: HotelOption | null }>();
+  private failures = new Map<string, { count: number; until: number }>();
+  private wakes = new Map<number, { energy: number; health: number }>();
+  private lastCancel = 0;
+  private resumed = false;
+  private duelsAt = 0;
+  private acting = false;
+
+  private quests: QuestModule;
+
+  constructor(state: GameState) {
+    this.state = state;
+    this.quests = new QuestModule({
+      state,
+      get config() {
+        return state.autopilot.config;
+      },
+      budget: () => this.budget(),
+      spend: (n) => this.spend(n),
+      skipped: () => this.skipped(),
+      fail: (k, m) => this.fail(k, m),
+    });
+  }
+
+  private get cfg() {
+    return this.state.autopilot.config;
+  }
+
+  /** Step keys left out of plans: 3 failures, or still backing off. */
+  private skipped(): Set<string> {
+    const now = Date.now();
+    return new Set([...this.failures].filter(([, f]) => f.count >= 3 || f.until > now).map(([k]) => k));
+  }
+
+  private fail(key: string, msg: string): void {
+    const f = this.failures.get(key) ?? { count: 0, until: 0 };
+    f.count++;
+    f.until = Date.now() + BACKOFF_S[Math.min(f.count, 3) - 1]! * 1000;
+    this.failures.set(key, f);
+    this.state.error(`Autopilot: ${msg}${f.count >= 3 ? ' (skipped from now on; plan redone without it)' : ` (retry in ${BACKOFF_S[f.count - 1]! / 60} min)`}`);
+    if (/session|logged out|log in|login/i.test(msg)) this.pause('the session expired; reconnect with r or A');
+  }
+
+  pause(why: string): void {
+    if (!this.cfg.running) return;
+    this.state.updateAutopilot((f) => (f.config.running = false));
+    this.state.error(`Autopilot paused: ${why}.`);
+  }
+
+  private today(): string {
+    return new Date(this.state.clock.nowMs()).toISOString().slice(0, 10);
+  }
+
+  private budget(): number {
+    const s = this.state.autopilot.spent;
+    return Math.max(0, this.cfg.spend.daily - (s.day === this.today() ? s.amount : 0));
+  }
+
+  private spend(amount: number): void {
+    if (amount <= 0) return;
+    const day = this.today();
+    this.state.updateAutopilot((f) => (f.spent = { day, amount: (f.spent.day === day ? f.spent.amount : 0) + amount }));
+  }
+
+  /** Home town's hotel and the one nearest to where the queue ends (travelTo), fetched at most every 10 min. */
+  private hotelOptions(): HotelOption[] {
+    const s = this.state;
+    const named = s.world.towns.filter((t) => t.name);
+    const near = named.length ? named.reduce((a, b) => (s.travelTo(b) < s.travelTo(a) ? b : a)) : undefined;
+    const ids = [...new Set([s.character.homeTown?.id, near?.id].filter((x): x is number => !!x))];
+    const out: HotelOption[] = [];
+    for (const id of ids) {
+      const c = this.hotels.get(id);
+      if (!c || Date.now() - c.at > HOTEL_TTL_MS) {
+        this.hotels.set(id, { at: Date.now(), option: c?.option ?? null });
+        void fetchHotel(s.client, id).then((h) => {
+          const town = s.world.towns.find((t) => t.id === id);
+          if (!town) return;
+          this.hotels.set(id, {
+            at: Date.now(),
+            option: {
+              townId: id, name: h.townName, at: { x: town.x, y: town.y },
+              rooms: h.rooms.filter((r) => r.available).map((r) => ({ key: r.key, name: r.name, cost: r.free ? 0 : r.costs, energyRate: roomRate(r.energy), healthRate: roomRate(r.health) })),
+            },
+          });
+          this.lastPrint = ''; // new hotel data: replan
+        }).catch(() => {});
+      }
+      const o = this.hotels.get(id)?.option;
+      if (o) out.push(o);
+    }
+    return out;
+  }
+
+  /** Bag items with an energy / health / motivation effect, minus the reserve. */
+  private consumables(): Consumable[] {
+    const s = this.state;
+    if (!s.items) return [];
+    const out: Consumable[] = [];
+    for (const it of s.inventory.bag.values()) {
+      const d = s.items.get(it.itemId);
+      const effect = d ? parseConsumable(d.usebonus, d.usetype) : null;
+      const count = it.count - this.cfg.consumables.reserve;
+      if (d && effect && count > 0) out.push({ itemId: it.itemId, name: d.name, count, value: d.price, effect });
+    }
+    return out;
+  }
+
+  /** Everything the plan depends on, hashed. Server values only (not the regen estimate), so it is stable. */
+  private inputs(hotels: HotelOption[]): unknown {
+    const s = this.state;
+    const c = s.character;
+    return {
+      queue: s.queue.map((q) => [q.queueId, q.end]),
+      c: [c.position, c.level, c.experience, c.cash, c.deposit, c.serverValues],
+      quests: s.quests.map((q) => [q.id, q.requirements.map((r) => r.solved)]),
+      needs: s.autopilotNeeds().map((n) => [n.key, n.amount]),
+      jobs: s.jobs.map((j) => [j.id, j.motivation, j.jobPoints, j.values.long?.experience]),
+      config: { ...this.cfg, running: undefined },
+      rules: s.autopilot.rules,
+      hotels: hotels.map((h) => [h.townId, h.rooms.length]),
+      items: this.consumables().map((c) => [c.itemId, c.count]),
+      skip: [...this.skipped()],
+      budget: this.budget(),
+    };
+  }
+
+  private snapshot(fixedQueue = this.state.queue, energyBonus = 0, hotels = this.hotelOptions()): Plan {
+    const s = this.state;
+    const c = s.character;
+    return planAutopilot({
+      start: {
+        now: s.clock.now(), at: c.position, energy: Math.min(c.maxEnergy, c.energy + energyBonus), maxEnergy: c.maxEnergy, health: c.health, maxHealth: c.maxHealth,
+        energyRegen: c.energyRegen, healthRegen: c.healthRegen, level: c.level, experience: c.experience, maxLevel: c.maxLevel, cash: c.cash,
+      },
+      fixed: fixedQueue.map((t) => s.queuedStep(t)),
+      jobs: s.jobs,
+      locations: (g) => s.locations.get(g),
+      wayTime: (a, b) => wayTime(a, b, s.travelSpeed, c.speed),
+      config: this.cfg,
+      rules: s.autopilot.rules,
+      needs: s.autopilotNeeds(),
+      itemValue: (id) => s.items?.get(id)?.sell ?? 0,
+      hotels,
+      consumables: this.consumables(),
+      homeTownId: c.homeTown?.id,
+      towns: s.world.towns.filter((t) => t.name).map((t) => ({ id: t.id, name: t.name!, at: { x: t.x, y: t.y } })),
+      budget: this.budget(),
+      skip: this.skipped(),
+    });
+  }
+
+  /** Replans now (debounced by the caller); logs what changed. */
+  replan(reason = 'inputs changed'): Plan {
+    const old = this.state.clock.now() - 6 * 3600;
+    if (this.state.autopilot.rules.inserts.some((x) => x.at < old)) this.state.updateAutopilot((f) => (f.rules.inserts = f.rules.inserts.filter((x) => x.at >= old)));
+    const hotels = this.hotelOptions();
+    const print = fingerprint(this.inputs(hotels));
+    const prev = this.plan;
+    const plan = this.snapshot(undefined, 0, hotels);
+    this.plan = plan;
+    this.stale = false;
+    this.lastPrint = print;
+    this.state.updateAutopilot((f) => (f.plan = { fingerprint: print, savedAt: Date.now(), tasks: plan.tasks }));
+    const next = plan.tasks[0]?.step.title ?? 'nothing';
+    if (!prev || prev.tasks[0]?.key !== plan.tasks[0]?.key || prev.tasks.length !== plan.tasks.length) {
+      this.state.info(`Autopilot replanned (${reason}): ${plan.tasks.length} task(s), next ${next}. ${plan.why}`);
+    }
+    return plan;
+  }
+
+  /** Called every second by the TUI ticker. */
+  async step(): Promise<void> {
+    const s = this.state;
+    if (s.startup && !s.startup.done) return;
+    if (this.acting || s.busy) return;
+    const now = Date.now();
+    if (now - this.lastCheck >= CHECK_MS) {
+      this.lastCheck = now;
+      const print = fingerprint(this.inputs(this.hotelOptions()));
+      if (print !== this.lastPrint) this.replan(this.lastPrint ? 'inputs changed' : 'start');
+      if (this.cfg.running && !this.resumed) {
+        this.resumed = true;
+        s.info('Autopilot resumed.');
+      }
+    }
+    if (!this.cfg.running || this.cfg.modules.dryRun || !this.plan) return;
+    this.acting = true;
+    try {
+      if (await this.wakeUp()) return;
+      if (await this.maybeCancelForBetter()) return;
+      if (this.cfg.modules.quests && (await this.quests.step())) return;
+      if (this.cfg.modules.npcDuels && this.cfg.duels.forXp && (await this.duelForXp())) return;
+      await this.carryOut();
+    } finally {
+      this.acting = false;
+    }
+  }
+
+  /**
+   * NPC duel for XP, between tasks: HP ≥ 70 %, NPC level ≤ duel level + margin, ready, and the duel record says
+   * that level is won and pays more XP per energy than the best planned job. Never players.
+   */
+  private async duelForXp(): Promise<boolean> {
+    const s = this.state;
+    const c = s.character;
+    if (s.queue.length || c.health < 0.7 * c.maxHealth || Date.now() - this.duelsAt < 5 * 60_000) return false;
+    this.duelsAt = Date.now();
+    let data;
+    try {
+      data = await s.autopilotCall(() => new DuelApi(s.client).data());
+      s.duels = data;
+    } catch {
+      return false;
+    }
+    const job = this.plan?.tasks.find((t) => t.step.kind === 'job')?.step;
+    const jobRate = job && job.kind === 'job' && job.energy > 0 ? job.xp / job.energy : 0;
+    const now = s.clock.now();
+    const best = data.npcs
+      .filter((n) => n.readyIn <= 0 && n.level <= c.duelLevel + this.cfg.duels.levelMargin && !this.skipped().has(`duel:${n.id}`))
+      .map((n) => ({ n, o: duelOutlook(s.autopilot.duels, n.level, now) }))
+      .filter((x): x is { n: typeof x.n; o: { xp: number; energy: number } } => !!x.o && x.o.energy <= c.energy && x.o.xp / x.o.energy > jobRate)
+      .sort((a, b) => b.o.xp / b.o.energy - a.o.xp / a.o.energy)[0];
+    if (!best) return false;
+    s.info(`Autopilot: NPC duel ${best.n.name} (level ${best.n.level}): ~${Math.round(best.o.xp)} XP for ~${Math.round(best.o.energy)} energy beats the best job.`);
+    await s.fightNpc(best.n.id);
+    if (s.lastNpcDuel?.died) this.pause('lost an NPC duel (passed out)');
+    this.lastPrint = '';
+    return true;
+  }
+
+  /** Cancels a running sleep once live energy and health confirm its wake target. */
+  private async wakeUp(): Promise<boolean> {
+    const s = this.state;
+    const head = s.queue[0];
+    if (!head || head.type !== 'sleep') return false;
+    const wake = this.wakes.get(head.queueId);
+    if (!wake) return false;
+    const c = s.character;
+    if (c.energy < wake.energy || c.health < wake.health) return false;
+    try {
+      const before = c.energy;
+      const res = await s.autopilotCall(() => s.tasks.cancel(s.queue, [0]));
+      s.queue = res.queue;
+      if (res.energy !== undefined) c.setEnergy(res.energy);
+      this.wakes.delete(head.queueId);
+      s.info(`Autopilot: woke up (energy ${before}/${wake.energy}, HP ${c.health}/${Math.round(wake.health)}).`);
+      void s.syncCharacter('after wake-up'); // checks the sleep kept its energy (unverified until seen live)
+    } catch (err) {
+      this.fail(`wake:${head.queueId}`, `wake-up failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return true;
+  }
+
+  /**
+   * Cancels queued tasks when planning without them is better by the margin over the horizon, counting the
+   * running task's lost progress (its energy is not refunded). At most one cancel per cooldown.
+   */
+  private async maybeCancelForBetter(): Promise<boolean> {
+    const s = this.state;
+    const cfg = this.cfg;
+    if (s.queue.length === 0 || Date.now() - this.lastCancel < cfg.cancel.cooldown * 1000 || !this.plan) return false;
+    const current = this.plan.value + this.queueValue(s.queue);
+    const refund = (from: number) => s.queue.slice(from).reduce((a, t) => a + (t.type === 'job' ? this.jobEnergy(t.jobId) : 0), 0);
+    const nowS = s.clock.now();
+    const running = s.queue[0]!.start <= nowS;
+    // Keep the running task, cancel the rest; or cancel everything.
+    const keep = running ? [s.queue[0]!] : [];
+    const altKeep = this.snapshot(keep, refund(keep.length));
+    const altKeepValue = altKeep.value + this.queueValue(keep);
+    const altAll = running ? this.snapshot([], refund(1)) : null;
+    const best = altAll && altAll.value > altKeepValue ? { value: altAll.value, from: 0 } : { value: altKeepValue, from: keep.length };
+    if (best.from >= s.queue.length || best.value <= current * (1 + cfg.cancel.margin) || current <= 0) return false;
+    const positions = s.queue.map((_, i) => i).slice(best.from).reverse();
+    try {
+      const res = await s.autopilotCall(() => s.tasks.cancel(s.queue, positions));
+      s.queue = res.queue;
+      if (res.energy !== undefined) s.character.setEnergy(res.energy);
+      this.lastCancel = Date.now();
+      s.info(`Autopilot: cancelled ${positions.length} queued task(s): a fresh plan is ${Math.round((best.value / current - 1) * 100)}% better over ${Math.round(cfg.cancel.horizon / 3600)} h.`);
+      this.replan('cancelled for a better plan');
+    } catch (err) {
+      this.fail('cancel', `cancel failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.lastCancel = Date.now();
+    }
+    return true;
+  }
+
+  private jobEnergy(jobId?: number): number {
+    const j = this.state.jobs.find((x) => x.id === jobId);
+    return j?.values.long?.energy ?? 0;
+  }
+
+  /**
+   * Value of server-queued jobs, so plans with and without them compare: the planned jobs' average value per
+   * XP + $ applied to the queued ones (an estimate; queued jobs carry no priority score of their own).
+   */
+  private queueValue(queue: GameState['queue']): number {
+    if (!this.plan?.tasks.length) return 0;
+    const perXp = this.plan.tasks.filter((t) => t.step.kind === 'job' && t.value).map((t) => (t.value ?? 0) / Math.max(1, (t.step as any).xp + (t.step as any).money));
+    const rate = perXp.length ? perXp.reduce((a, b) => a + b, 0) / perXp.length : 0;
+    return queue.reduce((a, t) => {
+      const st = this.state.queuedStep(t);
+      return a + (st.kind === 'job' ? rate * (st.xp + st.money) : 0);
+    }, 0);
+  }
+
+  /** Sends the next planned tasks the queue has room for; runs an on-the-spot action when its turn comes. */
+  private async carryOut(): Promise<void> {
+    const s = this.state;
+    const tasks = this.plan!.tasks;
+    const first = tasks[0];
+    if (!first) return;
+    if (first.action) {
+      if (s.queue.length) return; // its turn comes when the queue before it is done
+      await this.act(first);
+      return;
+    }
+    const free = s.taskLimit - s.queue.length;
+    if (free <= 0) return;
+    const batch: PlannedTask[] = [];
+    for (const t of tasks) {
+      if (batch.length >= free || t.action || !t.post) break;
+      // Jobs pay energy when queued: only what the current energy covers.
+      if (t.step.kind === 'job' && t.step.energy > s.character.energy - batch.reduce((a, b) => a + (b.step.kind === 'job' ? b.step.energy : 0), 0)) break;
+      batch.push(t);
+      if (t.step.kind === 'sleep') break; // later tasks depend on its wake-up
+    }
+    if (!batch.length) return;
+    try {
+      const res = await s.autopilotCall(() => s.tasks.add(s.queue.length, batch.map((b) => b.post as Record<string, FormValue>), s.taskLimit));
+      // Jobs cost their energy when queued; without a server value, subtract what was accepted.
+      if (res.energy !== undefined) s.character.setEnergy(res.energy);
+      else if (res.added.length) s.character.setEnergy(s.character.energy - batch.slice(0, res.added.length).reduce((a, b) => a + (b.step.kind === 'job' ? b.step.energy : 0), 0));
+      s.queue.push(...res.added);
+      res.added.forEach((q, i) => {
+        const t = batch[i];
+        if (!t) return;
+        if (t.key.startsWith('insert:')) this.dropInsert(t.key);
+        if (t.step.kind === 'sleep') {
+          if (t.wake) this.wakes.set(q.queueId, t.wake);
+          this.spend(t.step.cost ?? 0);
+        }
+      });
+      if (res.added.length) s.info(`Autopilot: queued ${res.added.map((q) => q.title).join(', ')}. ${batch[0]!.why ?? ''}`);
+      const failed = batch.slice(res.added.length)[0];
+      if (failed) this.fail(failed.key, `${failed.step.title} refused${res.errors.length ? `: ${res.errors.join('; ')}` : ''}`);
+      this.replan('queued');
+    } catch (err) {
+      this.fail(batch[0]!.key, `${batch[0]!.step.title}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** An inserted step was carried out: its rule is done. */
+  private dropInsert(key: string): void {
+    const [, kind, at] = key.split(':');
+    this.state.updateAutopilot((f) => (f.rules.inserts = f.rules.inserts.filter((x) => !(x.kind === kind && String(x.at) === at))));
+  }
+
+  private async act(t: PlannedTask): Promise<void> {
+    const s = this.state;
+    if (t.action?.type === 'use') {
+      const itemId = t.action.itemId;
+      try {
+        const r = await s.autopilotCall(() => useItem(s.client, itemId, 1, s.inventory.lastInvId, (id) => s.itemName(id)));
+        s.inventory.applyChanges(r.changes);
+        if (r.energy !== undefined) s.character.setEnergy(r.energy);
+        if (r.health !== undefined) s.character.setHealth(r.health);
+        s.info(`Autopilot: used ${s.itemName(itemId)}${r.effects.length ? `: ${r.effects.join(' ')}` : ''} (${t.why ?? ''}).`);
+        if (/motivation/i.test(t.step.title)) void s.loadJobs(true); // motivation is in the job values
+        this.replan('item used');
+      } catch (err) {
+        this.fail(t.key, `${t.step.title}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return;
+    }
+    if (t.action?.type !== 'deposit') return;
+    const townId = t.action.townId;
+    if (s.townHere?.id !== townId) return this.fail(t.key, `${t.step.title}: not in that town yet`);
+    const cash = s.character.cash;
+    if (cash <= 0) return void this.replan('nothing to deposit');
+    try {
+      const r = await s.autopilotCall(() => deposit(s.client, townId, cash));
+      s.character.cash = r.cash;
+      s.character.deposit = r.deposit;
+      s.info(`Autopilot: deposited $ ${cash} (fee $ ${r.fee}).`);
+      this.replan('deposited');
+    } catch (err) {
+      this.fail(t.key, `deposit: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}

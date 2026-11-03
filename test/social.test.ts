@@ -735,3 +735,119 @@ test('wake: a timer gap far above the interval counts as sleep; the rebuilt stat
   assert.equal(next.autoRoute?.runs.length, 1);
   assert.equal(next.autoRoute?.retryAt, 0, 'retries right away after waking');
 });
+
+test('autopilot runner: queues what the energy covers, sleeps when out, wakes at the target, deposits, backs off', async () => {
+  fakeServer();
+  const s = makeState();
+  let nextId = 200;
+  const added: Record<string, string>[] = [];
+  routes['/game.php?window=task&action=add'] = (body) => {
+    const p = params(body);
+    const idx = [...new Set([...p.keys()].map((k) => k.match(/^tasks\[(\d+)\]/)?.[1]).filter(Boolean))] as string[];
+    const tasks: Record<string, unknown> = {};
+    const now = Math.floor(Date.now() / 1000);
+    for (const i of idx) {
+      const get = (k: string) => p.get(`tasks[${i}][${k}]`) ?? '';
+      added.push({ type: get('taskType'), jobId: get('jobId'), room: get('room') });
+      const type = get('taskType');
+      tasks[i] = { task: { queue_id: nextId++, type, date_start: now, date_done: now + 3600, data: { job_id: Number(get('jobId')) || undefined, title: type === 'sleep' ? 'Sleep' : `job${get('jobId')}`, coords: type === 'sleep' ? { x: 200, y: 200 } : { x: 110, y: 100 } } } };
+    }
+    return { tasks };
+  };
+  routes['/game.php?window=building_hotel&mode=get_data'] = () => ({ hotel_level: 1, town_name: 'Slobozia', own_hotel: true, rooms: { cubby: { name: 'Cubby', level: 1, available: true, free: true, costs: 0, energy: 50, health: 50 } } });
+  let cancelled = 0;
+  routes['/game.php?window=task&action=cancel'] = () => {
+    cancelled++;
+    return { tasks: { 0: {} }, queue: [] };
+  };
+  s.world.towns = [{ id: 1421, x: 200, y: 200, name: 'Slobozia', members: 1, npc: false, points: 0 }];
+  s.world.jobGroups = new Map([[1, [{ x: 110, y: 100 }]]]);
+  s.jobs = [{ id: 7, groupid: 1, name: 'Cutting tobacco', jobPoints: 10, workPoints: 1, laborPoints: 9, motivation: 1, danger: null, durations: {}, luckValue: [0, 0],
+    values: { long: { duration: 3600, energy: 12, money: 10, experience: 50, luck: 0, items: [] } } } as any];
+  s.updateAutopilot((f) => {
+    f.config.running = true;
+    f.config.priority = ['xp', 'money', 'quests', 'products'];
+  });
+
+  // 40 energy: three 12-energy runs fit.
+  await s.runner.step(); // plans; the hotel loads in the background
+  await new Promise((r) => setTimeout(r, 20));
+  (s.runner as any).lastCheck = 0;
+  await s.runner.step();
+  assert.deepEqual(added.map((a) => a.type + a.jobId), ['job7', 'job7', 'job7', 'sleep'], 'then a sleep in the last slot: 4 energy left, no regen');
+  assert.equal(s.queue.length, 4);
+  assert.ok(s.log.some((l) => /Autopilot: queued/.test(l.msg)));
+
+  // Out of energy, nothing queued: no regen, so it sleeps in the home hotel (free cubby).
+  s.queue = [];
+  s.character.setEnergy(0);
+  (s.runner as any).lastCheck = 0;
+  await s.runner.step();
+  assert.deepEqual(added.at(-1), { type: 'sleep', jobId: '', room: 'cubby' });
+  assert.equal(s.queue[0]!.type, 'sleep');
+
+  // Wake target reached (live energy) → the sleep is cancelled.
+  s.character.setEnergy(100);
+  await s.runner.step();
+  assert.equal(cancelled, 1);
+  assert.match(s.log.map((l) => l.msg).join('\n'), /woke up/);
+
+  // Refused task: backs off instead of retrying every second.
+  routes['/game.php?window=task&action=add'] = () => ({ tasks: { 0: { error: true, msg: 'Not now' } } });
+  s.queue = [];
+  (s.runner as any).lastCheck = 0;
+  await s.runner.step();
+  const n = calls.length;
+  (s.runner as any).lastCheck = 0;
+  await s.runner.step();
+  assert.match(s.log.filter((l) => l.level === 'error').map((l) => l.msg).join('\n'), /refused: Not now \(retry in 1 min\)/);
+  assert.equal(calls.filter((c) => c.url.includes('action=add')).length, calls.slice(0, n).filter((c) => c.url.includes('action=add')).length, 'no resend while backing off');
+
+  // Paused: replans but sends nothing.
+  s.updateAutopilot((f) => (f.config.running = false));
+  const before = calls.length;
+  (s.runner as any).failures.clear();
+  (s.runner as any).lastCheck = 0;
+  await s.runner.step();
+  assert.equal(calls.filter((c) => c.url.includes('action=add')).length, calls.slice(0, before).filter((c) => c.url.includes('action=add')).length);
+
+  // Cash over the limit while standing in the home town: deposits on the spot.
+  routes['/game.php?window=building_bank&action=deposit'] = (body) => ({ error: false, deposit: 10 + Number(params(body).get('amount')), own_money: 0, fee: 50 });
+  s.updateAutopilot((f) => (f.config.running = true));
+  s.queue = [];
+  s.character.position = { x: 200, y: 200 };
+  s.character.cash = 5000;
+  (s.runner as any).lastCheck = 0;
+  await s.runner.step();
+  assert.equal(s.character.cash, 0);
+  assert.equal(s.character.deposit, 5010);
+  assert.match(s.log.map((l) => l.msg).join('\n'), /deposited \$ 5000 \(fee \$ 50\)/);
+});
+
+test('job report: found items come from reportInfo.items (the page only has empty placeholders); list summary from img alts', async () => {
+  const { reportItems, popupItems, MailApi } = await import('../src/game/mail.ts');
+  // Trimmed from a live show_report reply (Prospecting, 5× Fool's gold).
+  const page = '<page><div id="rp_report_job_divLeft"><div class="rp_row_jobdata"><span class="rp_jobdata_label text_bold">Money</span><span class="rp_jobdata_text">&#036; 319</span></div></div>'
+    + '<div id="rp_report_job_divRight"><h3 class="rp_job_header">Items Found</h3><div id="rp_job_rewardContainer"><span id="jobreward_item_1876161_708000"></span></div></div></page>';
+  const popup = '<tr><th colspan="4">Found items:</th></tr><tr><td><div class="bag_item_mini"><img src="/images/items/yield/copper_pyrites.png" alt="Fool&#039;s gold" /></div></td>'
+    + '<td><div class="bag_item_mini"><img src="/images/items/yield/copper_pyrites.png" alt="Fool&#039;s gold" /></div></td></tr>';
+  const name = (id: number) => (id === 708000 ? "Fool's gold" : `item ${id}`);
+  assert.deepEqual(reportItems({ items: [[708000, true, 5, 'yield']], job_id: 18 }, name), ["Fool's gold x 5"]);
+  assert.deepEqual(reportItems(undefined, name), []);
+  assert.deepEqual(popupItems(popup), ["Fool's gold x 2"]);
+  fakeServer();
+  routes['/game.php?window=reports&mode=show_report'] = () => ({ report_id: 1876161, title: 'Job report: Prospecting', reportType: 'job', reportInfo: { items: [[708000, true, 5, 'yield']], job_id: 18 }, page, date_received: 'Today' });
+  routes['/game.php?window=reports&action=get_reports'] = () => ({ count: 1, page: 1, reports: [{ report_id: 1876161, title: 'Job report: Prospecting', hash: 'h', read: false, date_received: 'Today', popupData: popup }] });
+  const s = makeState();
+  const api = new MailApi(s.client, name);
+  const r = await api.report(1876161, 'h');
+  assert.match(r.text, /Money: \$319/);
+  assert.match(r.text, /Items: Fool's gold x 5/);
+  assert.doesNotMatch(r.text, /Items: none/);
+  const list = await api.reports(1);
+  assert.match(list.reports[0]!.summary, /Found items: Fool's gold x 2/);
+  const { popupText } = await import('../src/game/mail.ts');
+  const fields = '<table><tr><td><img src="images/job/clock.png" /></td><td>1 hour</td><td><img src="images/job/dollar.png" /></td><td>319</td></tr>'
+    + '<tr><td><img src="images/job/experience.png" /></td><td>76</td><td><img src="images/icons/DayOfDead.png" /></td><td>366 Cempasúchil</td></tr></table>';
+  assert.equal(popupText(fields), 'Time: 1 hour Money: 319\nXP: 76 366 Cempasúchil', 'icon labels named, event icons dropped');
+});

@@ -7,9 +7,9 @@ import type { Hotel } from '../game/hotel.ts';
 
 const h = React.createElement;
 
-export type Mode = 'main' | 'map' | 'char' | 'quests' | 'mail' | 'trade' | 'duels' | 'chat';
+export type Mode = 'main' | 'map' | 'char' | 'quests' | 'mail' | 'trade' | 'duels' | 'chat' | 'autopilot';
 /** Full screens that handle their own keys (global shortcuts still work unless they capture input). */
-export const SCREEN_MODES: Mode[] = ['char', 'quests', 'mail', 'trade', 'duels', 'chat'];
+export const SCREEN_MODES: Mode[] = ['char', 'quests', 'mail', 'trade', 'duels', 'chat', 'autopilot'];
 
 const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
   global: [
@@ -22,6 +22,7 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
     ['$', 'trade: bank, shops, market, buy orders'],
     ['D', 'duels: NPCs & players'],
     ['C', 'full chat: rooms & whispers (needs live updates)'],
+    ['G', 'autopilot: priorities, modules, projected queue'],
     ['s', 'sleep: hotel of your town (map: selected town)'],
     ['p', 'points of interest (jump on map)'],
     ['u', 'refresh (queue / inventory / quests)'],
@@ -75,7 +76,7 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
     ['w', 'walk to the quest giver'],
     ['g', 'mark jobs that drop needed items on the map'],
     ['R', 'route planner: best jobs for quest items'],
-    ['a  x', 'route: queue + auto-queue the rest (at the y/n prompt) · x stop auto'],
+    ['a  x', 'route: autopilot for these quests (at the y/n prompt, G to manage) · x stop old auto-route'],
     ['  1 2 3', 'route for this quest / its chain / all quests'],
     ['  e', 'optimize per energy ⇄ per time'],
     ['  Enter', 'queue the route (as many as fit, confirm y)'],
@@ -107,6 +108,15 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
     ['P', '(my market) pick up everything finished in this town'],
     ['Esc', 'back'],
   ],
+  autopilot: [
+    ['↑ ↓  j k', 'move'],
+    ['Space  Enter', 'toggle a module or setting'],
+    ['← →  + -', 'change a value'],
+    ['J K', '(priority) move the goal down / up'],
+    ['R', 'run / pause the autopilot'],
+    ['X', 'stop: pause and clear the planned tasks (rules stay)'],
+    ['Esc', 'back'],
+  ],
   duels: [
     ['↑ ↓  j k', 'move'],
     ['Enter', 'NPC: fight now · player: queue a duel (confirm y)'],
@@ -121,7 +131,7 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
   ],
 };
 
-const MODE_TITLE: Record<Mode, string> = { main: 'Jobs & queue', map: 'Map', char: 'Character', quests: 'Quests', mail: 'Mail', trade: 'Trade', duels: 'Duels', chat: 'Chat' };
+const MODE_TITLE: Record<Mode, string> = { main: 'Jobs & queue', map: 'Map', char: 'Character', quests: 'Quests', mail: 'Mail', trade: 'Trade', duels: 'Duels', chat: 'Chat', autopilot: 'Autopilot' };
 
 const LEGEND: [string, string, string][] = [
   ['@', 'green', 'you'], ['1-9', 'cyan', 'queued tasks'], ['H', 'cyan', 'home town'], ['T', 'white', 'town'],

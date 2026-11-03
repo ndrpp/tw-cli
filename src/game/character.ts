@@ -114,6 +114,11 @@ export class CharacterState {
     this.healthAt = at && at <= this.clock.now() ? at : this.clock.now();
   }
 
+  /** The last server values (no regen): changes only when the server tells us something new. */
+  get serverValues(): { energy: number; energyAt: number; health: number; healthAt: number } {
+    return { energy: this.baseEnergy, energyAt: this.energyAt, health: this.baseHealth, healthAt: this.healthAt };
+  }
+
   /** Current energy including regeneration since the last server value. */
   get energy(): number {
     const diff = this.clock.now() - this.energyAt;

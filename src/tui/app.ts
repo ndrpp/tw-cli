@@ -2,7 +2,7 @@
 // Layout: status header · screen nav bar · jobs list + job details | task queue · chat strip · log · key help.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useWindowSize } from 'ink';
-import { JOB_SORTS, type GameState, type JobOption, type JobSort } from '../game/state.ts';
+import { JOB_SORTS, type GameState, type JobOption, type JobSort, type StartupStep } from '../game/state.ts';
 import { DURATION_KEYS, type DurationKey } from '../game/jobs.ts';
 import { bar, formatDuration, money, scrollWindow, truncate } from './format.ts';
 import { clampView, entriesAt, findNearest, LayersOverlay, MAP_LAYERS, mapGridSize, MapScreen, ZOOMS, type MapView } from './map.ts';
@@ -12,6 +12,7 @@ import { QuestsScreen } from './quests.ts';
 import { MailScreen } from './mail.ts';
 import { TradeScreen } from './trade.ts';
 import { DuelsScreen } from './duels.ts';
+import { AutopilotScreen } from './autopilot.ts';
 import { ChatPanel, ChatScreen, chatRoomIds } from './chat.ts';
 import { defaultRoom } from '../game/hotel.ts';
 import { poisNear } from '../game/poi.ts';
@@ -54,6 +55,7 @@ function Header({ state }: { state: GameState }) {
         state.live?.unreadRooms.size ? h(Text, { color: 'cyan' }, ` · chat ${state.live.unreadRooms.size} (C)`) : '',
         state.quests.some((q) => q.finishable) ? h(Text, { color: 'green' }, ` · ${state.quests.filter((q) => q.finishable).length} quest(s) to finish`) : '',
         state.autoRoute ? h(Text, { color: 'magenta' }, ` · auto-route ${state.autoRoute.runs.length} left`) : '',
+        state.autopilot.config.running ? h(Text, { color: 'green' }, ' · autopilot ●') : '',
         state.busy ? ' · working…' : ''),
     ),
     h(Text, { wrap: 'truncate' },
@@ -216,9 +218,10 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       } else if (finished || Date.now() - lastPoll > QUEUE_POLL_MS) {
         lastPoll = Date.now();
         void state.refreshQueue();
-      } else if (state.autoRoute) {
+      } else if (state.autoRoute && !state.autopilot.config.running) {
         void state.autoRouteStep();
       }
+      void state.runner.step(); // replans on change (also while paused); acts only when running
       setTick((t) => t + 1);
     }, 1000);
     return () => clearInterval(timer);
@@ -415,6 +418,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
     if (input === '$') return openScreen('trade');
     if (input === 'D') return openScreen('duels');
     if (input === 'C') return openScreen('chat');
+    if (input === 'G') return openScreen('autopilot');
     if (input === 's' && !(mode === 'map' && mapPanel)) return openHotel(state.character.homeTown?.id);
     if (onScreen) return; // the screen handles the rest
     const duration = ({ '1': 'short', '2': 'middle', '3': 'long' } as Record<string, DurationKey>)[input];
@@ -565,6 +569,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
         : mode === 'mail' ? h(MailScreen, props)
           : mode === 'trade' ? h(TradeScreen, props)
             : mode === 'duels' ? h(DuelsScreen, props)
+              : mode === 'autopilot' ? h(AutopilotScreen, props)
               : h(ChatScreen, props);
     screen = h(Box, { display: overlay ? 'none' : 'flex' }, el);
   }
@@ -591,6 +596,7 @@ const NAV: { key: string; label: string; mode?: Mode; overlay?: string }[] = [
   { key: '$', label: 'trade', mode: 'trade' },
   { key: 'D', label: 'duels', mode: 'duels' },
   { key: 'C', label: 'chat', mode: 'chat' },
+  { key: 'G', label: 'autopilot', mode: 'autopilot' },
   { key: 's', label: 'sleep', overlay: 'hotel' },
   { key: 'p', label: 'places', overlay: 'poi' },
   { key: '?', label: 'help', overlay: 'help' },
@@ -617,23 +623,34 @@ const SPINNER = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
 
 /** First start: what is being loaded, until the major requests are done (Esc skips, q quits). */
 function LoadingScreen({ state, width, height }: { state: GameState; width: number; height: number }) {
-  const steps = state.startup?.steps ?? [];
-  const frame = SPINNER[Math.floor(Date.now() / 120) % SPINNER.length];
-  const errors = state.log.filter((l) => l.level === 'error').slice(-3);
-  const latest = state.log.filter((l) => l.level === 'info').slice(-1)[0];
   const c = state.character;
+  return h(LoadingFrame, {
+    width, height,
+    subtitle: `${c.name ?? ''}${state.worldName ? ` · ${state.worldName}` : ''}${c.level ? ` · level ${c.level}` : ''}`,
+    steps: state.startup?.steps ?? [],
+    latest: state.log.filter((l) => l.level === 'info').slice(-1)[0]?.msg,
+    errors: state.log.filter((l) => l.level === 'error').slice(-3).map((e) => e.msg),
+    keys: 'Esc skip · q quit',
+  });
+}
+
+/** The loading screen's box: title, startup steps with spinner and timings, last message, errors. Root uses it while connecting. */
+export function LoadingFrame({ width, height, subtitle, steps, latest, errors = [], keys }: {
+  width: number; height: number; subtitle?: string; steps: StartupStep[]; latest?: string; errors?: string[]; keys: string;
+}) {
+  const frame = SPINNER[Math.floor(Date.now() / 120) % SPINNER.length];
   return h(Box, { width, height, flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
     h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'yellow', paddingX: 2, paddingY: 1, width: Math.min(60, width - 2) },
       h(Text, { bold: true, color: 'yellow' }, 'The West'),
-      h(Text, { dimColor: true, wrap: 'truncate' }, `${c.name ?? ''}${state.worldName ? ` · ${state.worldName}` : ''}${c.level ? ` · level ${c.level}` : ''}`),
+      h(Text, { dimColor: true, wrap: 'truncate' }, subtitle ?? ''),
       h(Text, null, ' '),
       ...steps.map((s, i) => h(Text, { key: i, wrap: 'truncate', color: s.status === 'error' ? 'red' : s.status === 'done' ? 'green' : 'cyan' },
         `${s.status === 'running' ? frame : s.status === 'done' ? '✔' : '✘'} ${s.label}`,
         h(Text, { dimColor: true }, s.endedAt ? `  ${((s.endedAt - s.startedAt) / 1000).toFixed(1)} s` : s.status === 'running' ? `  ${Math.floor((Date.now() - s.startedAt) / 1000)} s` : ''))),
       h(Text, null, ' '),
-      latest ? h(Text, { dimColor: true, wrap: 'truncate' }, latest.msg) : null,
-      ...errors.map((e, i) => h(Text, { key: `e${i}`, color: 'red', wrap: 'truncate' }, e.msg)),
-      h(Text, { dimColor: true }, 'Esc skip · q quit'),
+      latest ? h(Text, { dimColor: true, wrap: 'truncate' }, latest) : null,
+      ...errors.map((e, i) => h(Text, { key: `e${i}`, color: 'red', wrap: 'truncate' }, e)),
+      h(Text, { dimColor: true }, keys),
     ));
 }
 
