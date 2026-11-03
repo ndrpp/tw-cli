@@ -42,7 +42,9 @@ the relevant file in `docs/`.
 - Line endings are mixed (several files are CRLF). The Edit tool handles both. When scripting edits with Node,
   normalise to `\n`, edit, and write back with the file's original ending. Backslashes do not survive JS
   strings inside heredoc'd Node scripts (`\d`, `\/`, `\n` come out wrong): write any line with a regex or an
-  escape using the Edit tool, then grep for `(d+)` or broken string literals and typecheck.
+  escape using the Edit tool, then grep for `(d+)` or broken string literals and typecheck. In a scripted
+  `s.replace(a, b)`, `$'` / `$&` inside `b` are patterns (a `'$'` in `b` pasted the file's tail): use
+  `s.split(a).join(b)`.
 - Settings and caches live in `CONFIG_DIR` (`TW_CLI_HOME` or `~/.config/tw-cli`), written with mode 0600.
 
 ## User preferences (learned)

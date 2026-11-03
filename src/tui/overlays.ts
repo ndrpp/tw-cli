@@ -7,15 +7,16 @@ import type { Hotel } from '../game/hotel.ts';
 
 const h = React.createElement;
 
-export type Mode = 'main' | 'map' | 'char' | 'quests' | 'mail' | 'trade' | 'duels' | 'chat' | 'autopilot';
+export type Mode = 'home' | 'main' | 'map' | 'char' | 'quests' | 'mail' | 'trade' | 'duels' | 'chat' | 'autopilot';
 /** Full screens that handle their own keys (global shortcuts still work unless they capture input). */
-export const SCREEN_MODES: Mode[] = ['char', 'quests', 'mail', 'trade', 'duels', 'chat', 'autopilot'];
+export const SCREEN_MODES: Mode[] = ['home', 'char', 'quests', 'mail', 'trade', 'duels', 'chat', 'autopilot'];
 
 const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
   global: [
     ['?', 'show / hide this help'],
-    ['W', 'jobs & queue (main view)'],
-    ['m', 'toggle map ⇄ jobs view'],
+    ['H', 'home: current job, rates, reports, chat (map: Esc)'],
+    ['W', 'jobs & queue'],
+    ['m', 'map on / off (back to where you were)'],
     ['i', 'character: inventory & skills'],
     ['o', 'quests: log & quest givers'],
     ['M', 'mail: reports & telegrams'],
@@ -31,9 +32,14 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
     ['A', 'account: fingerprint & login setup'],
     ['q', 'quit'],
   ],
+  home: [
+    ['Enter', 'write in chat (Enter sends, Esc cancels)'],
+    ['← →  h l', 'chat room'],
+    ['c  Del', 'cancel the current task (confirm y)'],
+    ['+  -', 'zoom the minimap'],
+  ],
   main: [
-    ['Tab', 'switch jobs → task queue → chat'],
-    ['Enter  ← →', 'chat focused: write · switch room'],
+    ['Tab', 'jobs ⇄ task queue'],
     ['↑ ↓  j k', 'move · PgUp/PgDn ×10'],
     ['/', 'filter jobs by name or product they drop'],
     ['S', 'sort jobs: name · XP · $ · luck ($ of best find) · distance'],
@@ -131,7 +137,7 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
   ],
 };
 
-const MODE_TITLE: Record<Mode, string> = { main: 'Jobs & queue', map: 'Map', char: 'Character', quests: 'Quests', mail: 'Mail', trade: 'Trade', duels: 'Duels', chat: 'Chat', autopilot: 'Autopilot' };
+const MODE_TITLE: Record<Mode, string> = { home: 'Home', main: 'Jobs & queue', map: 'Map', char: 'Character', quests: 'Quests', mail: 'Mail', trade: 'Trade', duels: 'Duels', chat: 'Chat', autopilot: 'Autopilot' };
 
 const LEGEND: [string, string, string][] = [
   ['@', 'green', 'you'], ['1-9', 'cyan', 'queued tasks'], ['H', 'cyan', 'home town'], ['T', 'white', 'town'],

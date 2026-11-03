@@ -1,5 +1,5 @@
 // Full-screen TUI (ink, without JSX so Node can run the TypeScript directly).
-// Layout: status header · screen nav bar · jobs list + job details | task queue · chat strip · log · key help.
+// Layout: status header · screen nav bar · screen (home by default; jobs: list + details | task queue) · log · key help.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useWindowSize } from 'ink';
 import { JOB_SORTS, type GameState, type JobOption, type JobSort, type StartupStep } from '../game/state.ts';
@@ -13,7 +13,8 @@ import { MailScreen } from './mail.ts';
 import { TradeScreen } from './trade.ts';
 import { DuelsScreen } from './duels.ts';
 import { AutopilotScreen } from './autopilot.ts';
-import { ChatPanel, ChatScreen, chatRoomIds } from './chat.ts';
+import { ChatScreen } from './chat.ts';
+import { HomeScreen } from './home.ts';
 import { defaultRoom } from '../game/hotel.ts';
 import { poisNear } from '../game/poi.ts';
 
@@ -24,8 +25,7 @@ const JOB_DETAIL_POLL_MS = 60_000;
 /** Full character re-read: other players' duels change health/money with no live push. */
 const SYNC_MS = 3 * 60_000;
 
-type Focus = 'jobs' | 'queue' | 'chat';
-const FOCUS_ORDER: Focus[] = ['jobs', 'queue', 'chat'];
+type Focus = 'jobs' | 'queue';
 const LIVE_COLOR = { off: 'gray', connecting: 'yellow', on: 'green', error: 'red' } as const;
 
 function useGameState(state: GameState): number {
@@ -78,33 +78,42 @@ function xpText(c: GameState['character']): string {
 
 const SORT_LABEL: Record<JobSort, string> = { name: 'name', xp: 'XP', money: '$', luck: 'luck', distance: 'distance' };
 
-function sortCell(o: JobOption, sort: JobSort): string {
+/** Columns after the name: XP and $ of the longest duration (when wide enough), luck when sorted by it, LP, travel. */
+function jobCells(o: JobOption, wide: boolean, luck: boolean): string {
   const v = o.job.values.long ?? o.job.values.middle ?? o.job.values.short;
-  if (!v) return '';
-  if (sort === 'xp') return `${v.experience}xp`;
-  if (sort === 'money') return money(v.money);
-  if (sort === 'luck') return money(o.job.luckValue[1]);
-  return '';
+  const way = o.way === null ? '—' : formatDuration(o.way);
+  return [
+    wide ? (v ? `${v.experience}xp` : '').padStart(6) : null,
+    wide ? (v ? money(v.money) : '').padStart(7) : null,
+    luck ? money(o.job.luckValue[1]).padStart(7) : null,
+    String(o.job.laborPoints).padStart(5),
+    way.padStart(7),
+  ].filter((c) => c !== null).join(' ');
 }
 
-function JobsPane(props: { options: JobOption[]; selected: number; focused: boolean; height: number; width: number; filter: string; filtering: boolean; sort: JobSort; showAll: boolean }) {
-  const { options, selected, focused, height, width, filter, filtering, sort, showAll } = props;
-  const listHeight = Math.max(3, height - 4);
+function JobsPane(props: { state: GameState; options: JobOption[]; selected: number; focused: boolean; height: number; width: number; filter: string; filtering: boolean; sort: JobSort; showAll: boolean }) {
+  const { state, options, selected, focused, height, width, filter, filtering, sort, showAll } = props;
+  const listHeight = Math.max(3, height - 5);
   const [start, end] = scrollWindow(selected, options.length, listHeight);
-  const metric = sort === 'xp' || sort === 'money' || sort === 'luck';
-  const nameW = Math.max(10, width - 24 - (metric ? 8 : 0));
+  const luck = sort === 'luck';
+  // Inner width − marker − LP and travel (with spaces) − luck − xp and $.
+  const fixed = 4 + 2 + 14 + (luck ? 8 : 0);
+  const wide = width - fixed - 15 >= 14;
+  const nameW = Math.max(8, width - fixed - (wide ? 15 : 0));
+  const quest = state.mapHighlight?.jobIds;
   const title = filtering ? `Jobs  /${filter}▏` : filter ? `Jobs  (filter: ${filter})` : 'Jobs';
+  const head = `  ${'job'.padEnd(nameW)} ${[wide ? 'xp'.padStart(6) : null, wide ? '$'.padStart(7) : null, luck ? 'luck'.padStart(7) : null, 'LP'.padStart(5), 'travel'.padStart(7)].filter(Boolean).join(' ')}`;
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: focused ? 'cyan' : 'gray', width, height, paddingX: 1 },
     h(Text, { bold: true, wrap: 'truncate' }, `${title}  ${options.length ? `${selected + 1}/${options.length}` : ''}`),
-    h(Text, { dimColor: true, wrap: 'truncate' }, `sort: ${SORT_LABEL[sort]}${metric ? ' (1 h)' : ''} (S) · ${showAll ? 'all jobs' : 'enough LP only'} (a)`),
+    h(Text, { dimColor: true, wrap: 'truncate' }, `sort: ${SORT_LABEL[sort]} (S) · ${showAll ? 'all jobs' : 'enough LP only'} (a) · xp/$ for the longest run${quest?.size ? ` · ! ${state.mapHighlight!.label}` : ''}`),
+    h(Text, { dimColor: true, wrap: 'truncate' }, head),
     ...options.slice(start, end).map((o, i) => {
       const idx = start + i;
       const sel = idx === selected;
       const doable = o.job.jobPoints >= o.job.workPoints;
-      const pts = String(o.job.laborPoints);
-      const way = o.way === null ? '  —  ' : formatDuration(o.way).padStart(7);
+      const mark = quest?.has(o.job.id) ? h(Text, { color: 'magentaBright', bold: true }, '! ') : '  ';
       return h(Text, { key: o.job.id, inverse: sel && focused, color: doable ? undefined : 'gray', wrap: 'truncate' },
-        `${truncate(o.job.name, nameW)}${metric ? ` ${sortCell(o, sort).padStart(7)}` : ''} ${pts.padStart(5)} ${way}`);
+        mark, `${truncate(o.job.name, nameW).padEnd(nameW)} ${jobCells(o, wide, luck)}`);
     }),
     options.length === 0 ? h(Text, { dimColor: true }, state0(filter, showAll)) : null,
   );
@@ -123,8 +132,10 @@ function JobDetail({ option, state }: { option: JobOption | undefined; state: Ga
     if (!v) return null;
     return h(Text, { key: k, wrap: 'truncate' },
       h(Text, { color: 'yellow' }, `[${i + 1}] `),
-      `${formatDuration(v.duration).padStart(7)} ${String(v.energy).padStart(3)}en ${money(v.money).padStart(6)} ${String(v.experience).padStart(4)}xp`);
+      `${formatDuration(v.duration).padStart(7)} ${String(v.energy).padStart(3)}en ${money(v.money).padStart(6)} ${String(v.experience).padStart(4)}xp`,
+      v.energy ? h(Text, { dimColor: true }, `  ${(v.experience / v.energy).toFixed(1)} xp/en`) : '');
   });
+  const quest = state.mapHighlight?.jobIds.has(job.id) ? state.mapHighlight.label : '';
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', paddingX: 1, flexShrink: 0 },
     h(Text, { bold: true, wrap: 'truncate' }, `${job.name}  (lvl ${job.level})`),
     h(Text, { wrap: 'truncate' }, `${job.laborPoints} LP · motiv ${Math.round((job.motivation ?? 0) * 100)}% · danger ${danger}`),
@@ -132,13 +143,15 @@ function JobDetail({ option, state }: { option: JobOption | undefined; state: Ga
     h(Text, { dimColor: true, wrap: 'truncate' }, at ? `at ${at.x},${at.y} · travel ${formatDuration(way ?? 0)}` : 'No location known'),
     ...durRows,
     h(Text, { color: 'magenta', wrap: 'truncate' }, `Drops: ${state.jobProducts(job).map((p) => `${p.name}${p.percent !== null ? ` ${p.percent}%` : ''}`).join(' · ') || '—'}`),
+    quest ? h(Text, { color: 'magentaBright', wrap: 'truncate' }, `! needed for ${quest}`) : null,
     state.queue.length >= state.taskLimit ? h(Text, { color: 'red', wrap: 'truncate' }, `Queue full (${state.queue.length}/${state.taskLimit})`) : null,
   );
 }
 
 function QueuePane({ state, selected, focused, width, confirm, maxRows }: { state: GameState; selected: number; focused: boolean; width: number; confirm: boolean; maxRows: number }) {
   const now = state.clock.now();
-  const rowsForTasks = Math.max(1, maxRows - (confirm ? 1 : 0));
+  const total = state.queue.length ? state.timeline() : null;
+  const rowsForTasks = Math.max(1, maxRows - (confirm ? 1 : 0) - (total ? 1 : 0));
   const overflow = state.queue.length > rowsForTasks;
   const [start, end] = scrollWindow(selected, state.queue.length, overflow ? rowsForTasks - 1 : rowsForTasks);
   const hidden = state.queue.length - (end - start);
@@ -155,6 +168,7 @@ function QueuePane({ state, selected, focused, width, confirm, maxRows }: { stat
         `${truncate(label, Math.max(8, width - 17))} ${left.padStart(9)}`);
     }),
     overflow ? h(Text, { dimColor: true }, `  +${hidden} more`) : null,
+    total ? h(Text, { dimColor: true, wrap: 'truncate' }, `ends ${new Date(total.end * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · +${total.gained.xp} xp ${money(total.gained.money)}`) : null,
     confirm ? h(Text, { color: 'red' }, 'Cancel this task? y / n') : null,
   );
 }
@@ -174,15 +188,15 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   const win = useWindowSize();
   const { columns, rows } = size ?? win;
   const [, setTick] = useState(0);
-  const [mode, setMode] = useState<Mode>('main');
+  const [mode, setMode] = useState<Mode>('home');
+  /** Where m / Esc on the map go back to. */
+  const beforeMap = useRef<Mode>('home');
   const [overlay, setOverlay] = useState<null | 'help' | 'poi' | 'hotel' | 'layers'>(null);
   const [layerSel, setLayerSel] = useState(0);
   const [hotelSel, setHotelSel] = useState(0);
   const [questsOnGivers, setQuestsOnGivers] = useState(false);
   const capture = useRef(false);
   const [focus, setFocus] = useState<Focus>('jobs');
-  const [chatRoom, setChatRoom] = useState(0);
-  const [chatDraft, setChatDraft] = useState<string | null>(null);
   const [jobSel, setJobSel] = useState(0);
   const [queueSel, setQueueSel] = useState(0);
   const [filter, setFilter] = useState('');
@@ -264,9 +278,17 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   const pois = overlay === 'poi' ? poisNear(state, view, poiFilter) : [];
   const poiIdx = Math.min(poiSel, Math.max(0, pois.length - 1));
 
+  const toMap = () => {
+    if (mode !== 'map') beforeMap.current = mode;
+    setMode('map');
+  };
+  const leaveMap = () => {
+    capture.current = false;
+    setMode(beforeMap.current);
+  };
   const jumpTo = (at: { x: number; y: number }) => {
     setView((v) => clampView({ ...v, x: at.x, y: at.y, zoom: Math.min(v.zoom, 128) }));
-    setMode('map');
+    toMap();
     setMapPanel(false);
     setMapSel(0);
   };
@@ -285,7 +307,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   const openScreen = (m: Mode) => {
     capture.current = false;
     setMapPanel(false);
-    setMode((cur) => (cur === m ? 'main' : m));
+    setMode((cur) => (cur === m ? 'home' : m));
   };
 
   const onScreen = SCREEN_MODES.includes(mode);
@@ -340,18 +362,6 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       return;
     }
     if (overlay === 'help') return setOverlay(null);
-    if (chatDraft !== null && mode === 'main') {
-      if (key.escape) return setChatDraft(null);
-      if (key.return) {
-        const room = chatRoomIds(state)[chatRoom];
-        setChatDraft(null);
-        if (room && chatDraft.trim()) void state.chatSay(room, chatDraft);
-        return;
-      }
-      if (key.backspace || key.delete) return setChatDraft(chatDraft.slice(0, -1));
-      if (input && !key.ctrl && !key.meta) setChatDraft(chatDraft + input);
-      return;
-    }
     if (filtering) {
       if (key.return || key.escape) setFiltering(false);
       if (key.escape) setFilter('');
@@ -386,7 +396,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
     if (input === 'q') return exit();
     if (input === 'm') {
       setMapPanel(false);
-      return setMode((m) => (m === 'map' ? 'main' : 'map'));
+      return mode === 'map' ? leaveMap() : toMap();
     }
     if (input === 'p') {
       setPoiFilter('');
@@ -409,10 +419,10 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       return openScreen('quests');
     }
     if (input === 'L') return state.live?.active ? state.stopLive() : state.startLive();
-    if (input === 'W') {
+    if (input === 'W' || (input === 'H' && mode !== 'map')) {
       capture.current = false;
       setMapPanel(false);
-      return setMode('main');
+      return setMode(input === 'W' ? 'main' : 'home');
     }
     if (input === 'M') return openScreen('mail');
     if (input === '$') return openScreen('trade');
@@ -444,6 +454,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
         }
         return;
       }
+      if (key.escape) return leaveMap();
       const big = key.shift || key.pageUp || key.pageDown ? 10 : 1;
       const pan = (dc: number, dr: number) => setView((v) => clampView({ ...v, x: v.x + dc * big * v.zoom, y: v.y + dr * big * v.zoom * 2 }));
       if (key.leftArrow || input === 'h' || input === 'H') return pan(-1, 0);
@@ -467,25 +478,11 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
         state.mapHighlight = null;
         return state.changed();
       }
-      if (key.escape) return setMode('main');
       return;
     }
 
-    if (key.tab) {
-      const order = chatH ? FOCUS_ORDER : FOCUS_ORDER.filter((f) => f !== 'chat');
-      return setFocus((f) => order[(order.indexOf(f) + (key.shift ? order.length - 1 : 1)) % order.length]!);
-    }
-    if (focus === 'chat') {
-      const n = chatRoomIds(state).length;
-      if (key.leftArrow || input === 'h') return setChatRoom((i) => (n ? (Math.min(i, n - 1) + n - 1) % n : 0));
-      if (key.rightArrow || input === 'l') return setChatRoom((i) => (n ? (Math.min(i, n - 1) + 1) % n : 0));
-      if (key.return) {
-        if (!state.live?.active) return state.error('Live updates are off: press L to connect to chat.');
-        if (!n) return state.error('No chat room yet (still connecting).');
-        return setChatDraft('');
-      }
-      return;
-    }
+    if (key.escape) return setMode('home');
+    if (key.tab) return setFocus((f) => (f === 'jobs' ? 'queue' : 'jobs'));
     const move = (d: number) => {
       if (focus === 'jobs') setJobSel(Math.max(0, Math.min(options.length - 1, jobIdx + d)));
       else setQueueSel(Math.max(0, Math.min(state.queue.length - 1, queueIdx + d)));
@@ -512,13 +509,8 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
 
   const leftW = Math.max(30, Math.floor(width * 0.5));
   const rightW = Math.max(24, width - leftW);
-  // JobDetail: 2 border + 4 info lines + 3 durations (+1 when the queue is full).
-  const detailH = 10 + (state.queue.length >= state.taskLimit ? 1 : 0);
-  // Jobs/detail/queue keep what the detail and a few queue rows need; the rest goes to chat.
-  const topMin = detailH + 6;
-  const chatSpace = bodyH - Math.max(topMin, Math.ceil(bodyH * 0.55));
-  const chatH = chatSpace >= 5 ? chatSpace : 0;
-  const topH = bodyH - chatH;
+  // JobDetail: 2 border + 4 info lines + 3 durations (+1 when the queue is full, +1 for a quest job).
+  const detailH = 10 + (state.queue.length >= state.taskLimit ? 1 : 0) + (options[jobIdx] && state.mapHighlight?.jobIds.has(options[jobIdx]!.job.id) ? 1 : 0);
   const help = filtering
     ? 'type to filter · Enter keep · Esc clear'
     : searching
@@ -531,13 +523,11 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
           ? '← → tab · Tab pane · Enter wear/take off · +/- skills · i/Esc back · ? help'
           : mode === 'quests'
             ? 'Tab log/givers · Enter finish/accept · x cancel · w walk · o/Esc back · ? help'
-            : onScreen
-              ? `${{ mail: 'M', trade: '$', duels: 'D', chat: 'C' }[mode as 'mail']}/Esc back · ? help`
-              : chatDraft !== null
-                ? 'type a message · Enter send · Esc cancel'
-                : focus === 'chat'
-                  ? 'Enter write · ←/→ room · Tab pane · C full chat · ? help'
-                  : 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel';
+            : mode === 'home'
+              ? 'Enter chat · ←/→ room · c cancel current · +/- minimap · W jobs · ? help'
+              : onScreen
+                ? `${{ mail: 'M', trade: '$', duels: 'D', chat: 'C' }[mode as 'mail']}/Esc back · ? help`
+                : 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel · Esc home';
 
   let body;
   if (overlay === 'help') body = h(HelpOverlay, { mode, width, height: bodyH });
@@ -548,23 +538,21 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   else if (mode === 'map') {
     body = h(MapScreen, { state, view, width, height: bodyH, entries, selected: mapIdx, panelFocused: mapPanel, search, searching });
   } else {
-    body = h(Box, { flexDirection: 'column', height: bodyH },
-      h(Box, { height: topH },
-        h(JobsPane, { options, selected: jobIdx, focused: focus === 'jobs', height: topH, width: leftW, filter, filtering, sort: jobSort, showAll: showAllJobs }),
-        h(Box, { flexDirection: 'column', width: rightW },
-          h(JobDetail, { option: options[jobIdx], state }),
-          h(QueuePane, { state, selected: queueIdx, focused: focus === 'queue', width: rightW, confirm: confirmCancel, maxRows: Math.max(1, topH - detailH - 3) }),
-        ),
+    body = h(Box, { height: bodyH },
+      h(JobsPane, { state, options, selected: jobIdx, focused: focus === 'jobs', height: bodyH, width: leftW, filter, filtering, sort: jobSort, showAll: showAllJobs }),
+      h(Box, { flexDirection: 'column', width: rightW },
+        h(JobDetail, { option: options[jobIdx], state }),
+        h(QueuePane, { state, selected: queueIdx, focused: focus === 'queue', width: rightW, confirm: confirmCancel, maxRows: Math.max(1, bodyH - detailH - 3) }),
       ),
-      chatH ? h(ChatPanel, { state, width, height: chatH, focused: focus === 'chat', roomIdx: chatRoom, draft: chatDraft }) : null,
     );
   }
 
   // Character/quest screens stay mounted under overlays so planned points or selections survive '?'.
   let screen = null;
   if (SCREEN_MODES.includes(mode)) {
-    const props = { state, width, height: bodyH, active: !overlay, onCapture: (c: boolean) => (capture.current = c), onExit: () => setMode('main') };
-    const el = mode === 'char' ? h(CharacterScreen, props)
+    const props = { state, width, height: bodyH, active: !overlay, onCapture: (c: boolean) => (capture.current = c), onExit: () => setMode('home') };
+    const el = mode === 'home' ? h(HomeScreen, props)
+      : mode === 'char' ? h(CharacterScreen, props)
       : mode === 'quests' ? h(QuestsScreen, { ...props, startOnGivers: questsOnGivers, onShowOnMap: jumpTo })
         : mode === 'mail' ? h(MailScreen, props)
           : mode === 'trade' ? h(TradeScreen, props)
@@ -588,6 +576,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
 
 /** Screens and their jump keys; the key is highlighted, the open screen shown inverted. */
 const NAV: { key: string; label: string; mode?: Mode; overlay?: string }[] = [
+  { key: 'H', label: 'home', mode: 'home' },
   { key: 'W', label: 'jobs', mode: 'main' },
   { key: 'm', label: 'map', mode: 'map' },
   { key: 'i', label: 'character', mode: 'char' },

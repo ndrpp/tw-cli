@@ -518,6 +518,12 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
   state.world.jobGroups = new Map([[3, [{ x: 150, y: 100 }]], [4, [{ x: 400, y: 100 }]], [12, [{ x: 120, y: 100 }]]]);
   state.quests = QUESTS.quests.map((q: any) => parseQuest(q, (id: number) => state.itemName(id)));
   state.startup = { steps: [{ label: 'Jobs and map', status: 'running', startedAt: Date.now() }], done: false };
+  routes['/game.php?window=reports&action=get_reports'] = () => ({ count: 1, page: 1, reports: [
+    { report_id: 501, title: 'Job report: Tending pigs', hash: 'h', read: false, date_received: '10:12', popupData: 'You worked 1 hour' },
+  ] });
+  // A 1 h job, a quarter done: home shows its progress and the long duration's rewards.
+  const now = state.clock.now();
+  state.queue = [{ queueId: 5, type: 'job', start: now - 900, end: now + 2700, coords: { x: 120, y: 100 }, title: 'Tending pigs', jobId: 1, raw: {} }];
 
   const stdout = new PassThrough() as PassThrough & { columns: number; rows: number; isTTY: boolean };
   Object.assign(stdout, { columns: 130, rows: 40, isTTY: true });
@@ -540,7 +546,16 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     assert.match(plain(), /Esc skip/);
     await keys('\x1b');
     await settle(200);
-    // Jobs without enough labor points are hidden until `a`.
+    // Starts on home; W opens the jobs view. Jobs without enough labor points are hidden until `a`.
+    assert.match(plain(), /Attention/);
+    assert.match(plain(), / 25%  45:00 left/);
+    assert.match(plain(), /\+50 xp  \$90  luck \$0–\$400/);
+    assert.match(plain(), /Drops: Ham 200%/);
+    assert.match(plain(), /•Job report: Tending pigs/);
+    assert.match(plain(), /measuring…/);
+    await keys('W');
+    assert.match(plain(), /ends [\d:]+(\s?[AP]M)? · \+50 xp \$90/);
+    state.queue = [];
     assert.match(plain(), /enough LP only/);
     assert.doesNotMatch(plain(), /Saddler/);
     // Filter by a product name.
@@ -558,7 +573,8 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     assert.equal(state.jobOptions('', { showAll: true }).length, 3);
     out = '';
     await keys('S');
-    assert.match(plain(), /sort: XP \(1 h\)/);
+    assert.match(plain(), /sort: XP \(S\)/);
+    assert.match(plain(), /job +xp +\$ +LP +travel/);
     assert.deepEqual(state.jobOptions('', { sort: 'xp', showAll: true }).map((o) => o.job.id), [9, 7, 1]);
     assert.deepEqual(state.jobOptions('', { sort: 'money' }).map((o) => o.job.id), [7, 1]);
     // Luck sorts by the $ value of a lucky find (maxLuck), not the duration's luck chance.

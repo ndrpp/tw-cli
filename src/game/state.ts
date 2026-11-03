@@ -11,7 +11,7 @@ import { CharacterState, type Position } from './character.ts';
 import { ServerClock } from './clock.ts';
 import {
   DURATION_KEYS, fetchJobDetail, fetchJobInfos, JobCatalog, nearestLocation, parseJobDetail, wayTime,
-  type DurationKey, type JobInfo, type JobLocations,
+  type DurationKey, type JobDurationValues, type JobInfo, type JobLocations,
 } from './jobs.ts';
 import { jobPost, parseQueue, sleepPost, TaskApi, walkPost, type QueuedTask } from './tasks.ts';
 import { WorldMap, type Fort, type Town } from './world.ts';
@@ -34,6 +34,7 @@ import { DuelApi, duelPost, type DuelData, type DuelOpponent, type NpcDuelResult
 import { loadAutopilot, saveAutopilot, type AutopilotFile } from './autopilot-config.ts';
 import { projectTimeline, type Timeline, type TimelineStep } from './timeline.ts';
 import { AutopilotRunner } from './autopilot-runner.ts';
+import { RateTracker } from './rates.ts';
 
 export interface LogEntry { at: Date; level: 'info' | 'error'; msg: string }
 
@@ -112,6 +113,10 @@ export class GameState extends EventEmitter {
   mapLayers: Record<string, boolean> = loadMapLayers();
   /** Mail screen: last loaded report / telegram lists. */
   reports: ReportList | null = null;
+  /** Newest reports (page 1, all folders) for the home screen; refreshed when the game says there is a new one. */
+  recentReports: ReportRow[] | null = null;
+  /** Measured XP/h and $/h, jobs done this session. */
+  rates = new RateTracker();
   reportFolder: ReportFolder = 'all';
   telegrams: TelegramList | null = null;
   /** Trade screen: bank, shop and market of the town you are in (or your home town). */
@@ -229,8 +234,12 @@ export class GameState extends EventEmitter {
       const done = this.queue.shift()!;
       this.character.position = done.coords;
       this.info(`Finished: ${done.title}`);
+      if (done.type === 'job') this.rates.jobsDone++;
+      this.rates.lastTask = { title: done.title, type: done.type, end: done.end };
       changed = true;
     }
+    const c = this.character;
+    this.rates.record(now, c.experience, c.cash + c.deposit);
     return changed;
   }
 
@@ -299,6 +308,8 @@ export class GameState extends EventEmitter {
     if (prev.autoRoute) this.autoRoute = { ...prev.autoRoute, retryAt: 0 };
     this.autopilot = prev.autopilot;
     this.mapLayers = prev.mapLayers;
+    this.rates = prev.rates;
+    this.recentReports = prev.recentReports;
   }
 
   /** Starts the chat long-poll the browser keeps open; pushes XP/money/energy/position. */
@@ -425,6 +436,7 @@ export class GameState extends EventEmitter {
   private async announceNewReport(): Promise<void> {
     try {
       const list = await this.mail.reports(1, 'all');
+      this.recentReports = list.reports;
       const r = list.reports.find((x) => !x.read);
       if (r) this.info(`New report: ${r.title}`);
       else this.info('New report.');
@@ -955,19 +967,30 @@ export class GameState extends EventEmitter {
     this.changed();
   }
 
+  /**
+   * A queued job's definition and the duration it runs for. The queue entry has no duration key (not seen in
+   * task/get_tasks), so it is the duration closest to the work time (end − walk end).
+   */
+  queuedJob(t: QueuedTask): { job: JobInfo; duration: DurationKey; values: JobDurationValues } | null {
+    const job = t.jobId === undefined ? undefined : this.jobs.find((j) => j.id === t.jobId);
+    if (!job) return null;
+    const secs = t.end - (t.way?.end ?? t.start);
+    let found: { job: JobInfo; duration: DurationKey; values: JobDurationValues } | null = null;
+    let best = Infinity;
+    for (const k of DURATION_KEYS) {
+      const d = job.values[k];
+      if (d && Math.abs(d.duration - secs) < best) [found, best] = [{ job, duration: k, values: d }, Math.abs(d.duration - secs)];
+    }
+    return found;
+  }
+
   /** A server queue entry as a fixed timeline step; job rewards from the job's values for its duration. */
   queuedStep(t: QueuedTask): TimelineStep {
     const fixed = { start: t.start, end: t.end };
     if (t.type === 'job' && t.jobId !== undefined) {
-      const job = this.jobs.find((j) => j.id === t.jobId);
+      const q = this.queuedJob(t);
       const secs = t.end - (t.way?.end ?? t.start);
-      let v = job?.values.long;
-      let best = Infinity;
-      for (const k of DURATION_KEYS) {
-        const d = job?.values[k];
-        if (d && Math.abs(d.duration - secs) < best) [v, best] = [d, Math.abs(d.duration - secs)];
-      }
-      return { kind: 'job', title: t.title, jobId: t.jobId, at: t.coords, duration: secs, energy: 0, xp: v?.experience ?? 0, money: v?.money ?? 0, fixed };
+      return { kind: 'job', title: t.title, jobId: t.jobId, at: t.coords, duration: secs, energy: 0, xp: q?.values.experience ?? 0, money: q?.values.money ?? 0, fixed };
     }
     // Sleep rates are not in the queue entry; base regen until the room's units are known (docs/autopilot.md).
     if (t.type === 'sleep') return { kind: 'sleep', title: t.title, at: t.coords, energyRate: this.character.energyRegen, healthRate: this.character.healthRegen, fixed };
@@ -1049,6 +1072,16 @@ export class GameState extends EventEmitter {
       this.reportFolder = folder;
       this.unread.reports = false;
     });
+  }
+
+  /** Home screen's report list: one page-1 read in the background (no busy lock, errors only logged). */
+  async loadRecentReports(): Promise<void> {
+    try {
+      this.recentReports = (await this.mail.reports(1, 'all')).reports;
+      this.changed();
+    } catch (err) {
+      this.error(`Reports: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   async openReport(row: ReportRow): Promise<Report | null> {

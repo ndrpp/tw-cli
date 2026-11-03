@@ -490,17 +490,16 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
   const t = tui(state);
   try {
     await t.settle();
-    // Main view: chat strip under jobs/queue; Tab Tab focuses it, Enter + typing does not trigger shortcuts.
+    // Home (start screen): chat at the bottom; Enter + typing does not trigger shortcuts.
+    assert.match(t.plain(), /Attention/);
     assert.match(t.plain(), /Slobozia/);
     assert.match(t.plain(), /Bob: anyone selling ham\?/);
-    await t.keys('\t', '\t');
-    assert.match(t.plain(), /Enter write · ←\/→ room/);
+    assert.match(t.plain(), /Enter chat · ←\/→ room/);
     await t.keys('\r');
     await t.type('more ham m q');
     await t.keys('\r');
     assert.deepEqual(said, ['more ham m q']);
     said.length = 0;
-    await t.keys('\t');
     // Mail: reports listed, Enter opens one, Tab → telegrams, Enter reads, n composes and sends.
     await t.keys('M');
     await t.settle(300);
