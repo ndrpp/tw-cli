@@ -77,7 +77,7 @@ export class MailApi {
   async report(id: number, hash = ''): Promise<Report> {
     const json = await this.client.remoteCallMode('reports', 'show_report', { report_id: id, hash, animated: 0, simpleheader: 0 });
     if (json.error) fail(json, 'reports/show_report');
-    return { id, title: plainText(json.title), date: plainText(json.date_received), type: String(json.reportType ?? ''), text: plainText(json.page) };
+    return { id, title: plainText(json.title), date: plainText(json.date_received), type: String(json.reportType ?? ''), text: plainText(json.page, { compact: true }) };
   }
 
   async deleteReport(id: number, folder: ReportFolder = 'all'): Promise<void> {

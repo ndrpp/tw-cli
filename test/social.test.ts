@@ -131,7 +131,7 @@ const TELEGRAMS = { page: 1, count: 1, folders: [], messages: [
 
 function mailRoutes() {
   routes['/game.php?window=reports&action=get_reports'] = () => REPORTS;
-  routes['/game.php?window=reports&mode=show_report'] = () => ({ title: 'Job report: Tending pigs', date_received: '10:12', reportType: 'job', page: '<page><div>You earned <b>$ 90</b><br/>and 50 XP</div></page>' });
+  routes['/game.php?window=reports&mode=show_report'] = () => ({ title: 'Job report: Tending pigs', date_received: '10:12', reportType: 'job', page: '<page><div>You earned <b>&#036; 90</b><br/>and 50 XP</div><table><tr><td>Motivation</td><td>82 &#37;</td></tr><tr><td>Money</td><td>&#036; 47</td></tr></table></page>' });
   routes['/game.php?window=messages&action=get_messages'] = () => TELEGRAMS;
   routes['/game.php?window=messages&action=get_message'] = () => ({ subject: 'Hello there', page: 0, pages: 1, head_id: 77, posts: [{ name: 'Bob', post_date: '09:00', text: 'Want to [b]trade[/b] some ham?', player_id: 9 }] });
   routes['/game.php?window=messages&action=send'] = () => [true, 'sent'];
@@ -148,7 +148,7 @@ test('mail: reports and telegrams requests, HTML/BBCode to text, errors from [ok
   assert.equal(state.unread.reports, false);
   assert.deepEqual(Object.fromEntries(params(callTo('get_reports')[0]!.body)), { page: '1', folder: 'job' });
   const r = await state.openReport(state.reports!.reports[0]!);
-  assert.equal(r!.text, 'You earned $ 90\nand 50 XP');
+  assert.equal(r!.text, 'You earned $ 90\nand 50 XP\nMotivation 82 %\nMoney $ 47');
   assert.equal(params(callTo('show_report')[0]!.body).get('hash'), 'h501');
   await state.deleteReport(state.reports!.reports[0]!);
   assert.deepEqual(Object.fromEntries(params(callTo('delete_single_report')[0]!.body)), { report: '501', type: 'job', deleted: 'false' });
@@ -437,6 +437,8 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
     assert.match(t.plain(), /Job report: Tending pigs/);
     await t.keys('\r');
     assert.match(t.plain(), /You earned \$ 90/);
+    assert.match(t.plain(), /Motivation 82 %/);
+    assert.doesNotMatch(t.plain(), /&#/);
     await t.keys('\t', '\r');
     assert.match(t.plain(), /Want to trade some ham\?/);
     await t.keys('n');

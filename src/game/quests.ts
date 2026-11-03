@@ -40,21 +40,45 @@ export interface Quest {
 
 export interface QuestEmployer { key: string; name: string; x: number | null; y: number | null; open: Quest[] }
 
-/** HTML → plain text for the terminal. */
-export function plainText(html: unknown): string {
-  return String(html ?? '')
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&', apos: "'", quot: '"', lt: '<', gt: '>', nbsp: ' ', hellip: '…',
+  ndash: '–', mdash: '—', times: '×', middot: '·', deg: '°', euro: '€', pound: '£',
+  copy: '©', reg: '®', trade: '™', laquo: '«', raquo: '»',
+  aacute: 'á', agrave: 'à', acirc: 'â', atilde: 'ã', auml: 'ä', aring: 'å', aelig: 'æ', ccedil: 'ç',
+  eacute: 'é', egrave: 'è', ecirc: 'ê', euml: 'ë', iacute: 'í', igrave: 'ì', icirc: 'î', iuml: 'ï',
+  ntilde: 'ñ', oacute: 'ó', ograve: 'ò', ocirc: 'ô', otilde: 'õ', ouml: 'ö', oslash: 'ø',
+  uacute: 'ú', ugrave: 'ù', ucirc: 'û', uuml: 'ü', yacute: 'ý', yuml: 'ÿ', szlig: 'ß',
+};
+
+/** Decode numeric and common named HTML entities in one pass (no double decoding). */
+function decodeEntities(text: string): string {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);?/gi, (match, body: string) => {
+    if (body[0] === '#') {
+      const hex = body[1]?.toLowerCase() === 'x';
+      const codePoint = parseInt(body.slice(hex ? 2 : 1), hex ? 16 : 10);
+      if (Number.isInteger(codePoint) && codePoint > 0 && codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff)) {
+        return String.fromCodePoint(codePoint);
+      }
+      return match;
+    }
+    return NAMED_ENTITIES[body.toLowerCase()] ?? match;
+  });
+}
+
+/** HTML → plain text for the terminal. `compact` drops blank lines (reports are field lists). */
+export function plainText(html: unknown, opts: { compact?: boolean } = {}): string {
+  const text = String(html ?? '')
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>\s*/gi, '\n\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&hellip;/g, '…')
-    .replace(/&#0?39;|&apos;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/<\/(?:p|div|li|tr|h[1-6]|table|thead|tbody|ul|ol|dl|dt|dd|blockquote|section|article|center|pre)\s*>/gi, '\n')
+    .replace(/<(?:p|div|li|tr|h[1-6]|table|thead|tbody|ul|ol|dl|dt|dd|blockquote|section|article|center|pre)(?:\s[^>]*)?>/gi, '\n')
+    .replace(/<\/t[dh]\s*>/gi, '\t')
+    .replace(/<[^>]+>/g, '');
+  return decodeEntities(text)
+    .replace(/\r\n?/g, '\n')
+    .replace(/\t+/g, '  ')
+    .replace(/[ \t\f\v]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(opts.compact ? /\n{2,}/g : /\n{3,}/g, opts.compact ? '\n' : '\n\n')
     .trim();
 }
 

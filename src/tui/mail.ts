@@ -139,7 +139,7 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
     : `page ${list?.page ?? 1}/${list?.pages ?? 1} (< >) · n new`;
   const rows = tab === 'reports'
     ? reports.slice(start, end).map((r, i) => h(Text, { key: r.id, inverse: start + i === idx, bold: !r.read, wrap: 'truncate' },
-      `${r.read ? ' ' : '•'} ${truncate(r.title, leftW - 18)} `, h(Text, { dimColor: true }, truncate(r.date, 12))))
+      `${r.read ? ' ' : '•'} ${truncate(r.title, leftW - 19)} `, h(Text, { dimColor: true }, truncate(r.date, 12))))
     : telegrams.slice(start, end).map((t, i) => h(Text, { key: t.id, inverse: start + i === idx, bold: t.unread, wrap: 'truncate' },
       `${t.unread ? '•' : t.answered ? '↩' : ' '} ${truncate(t.subject, leftW - 30)} `,
       h(Text, { color: 'magenta' }, truncate(t.partners.length ? t.partners.join(', ') : 'System', 12)), ' ',
