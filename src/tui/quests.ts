@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { GameState } from '../game/state.ts';
 import { groupByChain, type Quest, type QuestChain } from '../game/quests.ts';
-import { formatDuration, money, scrollWindow, truncate } from './format.ts';
+import { formatDuration, money, scrollWindow, shortDuration, truncate } from './format.ts';
 import type { RouteObjective, RoutePlan } from '../game/route.ts';
 import type { ScreenProps } from './character.ts';
 
@@ -14,15 +14,6 @@ type Confirm = { kind: 'finish'; quest: Quest; choice: number } | { kind: 'cance
 type RouteScope = 'quest' | 'chain' | 'all';
 const SCOPE_LABEL: Record<RouteScope, string> = { quest: 'this quest', chain: 'this chain', all: 'all quests' };
 const DURATION_LABEL = { short: '15 s', middle: '10 min', long: '1 h' } as const;
-
-/** "45m", "2h10", "3d4h" */
-export function shortDuration(sec: number): string {
-  const m = Math.round(sec / 60);
-  if (m < 60) return `${Math.max(1, m)}m`;
-  const hrs = Math.floor(m / 60);
-  if (hrs < 24) return `${hrs}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`;
-  return `${Math.floor(hrs / 24)}d${hrs % 24 ? `${hrs % 24}h` : ''}`;
-}
 
 /** Compact estimate for a list row: "~2h10", "~2h10+?" when some need can't come from jobs, "" when nothing to do. */
 export function estimateTag(plan: RoutePlan | undefined): string {

@@ -7,6 +7,7 @@ import type { ScreenProps } from './character.ts';
 import type { GameState } from '../game/state.ts';
 import { regenSeconds } from '../game/timeline.ts';
 import { bar, formatDuration, money, truncate } from './format.ts';
+import { ICON, stepIcon, taskIcon } from './icons.ts';
 import { buildGrid, ZOOMS } from './map.ts';
 import { ChatPanel, chatRoomIds } from './chat.ts';
 import { QueuePane } from './queue.ts';
@@ -127,9 +128,9 @@ function WorkingPanel({ state, width, confirm }: { state: GameState; width: numb
     const to = walking ? head.way!.end : head.end;
     const ratio = to > from ? Math.min(1, Math.max(0, (now - from) / (to - from))) : 1;
     const q = head.type === 'job' ? state.queuedJob(head) : null;
-    title = walking ? 'Walking' : head.type === 'job' ? 'Working' : head.type === 'sleep' ? 'Sleeping' : head.title;
+    title = walking ? `${ICON.walk} Walking` : head.type === 'job' ? `${ICON.job} Working` : head.type === 'sleep' ? `${ICON.sleep} Sleeping` : `${taskIcon(head.type)} ${head.title}`;
     rows.push(h(Text, { key: 't', bold: true, wrap: 'truncate' },
-      walking ? `→ ${head.title}` : head.title,
+      walking ? `${ICON.walk} ${head.title}` : head.title,
       h(Text, { dimColor: true, bold: false }, ` · ${head.coords.x},${head.coords.y} · ${formatDuration(head.end - (head.way?.end ?? head.start))}`)));
     rows.push(h(Text, { key: 'bar', wrap: 'truncate' },
       h(Text, { color: walking ? 'cyan' : 'green' }, bar(ratio, 1, Math.max(8, w - 28))),
@@ -154,10 +155,11 @@ function WorkingPanel({ state, width, confirm }: { state: GameState; width: numb
   const cfg = state.autopilot.config;
   const plan = state.runner.plan;
   if (cfg.running || plan) {
+    const next = plan?.tasks[0];
     const status = cfg.running ? (cfg.modules.dryRun ? 'dry run' : 'running') : 'paused';
     rows.push(h(Text, { key: 'ap', wrap: 'truncate' },
       h(Text, { color: cfg.running ? 'green' : 'yellow' }, `autopilot ${status}`),
-      h(Text, { dimColor: true }, plan ? ` · ${cfg.running ? 'next' : 'would do'}: ${plan.why}` : ' · planning…')));
+      h(Text, { dimColor: true }, next ? ` · ${cfg.running ? 'next' : 'would do'}: ${stepIcon(next.step, next.action)} ${next.step.title} (${next.why ?? plan!.why})` : plan ? ` · ${plan.why}` : ' · planning…')));
   }
   if (confirm && head) rows.push(h(Text, { key: 'cf', color: 'red', wrap: 'truncate' }, `Cancel ${head.title}? y / n`));
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width, paddingX: 1, flexShrink: 0 },

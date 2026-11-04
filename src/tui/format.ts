@@ -7,6 +7,15 @@ export function formatDuration(totalSeconds: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
 }
 
+/** "45m", "2h10", "3d4h" */
+export function shortDuration(sec: number): string {
+  const m = Math.round(sec / 60);
+  if (m < 60) return `${Math.max(1, m)}m`;
+  const hrs = Math.floor(m / 60);
+  if (hrs < 24) return `${hrs}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`;
+  return `${Math.floor(hrs / 24)}d${hrs % 24 ? `${hrs % 24}h` : ''}`;
+}
+
 export function bar(value: number, max: number, width: number): string {
   const ratio = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
   const full = Math.round(ratio * width);

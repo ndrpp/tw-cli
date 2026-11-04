@@ -152,6 +152,8 @@ test('autopilot screen: toggles, values and ranking change the saved config; que
     assert.match(plain(), /1 Quests completed/);
     assert.match(plain(), /Cutting tobacco/);
     assert.match(plain(), /\+45 XP/);
+    assert.match(plain(), /In the queue/);
+    assert.match(plain(), /Goals  Quests › XP › Money › Products/);
     await keys('J'); // quests down one rank
     assert.deepEqual(state.autopilot.config.priority, ['xp', 'quests', 'money', 'products']);
     await keys('j', 'j', 'j', 'j', ' '); // the "Queue jobs" toggle
@@ -197,7 +199,7 @@ async function planWith(o: { start?: Partial<TimelineStart>; config?: (c: any) =
 test('planner: the top goal decides the job; per hour vs per energy', async () => {
   const xp = await planWith({ config: (c) => (c.priority = ['xp', 'money', 'quests', 'products']) });
   assert.equal((xp.tasks[0]!.step as any).jobId, 1);
-  assert.match(xp.why, /best xp per energy/);
+  assert.match(xp.why, /best XP per energy/);
   const money = await planWith({ config: (c) => (c.priority = ['money', 'xp', 'quests', 'products']) });
   assert.equal((money.tasks[0]!.step as any).jobId, 2);
   assert.ok(money.value > 0);
@@ -291,6 +293,11 @@ test('consumables: effects parsed from usebonus; energy item when it saves 30+ m
   assert.deepEqual(hp.tasks[0]!.action, { type: 'use', itemId: 2 }, '200 + 100 lifts HP over 50 % of 500');
   const low = await planWith({ start: { health: 100 }, consumables: [cookie], hotels, config: on });
   assert.equal(low.tasks[0]!.step.kind, 'sleep', '100 + 100 is still under 50 %: sleep');
+  const near = await planWith({ start: { energy: 0 }, consumables: [coffee], hotels, config: on });
+  assert.equal(near.tasks[0]!.step.kind, 'sleep', 'a hotel within the own-town distance beats an energy item');
+  const farHotels = [{ ...hotels[0], at: { x: 1e6, y: 0 } }];
+  const far = await planWith({ start: { energy: 0 }, consumables: [coffee], hotels: farHotels, config: on });
+  assert.deepEqual(far.tasks[0]!.action, { type: 'use', itemId: 1 }, 'hotel past the own-town distance: the item');
 });
 
 test('planner: plans to the 6 h horizon (jobs of any length cover the same time); inserted sleep goes in at its time', async () => {
@@ -362,6 +369,31 @@ test('queue view (Q): queued + planned rows; d excludes a planned job, s inserts
   } finally {
     app.unmount();
   }
+});
+
+test('plan rows: back-to-back runs of a job merge, waits for energy are rows, reasons come from the tasks', async () => {
+  const { planRows } = await import('../src/tui/autopilot.ts');
+  const st = start({ energy: 30 });
+  const steps = [
+    job({ title: 'Queued', jobId: 9, fixed: { start: st.now, end: st.now + 600 } }),
+    job({ title: 'Cotton', jobId: 2 }), job({ title: 'Cotton', jobId: 2 }),
+    job({ title: 'Wheel', jobId: 3, energy: 40 }),
+  ];
+  const tl = projectTimeline(st, steps, { wayTime: way });
+  const tasks = steps.slice(1).map((s, i) => ({ module: 'jobs' as const, key: `t${i}`, step: s, why: `why ${i}` }));
+  const rows = planRows(tl, tasks);
+  assert.deepEqual(rows.map((r) => [r.title, r.count, r.fixed]), [['Queued', 1, true], ['Cotton', 2, false], ['wait 1h14 for energy', 1, false], ['Wheel', 1, false]]);
+  assert.equal(rows[1]!.why, 'why 0', 'a merged row keeps the first reason');
+  assert.equal(rows[1]!.xp, 100);
+});
+
+test('planner: a job picked for quests says which item, for which quest, and how many are left', async () => {
+  const p = await planWith({
+    jobs: [planJob(1, 1, { xp: 100, money: 10, items: [{ itemId: 7000, expected: 1, percent: 100 }] })],
+    needs: [{ key: 'item:7', label: 'Cotton', amount: 5, unit: 'items', itemId: 7000, quests: ["Farmer's woes"] }],
+  });
+  assert.equal(p.why, `quest: Cotton for "Farmer's woes" (5 left)`);
+  assert.match(p.tasks[1]!.why!, /\(4 left\)/);
 });
 
 test('quest rewards: picked by priority; a wearable upgrade always wins', async () => {

@@ -27,7 +27,7 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
   newest reports (`state.recentReports`), interactive chat. Small terminals drop chat (< 24 rows), then the
   right column (< 96 cols).
 - Reports on home cost no polling: one read on first show, then the live "new report" push (which already
-  fetches page 1 for its log line) fills `recentReports`; without live updates, one re-read 5 s after a job ends.
+  fetches page 1 for its log lines) fills `recentReports`; without live updates, one re-read 5 s after a job ends.
 - **Jobs** (mode `main`, `W`): full-height list (xp / $ of the longest run, LP, travel; `!` marks jobs for the
   highlighted quest), detail with xp per energy, queue with its end time and total. No chat here.
 - **Debug** (`debug.ts`, mode `debug`, `B`): left the debug log (`state.debug`, newest followed at the bottom
@@ -48,12 +48,19 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
   progress bars, and construction detail. `Enter` opens a form with the available duration and payer (town
   treasury / private), then queues a `taskType: 'build'` task. `u` refreshes; it does not use the town you are
   standing in.
+- **Log pane** (bottom, all screens): 3 lines, 5 from 32 rows; twice that on home and jobs. Logged: finished
+  tasks, each new report once (`reportLogLine`: job XP, $, event currency, found items; others by title; ids in
+  `seenReports`), item uses (manual and autopilot), level-ups, autopilot actions, errors.
 - **Map**: `m` / Esc go back to the screen it was opened from (`beforeMap`).
 
 ## Rendering
 - The 1 s ticker in `App` re-renders and drives `state.tick()`, queue polls, syncs and `state.runner.step()`.
 - `GameState` emits `change`; `useGameState` re-renders on it. Components read state directly (no copies).
 - Lists use `scrollWindow(selected, total, rows)`; text is `wrap: 'truncate'` with `truncate()` for columns.
+  Durations: `formatDuration` (`1:02:03`, ticking clocks) or `shortDuration` (`45m`, `2h10`, plans and estimates).
+- Icons: `src/tui/icons.ts` (`ICON`, `taskIcon(type)`, `stepIcon(step, action)`): ⚒ job, → walk, ☾ sleep, $ bank,
+  ✚ item, ◷ wait, ★ level-up, ⚔ duel, ! quest, ✉ mail. One-cell text symbols only; emoji are two cells wide
+  and misalign Ink columns. Used in the header, jobs queue, home working panel, autopilot plan and Q view.
 - Coloured wrapped text (chat lines): `wrapSegments()` in `form.ts` wraps `{text, color}` runs like `wrap()`.
 - Tests render with a `PassThrough` stdout (`isTTY`, `columns`, `rows`) and strip ANSI; a stub state must be
   re-rendered by hand (`app.rerender`) since it does not emit `change`.

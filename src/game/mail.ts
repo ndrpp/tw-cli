@@ -210,6 +210,23 @@ function withItems(summary: string, items: string[]): string {
   return /Found items:/i.test(summary) ? summary.replace(/Found items:/i, `Found items: ${items.join(', ')}`) : `${summary}\nFound items: ${items.join(', ')}`;
 }
 
+/**
+ * One log line for a report row. Job reports become "Job: +XP, $, extras · found items" from the list summary
+ * ("Time: 1 hour Money: 297\nBonds: 0 XP: 161\nDanger: 0 355 Cempasúchil\nFound items: Water x 11"; an
+ * unlabelled "<n> <name>" after a labelled number is an event currency). Other reports keep their title.
+ */
+export function reportLogLine(r: ReportRow): string {
+  const job = /^Job report:\s*(.+)$/i.exec(r.title)?.[1];
+  if (!job) return `Report: ${r.title}`;
+  const num = (re: RegExp) => Number(re.exec(r.summary)?.[1]) || 0;
+  const xp = num(/\bXP:\s*(\d+)/i);
+  const money = num(/\bMoney:\s*(\d+)/i);
+  const extras = [...r.summary.matchAll(/:\s*\d+\s+(\d+\s+[^\d\s:][^\n:]*)$/gm)].map((m) => m[1]!.trim());
+  const found = /^Found items:\s*(.+)$/im.exec(r.summary)?.[1]?.trim();
+  const gains = [xp && `+${xp} XP`, money && `$${money}`, ...extras].filter(Boolean).join(', ');
+  return `${job}${gains ? `: ${gains}` : ''}${found ? ` · found ${found}` : ''}`;
+}
+
 function fail(json: any, what: string): never {
   throw new Error(plainText(json?.msg ?? json?.error ?? `${what} failed`));
 }

@@ -1046,3 +1046,19 @@ test('job report: found items come from reportInfo.items (the page only has empt
     + '<tr><td><img src="images/job/experience.png" /></td><td>76</td><td><img src="images/icons/DayOfDead.png" /></td><td>366 Cempasúchil</td></tr></table>';
   assert.equal(popupText(fields), 'Time: 1 hour Money: 319\nXP: 76 366 Cempasúchil', 'icon labels named, event icons dropped');
 });
+
+test('report log line: job rewards, event currency and found items in one line; other reports by title', async () => {
+  const { reportLogLine } = await import('../src/game/mail.ts');
+  const row = (title: string, summary: string) => ({ id: 1, title, hash: '', read: false, date: '', summary });
+  // Live list summaries (2026-11-03).
+  assert.equal(
+    reportLogLine(row('Job report: Laying railroad tracks', 'Title: Job report: Laying railroad tracks\nType: Work\nTime: 1 hour Money: 297\nBonds: 0 XP: 161\nDanger: 0 355 Cempasúchil\nFound items: Glass of water x 11')),
+    'Laying railroad tracks: +161 XP, $297, 355 Cempasúchil · found Glass of water x 11',
+  );
+  assert.equal(reportLogLine(row('Job report: Prospecting', 'Time: 1 hour Money: 319\nXP: 76 366 Cempasúchil')), 'Prospecting: +76 XP, $319, 366 Cempasúchil');
+  assert.equal(
+    reportLogLine(row('Job report: Putting up posters', 'Type: Work\nTime: 15 seconds Money: 16\nBonds: 0 XP: 8\nDanger: 0 3 Cempasúchil')),
+    'Putting up posters: +8 XP, $16, 3 Cempasúchil',
+  );
+  assert.equal(reportLogLine(row("Achievement 'Disposophobic' gained.", 'Type: Achievements')), "Report: Achievement 'Disposophobic' gained.");
+});

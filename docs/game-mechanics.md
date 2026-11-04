@@ -39,7 +39,10 @@ browser client's code; **unverified** = assumed, check live and update this file
 ## Hotel and sleep
 - `building_hotel get_data {town_id}` → `rooms: {cubby|bedroom|hotel_room|apartment|luxurious_apartment: {name,
   level, available, free, costs, energy, health}}`.
-- **Room `energy` / `health` units are unverified.** The autopilot reads them as % of max per hour.
+- Room `energy` / `health` are points scaled to your max (verified live 2026-11-03, level-5 hotel, max HP 610:
+  cubby 64/390 … luxury 100/610 = 64 % … 100 % of max). **The time unit is unverified**; the autopilot reads them
+  as % of max per hour (`roomRate` in `hotel.ts`) times a room scale calibrated from real sleeps (energy only).
+- A job the energy does not cover is refused with "You need at least N more energy points to work on this job."
 - Whether cancelling a running sleep keeps the energy regenerated so far: unverified (the autopilot syncs right
   after its first wake-up cancel).
 

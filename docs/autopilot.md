@@ -13,7 +13,7 @@ screen (`G`; `P` is taken by the trade screen). Spec agreed with the user in a g
 | `src/game/autopilot-runner.ts` | `AutopilotRunner` (`state.runner`): replans on input change, sends tasks, wakes from sleep, deposits, uses items, cancels for a better plan, NPC duels for XP, retries/backoff, spend cap. |
 | `src/game/autopilot-quests.ts` | `QuestModule`: finish (reward by priority), wear + restore gear, buy in town shops, accept saloon quests. `chooseReward`. |
 | `src/game/debug-log.ts`, `src/tui/debug.ts` | Debug log (`state.debug`) and its screen (`B`); see "Debugging". |
-| `src/tui/autopilot.ts` | Screen: priority, module toggles and values, Now pane, queue projection; `Q` full queue view. |
+| `src/tui/autopilot.ts` | Screen: priority, module toggles and values on the left, plan pane (`PlanPane`, rows from `planRows`) on the right; `Q` full queue view. |
 | `test/autopilot.test.ts`, `test/social.test.ts` (runner) | Timeline, config, planner, consumables, inserts, screen, queue view, rewards, duels; runner against a fake server. |
 
 ## Using it
@@ -24,6 +24,14 @@ screen (`G`; `P` is taken by the trade screen). Spec agreed with the user in a g
   a row's time, `J K` move an inserted row. It captures all keys while open (Esc closes).
 - Quest screen route prompt: `a` = autopilot on, Quests first, limited to the route's quests (`rules.onlyQuests`;
   clear it with the "Quests goal" row).
+- Plan pane (right): status (running / dry run / paused "what it would do"), goals in rank order, what the plan
+  earns (job pay only; deposits are not losses) and when the next level lands, live E/HP/cash/spend. Then "In the
+  queue" and numbered "Planned" rows: icon per kind, gains or length, energy before → after, `★` level-up, and the
+  task's reason dimmed under it (shown once when the next row shares it, e.g. walk + deposit). Back-to-back runs of
+  one job merge (`×3`); energy waits ≥ 1 min are their own `◷` rows.
+- Reasons (`PlannedTask.why`): jobs say the goal that gave most of the score (`Candidate.by`): `quest: Cotton for
+  "Farmer's woes" (3 left)` (left = before this run) or `best XP per energy · also <quest part>`. Sleeps: `energy low
+  (8): sleep until …`; bank: `cash $X is over $Y: banking it`. Home shows the next task's title with its reason.
 - Header shows `autopilot ●` while running. Resumes on launch if it was running (after startup + first replan).
 
 ## Debugging
@@ -103,6 +111,9 @@ wake-up cancel → cancel-for-better → quest step → NPC duel for XP → send
 current energy allow; a sleep ends a batch) or, with an empty queue, the next on-the-spot action (deposit in the
 town you stand in, use an item).
 - Failures: retry after 1 → 5 → 15 min; after 3 the step key is left out of plans. Session errors pause.
+  Exception: a job refused for "N more energy points" is not a failure. Our energy estimate was ahead of the
+  server's, so local energy is set to `job energy − N` and the plan is redone.
+- Cancel-for-better counts each cancelled job's energy refund at its queued duration's cost, not the long job's.
 - Spend cap: hotel rooms and quest purchases count toward `spend.daily` (UTC day); quest items ≤ $500 per quest.
 
 ## Modules: status

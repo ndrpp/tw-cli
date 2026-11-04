@@ -447,7 +447,7 @@ export class AutopilotRunner {
     if (Date.now() - this.lastCancelCheck < CANCEL_CHECK_MS) return false;
     this.lastCancelCheck = Date.now();
     const current = this.plan.value + this.queueValue(s.queue);
-    const refund = (from: number) => s.queue.slice(from).reduce((a, t) => a + (t.type === 'job' ? this.jobEnergy(t.jobId) : 0), 0);
+    const refund = (from: number) => s.queue.slice(from).reduce((a, t) => a + (t.type === 'job' ? this.jobEnergy(t) : 0), 0);
     const nowS = s.clock.now();
     const running = s.queue[0]!.start <= nowS;
     // Keep the running task, cancel the rest; or cancel everything.
@@ -481,9 +481,13 @@ export class AutopilotRunner {
     return true;
   }
 
-  private jobEnergy(jobId?: number): number {
-    const j = this.state.jobs.find((x) => x.id === jobId);
-    return j?.values.long?.energy ?? 0;
+  /** Energy a queued job cost: the value for its duration (a short job refunds 1, not the long job's 12). */
+  private jobEnergy(t: GameState['queue'][number]): number {
+    const j = this.state.jobs.find((x) => x.id === t.jobId);
+    if (!j) return 0;
+    const secs = t.end - (t.way?.end ?? t.start);
+    const vs = Object.values(j.values).filter((v) => !!v);
+    return vs.reduce((a, b) => (Math.abs(b.duration - secs) < Math.abs(a.duration - secs) ? b : a), vs[0]!)?.energy ?? 0;
   }
 
   /**
@@ -547,7 +551,13 @@ export class AutopilotRunner {
       });
       if (res.added.length) s.info(`Autopilot: queued ${res.added.map((q) => q.title).join(', ')}. ${batch[0]!.why ?? ''}`);
       const failed = batch.slice(res.added.length)[0];
-      if (failed) this.fail(failed.key, `${failed.step.title} refused${res.errors.length ? `: ${res.errors.join('; ')}` : ''}`);
+      // "You need at least N more energy points": our energy estimate ran ahead of the server's. Correct it and
+      // replan (towards a sleep or an item) instead of backing the job off as if it had failed.
+      const short = Number(/at least (\d+) more energy/i.exec(res.errors.join(' '))?.[1]);
+      if (failed?.step.kind === 'job' && short > 0) {
+        s.character.setEnergy(Math.max(0, failed.step.energy - short));
+        s.info(`Autopilot: ${failed.step.title} needs ${short} more energy than the server has; energy corrected to ${s.character.energy}.`);
+      } else if (failed) this.fail(failed.key, `${failed.step.title} refused${res.errors.length ? `: ${res.errors.join('; ')}` : ''}`);
       this.replan('queued');
     } catch (err) {
       this.fail(batch[0]!.key, `${batch[0]!.step.title}: ${err instanceof Error ? err.message : String(err)}`);

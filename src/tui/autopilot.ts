@@ -5,7 +5,10 @@ import { Box, Text, useInput } from 'ink';
 import type { AutopilotConfig, Goal, ModuleKey } from '../game/autopilot-config.ts';
 import type { GameState } from '../game/state.ts';
 import type { ScreenProps } from './character.ts';
-import { formatDuration, money, scrollWindow, truncate } from './format.ts';
+import type { PlannedTask } from '../game/autopilot-config.ts';
+import type { ProjectedStep, Timeline } from '../game/timeline.ts';
+import { formatDuration, money, scrollWindow, shortDuration, truncate } from './format.ts';
+import { ICON, stepIcon } from './icons.ts';
 
 const h = React.createElement;
 
@@ -130,8 +133,8 @@ export function AutopilotScreen({ state, width, height, onCapture, onExit, activ
       const inv = n === idx;
       if (r.kind === 'head') return h(Text, { key: n, bold: true, color: 'yellow', wrap: 'truncate' }, r.text);
       if (r.kind === 'scope') {
-        const n = state.autopilot.rules.onlyQuests.length;
-        return h(Text, { key: n, inverse: inv, wrap: 'truncate' }, `     Quests goal: ${n ? `only the route's ${n} quest(s) (Space: all)` : 'all open quests'}`);
+        const count = state.autopilot.rules.onlyQuests.length;
+        return h(Text, { key: n, inverse: inv, wrap: 'truncate' }, `     Quests goal: ${count ? `only the route's ${count} quest(s) (Space: all)` : 'all open quests'}`);
       }
       if (r.kind === 'goal') return h(Text, { key: n, inverse: inv, wrap: 'truncate' }, ` ${r.rank + 1} ${GOAL_LABEL[cfg.priority[r.rank]!]}`);
       if (r.kind === 'num') return h(Text, { key: n, inverse: inv, wrap: 'truncate' }, `     ${r.label}: ${r.fmt(r.get(cfg))}`);
@@ -139,37 +142,153 @@ export function AutopilotScreen({ state, width, height, onCapture, onExit, activ
       return h(Text, { key: n, inverse: inv, wrap: 'truncate' }, `${r.indent ? '     ' : ' '}[${r.get(cfg) ? 'x' : ' '}] ${r.label}`, soon);
     }),
   );
-  return h(Box, { width, height }, left, h(NowPane, { state, width: rightW, height }));
+  return h(Box, { width, height }, left, h(PlanPane, { state, width: rightW, height }));
 }
 
-/** What the autopilot is doing, then the projected queue: ETA, energy after, XP, level-ups. */
-function NowPane({ state, width, height }: { state: GameState; width: number; height: number }) {
-  const runner = state.runner;
-  const plan = runner.plan;
+/** One line of the plan pane: a step, back-to-back runs of one job merged, or a wait for energy. */
+export interface PlanRow {
+  icon: string;
+  title: string;
+  why?: string;
+  fixed: boolean;
+  wait?: boolean;
+  levelUp: boolean;
+  /** Same key on consecutive rows: merged into one ("×3"). */
+  key?: string;
+  count: number;
+  step?: ProjectedStep;
+  xp: number;
+  money: number;
+  energyBefore: number;
+  energy: number;
+  end: number;
+}
+
+/** The timeline as plan rows: waits for energy become rows, repeated runs of a job merge. */
+export function planRows(tl: Timeline, tasks: PlannedTask[]): PlanRow[] {
+  const fixedN = tl.steps.length - tasks.length;
+  const rows: PlanRow[] = [];
+  tl.steps.forEach((s, i) => {
+    const fixed = i < fixedN;
+    const task = fixed ? undefined : tasks[i - fixedN];
+    const st = s.step;
+    if (s.waited >= 60) {
+      rows.push({ icon: ICON.wait, title: `wait ${shortDuration(s.waited)} for energy`, fixed, wait: true, levelUp: false, count: 1, xp: 0, money: 0, energyBefore: 0, energy: 0, end: s.start });
+    }
+    const key = st.kind === 'job' ? `${fixed}:${st.jobId}:${st.duration}` : undefined;
+    const last = rows[rows.length - 1];
+    if (key && last?.key === key && s.travel < 60 && s.waited < 60) {
+      last.count++;
+      last.xp += st.kind === 'job' ? st.xp : 0;
+      last.money += st.kind === 'job' ? st.money : 0;
+      last.energy = s.energy;
+      last.levelUp ||= s.levelUp;
+      last.end = s.end;
+      return;
+    }
+    rows.push({
+      icon: stepIcon(st, task?.action), title: st.title, why: task?.why, fixed, levelUp: s.levelUp, key, count: 1, step: s,
+      xp: st.kind === 'job' ? st.xp : 0, money: st.kind === 'job' ? st.money : 0, energyBefore: s.energyBefore, energy: s.energy, end: s.end,
+    });
+  });
+  return rows;
+}
+
+const ICON_COLOR: Record<string, string> = { [ICON.job]: 'green', [ICON.walk]: 'cyan', [ICON.sleep]: 'blue', [ICON.bank]: 'yellow', [ICON.item]: 'magenta', [ICON.duel]: 'red' };
+const GOAL_SHORT: Record<Goal, string> = { quests: 'Quests', xp: 'XP', money: 'Money', products: 'Products' };
+
+/** Title and right-hand column of a plan row. */
+function rowText(r: PlanRow, now: number): { title: string; info: string } {
+  const s = r.step;
+  if (!s) return { title: r.title, info: '' };
+  const st = s.step;
+  const walk = s.travel >= 60 && st.kind !== 'walk' ? `${ICON.walk}${shortDuration(s.travel)} ` : '';
+  const en = `E ${Math.floor(r.energyBefore)}→${Math.floor(r.energy)}`;
+  const eta = r.fixed ? ` · ${r.end - now <= 0 ? 'done' : `${shortDuration(r.end - now)} left`}` : '';
+  switch (st.kind) {
+    case 'job': {
+      const len = shortDuration(st.duration);
+      const title = r.count > 1 ? `${st.title} ×${r.count} (${len} each)` : `${st.title} (${len})`;
+      return { title, info: `${walk}+${r.xp}xp ${money(r.money)}${r.fixed ? eta : ` ${en}`}` };
+    }
+    case 'sleep':
+      return { title: st.title, info: `${walk}${shortDuration(s.end - s.start)}${st.cost ? ` ${money(st.cost)}` : ''}${r.fixed ? eta : ` ${en}`}` };
+    case 'walk':
+      return { title: st.title, info: `${shortDuration(s.end - s.depart)} walk${eta}` };
+    case 'action': {
+      const parts = [st.cash ? money(Math.abs(st.cash)) : '', st.energy ? `+${Math.round(st.energy)}E` : '', st.health ? `+${Math.round(st.health)}HP` : ''].filter(Boolean);
+      return { title: st.title, info: `${walk}${parts.join(' ')}${eta}` };
+    }
+  }
+}
+
+/**
+ * The plan for an end user: status, goals, what the plan earns, then the queue and the planned steps, each
+ * with why the autopilot picked it. Repeated runs merge; waits for energy are their own rows.
+ */
+function PlanPane({ state, width, height }: { state: GameState; width: number; height: number }) {
+  const plan = state.runner.plan;
   const tl = plan?.timeline ?? state.timeline();
   const cfg = state.autopilot.config;
-  const why = !plan ? 'Planning…' : `${cfg.running ? (cfg.modules.dryRun ? 'Dry run: ' : 'Next: ') : 'Paused, would do: '}${plan.why}`;
   const now = state.clock.now();
   const c = state.character;
-  const lines: React.ReactNode[] = [
-    h(Text, { key: 'now', bold: true }, 'Now'),
-    h(Text, { key: 'why', color: cfg.running ? 'green' : 'yellow', wrap: 'wrap' }, why),
-    h(Text, { key: 'spent', dimColor: true, wrap: 'truncate' }, `Spent today ${money(state.autopilot.spent.amount)} of ${money(cfg.spend.daily)}`),
-    h(Text, { key: 'cash', wrap: 'truncate' }, `Cash ${money(c.cash)} / bank at ${money(state.autopilot.config.bank.above)}`),
+  const status = !plan
+    ? h(Text, { dimColor: true }, 'planning…')
+    : cfg.running
+      ? (cfg.modules.dryRun ? h(Text, { color: 'yellow' }, '● dry run · plans only, sends nothing') : h(Text, { color: 'green' }, '● running'))
+      : h(Text, { color: 'yellow' }, '‖ paused · this is what it would do');
+  const only = state.autopilot.rules.onlyQuests.length;
+  const goals = cfg.priority.map((g) => (g === 'quests' && only ? `Quests (${only} on route)` : GOAL_SHORT[g])).join(' › ');
+  const lvl = tl.steps.find((s) => s.levelUp);
+  // Job pay only: gained.money also counts deposits as money gone.
+  const earned = tl.steps.reduce((a, s) => a + (s.step.kind === 'job' ? s.step.money : 0), 0);
+  const head: React.ReactNode[] = [
+    h(Text, { key: 'st', bold: true, wrap: 'truncate' }, 'Plan  ', status),
+    h(Text, { key: 'g', wrap: 'truncate' }, h(Text, { dimColor: true }, 'Goals  '), goals, h(Text, { dimColor: true }, ` · best per ${cfg.per === 'energy' ? 'energy' : 'hour'}`)),
+    h(Text, { key: 'tot', wrap: 'truncate' }, h(Text, { dimColor: true }, 'Gains  '),
+      tl.steps.length ? `${shortDuration(Math.max(0, tl.end - now))} · +${Math.round(tl.gained.xp).toLocaleString('en-US')} XP · +${money(earned)}` : 'nothing planned',
+      lvl ? h(Text, { color: 'yellow' }, ` · ${ICON.level} level ${lvl.level} in ${shortDuration(Math.max(0, lvl.end - now))}`) : ''),
+    h(Text, { key: 'now', wrap: 'truncate' }, h(Text, { dimColor: true }, 'Now    '),
+      `E ${c.energy}/${c.maxEnergy} · HP ${c.health}/${c.maxHealth} · ${money(c.cash)} · spent ${money(state.autopilot.spent.amount)}/${money(cfg.spend.daily)}`),
     h(Text, { key: 'sp' }, ' '),
-    h(Text, { key: 'q', bold: true, wrap: 'truncate' }, `Queue · ends in ${formatDuration(Math.max(0, tl.end - now))} · +${Math.round(tl.gained.xp)} XP · ${money(Math.round(tl.gained.money))}${tl.gained.levels ? ` · ★ ${tl.gained.levels} level-up` : ''}`),
   ];
-  if (!tl.steps.length) lines.push(h(Text, { key: 'idle', dimColor: true }, 'Idle'));
-  const nameW = Math.max(8, width - 36);
-  for (const [i, s] of tl.steps.slice(0, Math.max(0, height - 9)).entries()) {
-    const xp = s.step.kind === 'job' ? `+${s.step.xp}xp` : '';
-    const planned = !s.step.fixed;
-    lines.push(h(Text, { key: `s${i}`, color: i === 0 ? 'green' : undefined, dimColor: planned, wrap: 'truncate' },
-      `${i === 0 ? '▶' : planned ? '·' : ' '} ${truncate(s.step.title, nameW).padEnd(nameW)} ${formatDuration(Math.max(0, s.end - now)).padStart(8)} ${String(Math.floor(s.energy)).padStart(3)}E ${xp.padStart(7)}`,
-      s.levelUp ? h(Text, { color: 'yellow' }, ' ★') : ''));
+  const rows = planRows(tl, plan?.tasks ?? []);
+  const texts = rows.map((r) => rowText(r, now));
+  const infoW = Math.min(Math.floor(width / 2), Math.max(0, ...texts.map((t) => t.info.length)));
+  const titleW = Math.max(8, width - 4 - 8 - infoW);
+  // Border, key line and the "+N more" line stay free.
+  const room = Math.max(1, height - 4 - head.length);
+  const body: React.ReactNode[] = [];
+  let n = 0;
+  let section: boolean | null = null;
+  let shown = 0;
+  let lastWhy: string | undefined;
+  for (const [i, r] of rows.entries()) {
+    // A reason shared with the row above (walk + deposit) is shown once.
+    const why = r.why && r.why !== lastWhy ? r.why : undefined;
+    const need = (section !== r.fixed ? 1 : 0) + 1 + (why ? 1 : 0);
+    if (body.length + need > room) break;
+    if (section !== r.fixed) {
+      section = r.fixed;
+      body.push(h(Text, { key: `h${i}`, bold: true, color: 'cyan' }, r.fixed ? 'In the queue' : 'Planned'));
+    }
+    const t = texts[i]!;
+    const mark = r.fixed ? (i === 0 ? '▶ ' : '  ') : r.wait ? '  ' : String(++n).padStart(2);
+    body.push(h(Text, { key: `r${i}`, wrap: 'truncate', dimColor: r.wait },
+      h(Text, { color: r.fixed && i === 0 ? 'green' : undefined, dimColor: !r.fixed }, mark), ' ',
+      h(Text, { color: ICON_COLOR[r.icon] }, r.icon), ' ',
+      h(Text, { bold: !r.fixed && n === 1 && !r.wait }, truncate(t.title, titleW)), ' ',
+      h(Text, { dimColor: true }, t.info.slice(0, infoW).padStart(infoW)),
+      r.levelUp ? h(Text, { color: 'yellow' }, ` ${ICON.level}`) : ''));
+    if (why) body.push(h(Text, { key: `w${i}`, dimColor: true, italic: true, wrap: 'truncate' }, `      ${why}`));
+    if (!r.wait) lastWhy = r.why;
+    shown++;
   }
+  if (shown < rows.length) body.push(h(Text, { key: 'more', dimColor: true }, `  +${rows.length - shown} more · Q full queue`));
+  if (!rows.length) body.push(h(Text, { key: 'idle', dimColor: true }, 'Idle'));
+  if (plan && !plan.tasks.length) body.push(h(Text, { key: 'none', color: 'yellow', wrap: 'wrap' }, plan.why));
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width, height, paddingX: 1 },
-    ...lines, h(Box, { flexGrow: 1 }),
+    ...head, ...body, h(Box, { flexGrow: 1 }),
     h(Text, { dimColor: true, wrap: 'truncate' }, 'Space toggle · ← → value · J K rank · Q queue · R run/pause · X stop · Esc back'));
 }
 
@@ -236,7 +355,7 @@ function QueueView({ state, width, height, active, onCapture, onClose }: { state
 
   const nameW = Math.max(10, width - 62);
   const [start, end] = scrollWindow(idx, tl.steps.length, Math.max(2, height - 5));
-  const head = `${'  '}${'Task'.padEnd(nameW)} ${'ETA'.padStart(8)} ${'travel'.padStart(7)} ${'EN'.padStart(4)} ${'HP'.padStart(5)} ${'XP'.padStart(6)} ${'$'.padStart(6)}  by`;
+  const head = `${'    '}${'Task'.padEnd(nameW - 2)} ${'ETA'.padStart(8)} ${'travel'.padStart(7)} ${'EN'.padStart(4)} ${'HP'.padStart(5)} ${'XP'.padStart(6)} ${'$'.padStart(6)}  by`;
   const lines = tl.steps.slice(start, end).map((st, j) => {
     const i = start + j;
     const t = i >= fixedN ? plan?.tasks[i - fixedN] : undefined;
@@ -244,7 +363,7 @@ function QueueView({ state, width, height, active, onCapture, onClose }: { state
     const cash = st.step.kind === 'job' ? `+${st.step.money}` : st.step.kind === 'action' && st.step.cash ? String(Math.round(st.step.cash)) : '';
     const by = i < fixedN ? 'queued' : insertAt(t?.key) ? 'you' : t?.module ?? '';
     return h(Text, { key: i, inverse: i === idx, dimColor: i >= fixedN && i !== idx, color: st.levelUp ? 'yellow' : undefined, wrap: 'truncate' },
-      `${i < fixedN ? '▪' : '·'} ${truncate(st.step.title, nameW).padEnd(nameW)} ${formatDuration(Math.max(0, st.end - now)).padStart(8)} ${(st.travel ? formatDuration(st.travel) : '').padStart(7)} ${String(Math.floor(st.energy)).padStart(4)} ${String(Math.floor(st.health)).padStart(5)} ${xp.padStart(6)} ${cash.padStart(6)}  ${by}${st.levelUp ? ' ★ level up' : ''}`);
+      `${i < fixedN ? '▪' : '·'} ${stepIcon(st.step, t?.action)} ${truncate(st.step.title, nameW - 2).padEnd(nameW - 2)} ${formatDuration(Math.max(0, st.end - now)).padStart(8)} ${(st.travel ? formatDuration(st.travel) : '').padStart(7)} ${String(Math.floor(st.energy)).padStart(4)} ${String(Math.floor(st.health)).padStart(5)} ${xp.padStart(6)} ${cash.padStart(6)}  ${by}${st.levelUp ? ' ★ level up' : ''}`);
   });
   const keys = confirm !== null
     ? h(Text, { color: 'yellow', wrap: 'truncate' }, `Cancel "${tl.steps[confirm]?.step.title}" on the server? y / n`)

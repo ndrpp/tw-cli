@@ -25,7 +25,7 @@ import { fetchHotel, roomRate, type Hotel, type HotelRoom } from './hotel.ts';
 import { ChatPoller, type SelfUpdate } from '../realtime/chat.ts';
 import { cachedJson } from '../util/disk-cache.ts';
 import { planRoute, questNeeds, type RouteNeed, type RouteObjective, type RoutePlan } from './route.ts';
-import { MailApi, type Report, type ReportFolder, type ReportList, type ReportRow, type Telegram, type TelegramList } from './mail.ts';
+import { MailApi, reportLogLine, type Report, type ReportFolder, type ReportList, type ReportRow, type Telegram, type TelegramList } from './mail.ts';
 import {
   buyMobileTrader, buyOrderProblem, DEFAULT_FILTER, deposit, fetchBank, fetchMobileTrader, fetchShop, MarketApi, shopBuy, shopSell, useItem,
   type Bank, type MarketFilter, type MarketOffer, type MobileTrader, type MobileTraderItem, type Shop, type ShopKey,
@@ -462,6 +462,7 @@ export class GameState extends EventEmitter {
     this.mapLayers = prev.mapLayers;
     this.rates = prev.rates;
     this.recentReports = prev.recentReports;
+    this.seenReports = prev.seenReports;
   }
 
   /** Starts the chat long-poll the browser keeps open; pushes XP/money/energy/position. */
@@ -596,15 +597,23 @@ export class GameState extends EventEmitter {
     }
   }
 
-  /** Newest unread report title (duels show up here: "Duel: X vs Y"). */
+  /** Report ids already logged or listed, so each new report is logged once. */
+  private seenReports = new Set<number>();
+
+  /**
+   * Logs each report not seen before, oldest first: job reports with their XP, money, HP and found items,
+   * others by title (duels: "Duel: X vs Y"). Before any list was seen, only unread ones count as new.
+   */
   private async announceNewReport(): Promise<void> {
     try {
       const list = await this.mail.reports(1, 'all');
+      const known = this.seenReports.size > 0;
+      const fresh = list.reports.filter((r) => !this.seenReports.has(r.id) && (known || !r.read)).reverse();
       this.recentReports = list.reports;
       void this.calibrateFromReports(list.reports);
-      const r = list.reports.find((x) => !x.read);
-      if (r) this.info(`New report: ${r.title}`);
-      else this.info('New report.');
+      for (const r of list.reports) this.seenReports.add(r.id);
+      for (const r of fresh) this.info(reportLogLine(r));
+      if (!fresh.length) this.info('New report.');
     } catch {
       this.info('New report.');
     }
@@ -1330,6 +1339,7 @@ export class GameState extends EventEmitter {
   async loadRecentReports(): Promise<void> {
     try {
       this.recentReports = (await this.mail.reports(1, 'all')).reports;
+      for (const r of this.recentReports) this.seenReports.add(r.id);
       this.changed();
     } catch (err) {
       this.error(`Reports: ${err instanceof Error ? err.message : String(err)}`);

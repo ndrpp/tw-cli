@@ -96,6 +96,8 @@ interface Candidate {
   raw: Record<Goal, number>;
   cost: number;
   score: number;
+  /** Each goal's share of the score. */
+  by: Record<Goal, number>;
 }
 
 const doable = (j: JobInfo) => j.jobPoints >= j.workPoints;
@@ -118,6 +120,8 @@ function closestDuration(job: JobInfo, seconds: number): DurationKey | undefined
   }
   return found;
 }
+
+const GOAL_WORD: Record<Goal, string> = { quests: 'quest progress', xp: 'XP', money: 'money', products: 'products to sell' };
 
 export function planAutopilot(input: PlanInput): Plan {
   const { config: cfg, start, wayTime } = input;
@@ -242,7 +246,7 @@ export function planAutopilot(input: PlanInput): Plan {
           ? energy + (travel + extra) * walkWeight
           : runSeconds(v.duration, energy) + travel + extra;
         list.push({
-          job, duration, at, travel, energy: v.energy, hpLoss, xp, gains, cost: Math.max(cost, 1e-6), score: 0,
+          job, duration, at, travel, energy: v.energy, hpLoss, xp, gains, cost: Math.max(cost, 1e-6), score: 0, by: { quests: 0, xp: 0, money: 0, products: 0 },
           raw: { quests, xp: xp + rewardXp, money: v.money * fade + rewardMoney, products: products * fade },
         });
       }
@@ -253,10 +257,22 @@ export function planAutopilot(input: PlanInput): Plan {
     for (const g of GOAL_KEYS) if (rates && rates[g] > 0) best[g] = rates[g];
     for (const c of list) {
       c.score = 0;
-      for (const g of Object.keys(best) as Goal[]) if (best[g] > 0) c.score += (weights[g] * (c.raw[g] / c.cost)) / best[g];
+      for (const g of Object.keys(best) as Goal[]) {
+        c.by[g] = best[g] > 0 ? (weights[g] * (c.raw[g] / c.cost)) / best[g] : 0;
+        c.score += c.by[g];
+      }
     }
     return list.filter((c) => c.score > 0).sort((a, b) => b.score - a.score);
   };
+
+  /** What a run does for open quests, before it is counted: `Cotton for "Farmer's woes" (5 left)`. */
+  const questParts = (gains: Record<string, number>): string[] =>
+    input.needs.filter((n) => (gains[n.key] ?? 0) > 0 && (remaining[n.key] ?? 0) > 1e-9).map((n) => {
+      const left = remaining[n.key]!;
+      const amount = n.unit === 'seconds' ? `${Math.ceil(left / 60)} min` : String(Math.ceil(left));
+      const quest = n.quests.length ? ` for "${n.quests[0]}"${n.quests.length > 1 ? ` +${n.quests.length - 1}` : ''}` : '';
+      return `${n.label}${quest} (${amount} left)`;
+    });
 
   /** Energy to reach the next level with the best XP-per-energy job; null when out of reach of one refill. */
   const levelUpEnergy = (from: Position, health: number, experience: number, level: number): number | null => {
@@ -272,8 +288,8 @@ export function planAutopilot(input: PlanInput): Plan {
     return need <= start.maxEnergy ? need : null;
   };
 
-  /** A sleep that reaches the wake targets soonest (own town first when close), with when it is done. */
-  const sleepPlan = (reason: 'hp' | 'energy', minEnergy: number): { task: PlannedTask; ready: number; energy: number } | null => {
+  /** A sleep that reaches the wake targets soonest (own town first when close), with when it is done and the walk there. */
+  const sleepPlan = (reason: 'hp' | 'energy', minEnergy: number): { task: PlannedTask; ready: number; travel: number; energy: number } | null => {
     const s = tl.final;
     const wake = cfg.wake;
     let energy = s.energy;
@@ -294,7 +310,7 @@ export function planAutopilot(input: PlanInput): Plan {
     energy = Math.min(start.maxEnergy, Math.max(energy, minEnergy));
     const health = wake.hpSafe || reason === 'hp' ? Math.max(s.health, cfg.hp.wakeAbove * start.maxHealth) : s.health;
     if (reason === 'hp') reasons.push(`HP ${Math.round(cfg.hp.wakeAbove * 100)}%`);
-    let best: { task: PlannedTask; ready: number; own: boolean } | null = null;
+    let best: { task: PlannedTask; ready: number; travel: number; own: boolean } | null = null;
     for (const h of input.hotels) {
       const travel = wayTime(s.at, h.at);
       const own = h.townId === input.homeTownId && travel <= cfg.ownTownWithin;
@@ -310,19 +326,19 @@ export function planAutopilot(input: PlanInput): Plan {
         const better = !best || (own && !best.own) || (own === best.own && ready < best.ready);
         if (!better) continue;
         best = {
-          own, ready,
+          own, ready, travel,
           task: {
             module: reason === 'hp' ? 'hpSleep' : 'energySleep',
             key: `sleep:${h.townId}:${r.key}`,
             step: { kind: 'sleep', title: `Sleep: ${h.name} ${r.name}`, at: h.at, energyRate: r.energyRate, healthRate: r.healthRate, seconds: secs, cost: r.cost },
             post: sleepPost(h.townId, r.key),
             wake: { energy, health },
-            why: `${reason === 'hp' ? `HP ${Math.round(s.health)}/${start.maxHealth}` : `energy ${Math.floor(s.energy)}`}: sleep until ${reasons.join(' + ')}`,
+            why: `${reason === 'hp' ? `HP low (${Math.round(s.health)}/${start.maxHealth})` : `energy low (${Math.floor(s.energy)})`}: sleep until ${reasons.join(' + ')}`,
           },
         };
       }
     }
-    return best ? { task: best.task, ready: best.ready, energy } : null;
+    return best ? { task: best.task, ready: best.ready, travel: best.travel, energy } : null;
   };
 
   /** Walk to the bank town and deposit; null when no bank is within the allowed detour. */
@@ -336,7 +352,7 @@ export function planAutopilot(input: PlanInput): Plan {
       town = named.reduce((a, b) => (wayTime(s.at, b.at) < wayTime(s.at, a.at) ? b : a));
       if (!anyDistance && wayTime(s.at, town.at) > cfg.bank.maxDetour) return null; // bank when the route passes a town
     }
-    const why = `cash $${Math.round(s.cash)} over $${cfg.bank.above}`;
+    const why = `cash $${Math.round(s.cash).toLocaleString('en-US')} is over $${cfg.bank.above.toLocaleString('en-US')}: banking it`;
     const deposit: PlannedTask = {
       module: 'bank', key: `bank:${town.id}`, why,
       step: { kind: 'action', title: `Deposit at ${town.name}`, cash: -s.cash },
@@ -397,9 +413,10 @@ export function planAutopilot(input: PlanInput): Plan {
     if (s.energy < c.energy) {
       const sl = mods.energySleep ? sleepPlan('energy', c.energy) : null;
       const wait = regenSeconds(s.energy, c.energy, start.maxEnergy, start.energyRegen);
-      // An energy item when it saves at least 30 minutes over the best other way to get the energy.
+      // A hotel within the own-town distance beats an item; else an item when it saves at least 30 minutes.
+      const hotelNear = !!sl && sl.travel <= cfg.ownTownWithin;
       const other = Math.min(wait, sl ? sl.ready : Infinity);
-      const item = useMod && cfg.consumables.energy ? pickItem('energy', (c.energy - s.energy) / start.maxEnergy) : null;
+      const item = useMod && cfg.consumables.energy && !hotelNear ? pickItem('energy', (c.energy - s.energy) / start.maxEnergy) : null;
       if (item && other >= 1800) {
         push(useTask(item, `energy ${Math.floor(s.energy)}: use ${item.name} (saves ${Math.round(Math.min(other, 86400) / 60)} min)`));
         continue;
@@ -415,14 +432,17 @@ export function planAutopilot(input: PlanInput): Plan {
       }
     }
     const v = c.job.values[c.duration]!;
-    const goal = (['quests', 'xp', 'money', 'products'] as Goal[]).filter((g) => c.raw[g] > 0 && weights[g] > 0)[0];
+    const goal = (Object.keys(c.by) as Goal[]).reduce((a, b) => (c.by[b] > c.by[a] ? b : a));
+    const forQuests = questParts(c.gains);
     push({
       module: 'jobs',
       key: `job:${c.job.id}:${c.duration}`,
       step: { kind: 'job', title: c.job.name, jobId: c.job.id, at: c.at, duration: v.duration, energy: v.energy, xp: v.experience, money: v.money, hpLoss: c.hpLoss },
       post: jobPost(c.job.id, c.at, v.duration),
       value: c.score * c.cost,
-      why: `best ${goal ?? 'value'} per ${cfg.per === 'energy' ? 'energy' : 'hour'}: ${c.job.name} (${c.duration})`,
+      why: goal === 'quests' && forQuests.length
+        ? `quest: ${forQuests.join('; ')}`
+        : `best ${GOAL_WORD[goal]} per ${cfg.per === 'energy' ? 'energy' : 'hour'}${forQuests.length ? ` · also ${forQuests.join('; ')}` : ''}`,
     });
     const last = tl.steps[tl.steps.length - 1]!;
     // Value inside the horizon; a run crossing it counts for its share.

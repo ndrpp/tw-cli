@@ -5,6 +5,7 @@ import { Box, Text, render, useApp, useInput, useWindowSize } from 'ink';
 import { JOB_SORTS, type GameState, type JobOption, type JobSort, type StartupStep } from '../game/state.ts';
 import { DURATION_KEYS, type DurationKey } from '../game/jobs.ts';
 import { bar, formatDuration, money, scrollWindow, truncate } from './format.ts';
+import { ICON } from './icons.ts';
 import { clampView, entriesAt, findNearest, LayersOverlay, MAP_LAYERS, mapGridSize, MapScreen, ZOOMS, type MapView } from './map.ts';
 import { HelpOverlay, HotelOverlay, PoiOverlay, SCREEN_MODES, type Mode } from './overlays.ts';
 import { CharacterScreen } from './character.ts';
@@ -53,10 +54,10 @@ function Header({ state }: { state: GameState }) {
       h(Text, { dimColor: true, wrap: 'truncate' },
         `${state.worldName} · ${automation} · `,
         h(Text, { color: LIVE_COLOR[state.liveStatus], dimColor: false }, `● live ${state.liveStatus}`),
-        state.unread.reports ? h(Text, { color: 'yellow' }, ' · new report (M)') : '',
-        state.unread.messages ? h(Text, { color: 'yellow' }, ' · new telegram (M)') : '',
+        state.unread.reports ? h(Text, { color: 'yellow' }, ` · ${ICON.mail} new report (M)`) : '',
+        state.unread.messages ? h(Text, { color: 'yellow' }, ` · ${ICON.mail} new telegram (M)`) : '',
         state.live?.unreadRooms.size ? h(Text, { color: 'cyan' }, ` · chat ${state.live.unreadRooms.size} (C)`) : '',
-        state.quests.some((q) => q.finishable) ? h(Text, { color: 'green' }, ` · ${state.quests.filter((q) => q.finishable).length} quest(s) to finish`) : '',
+        state.quests.some((q) => q.finishable) ? h(Text, { color: 'green' }, ` · ${ICON.quest} ${state.quests.filter((q) => q.finishable).length} quest(s) to finish`) : '',
         state.autoRoute ? h(Text, { color: 'magenta' }, ` · auto-route ${state.autoRoute.runs.length} left`) : '',
         state.autopilot.config.running ? h(Text, { color: 'green' }, ' · autopilot ●') : '',
         state.busy ? ' · working…' : ''),
@@ -229,7 +230,8 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
 
   const width = columns || 100;
   const height = rows || 30;
-  const logLines = height >= 32 ? 5 : 3;
+  // Home and jobs show twice the log (finished jobs, drops, item uses, autopilot actions).
+  const logLines = (height >= 32 ? 5 : 3) * ((mode === 'main' || mode === 'home') && !overlay ? 2 : 1);
   const bodyH = Math.max(10, height - 4 - 1 - logLines - 1);
   const grid = mapGridSize(width, bodyH);
 
