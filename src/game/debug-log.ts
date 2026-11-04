@@ -1,4 +1,4 @@
-// Debug log: everything the client and the autopilot do, with the data behind it, for the Debug screen (B)
+// Debug log: everything the client and the autopilot do, with the data behind it, for the Debug screen (g x)
 // files in `<config dir>/debug/` (one JSON object per line, one file per UTC hour, `YYYY-MM-DDTHH.jsonl`;
 // files older than 24 h are deleted, so the folder keeps one day).
 // Categories: log (the log pane), state (character / queue / quest / bag diffs), request (calls and

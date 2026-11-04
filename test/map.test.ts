@@ -176,7 +176,7 @@ test('TUI: ? help, m map, p points of interest, map select + start job', { skip:
     await press('x');
 
     // Points of interest: filter "wroc", Enter jumps the map there.
-    await press('p');
+    await press('g', 'p');
     assert.match(plain(), /Points of interest/);
     await press('w', 'r', 'o', 'c', '\r');
     const wroclaw = st.world.towns.find((t) => t.name === 'Wrocław')!;

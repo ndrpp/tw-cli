@@ -1,4 +1,4 @@
-// Trade screen ($): bank, town shops (buy / sell), the market (goods for sale and buy orders: search with filters,
+// Trade screen (g b): bank, town shops (buy / sell), the market (goods for sale and buy orders: search with filters,
 // bid, buy now, sell into a buy order, place a buy order, sell, pick up, withdraw).
 // Shops and the bank are those of the town you stand in, else your home town (buying needs you there).
 import React, { useEffect, useState } from 'react';

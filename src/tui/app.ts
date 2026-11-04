@@ -7,7 +7,7 @@ import { DURATION_KEYS, type DurationKey } from '../game/jobs.ts';
 import { bar, formatDuration, money, scrollWindow, truncate } from './format.ts';
 import { ICON } from './icons.ts';
 import { clampView, entriesAt, findNearest, LayersOverlay, MAP_LAYERS, mapGridSize, MapScreen, ZOOMS, type MapView } from './map.ts';
-import { HelpOverlay, HotelOverlay, PoiOverlay, SCREEN_MODES, type Mode } from './overlays.ts';
+import { GOTO, HelpOverlay, HotelOverlay, PoiOverlay, SCREEN_MODES, type Mode } from './overlays.ts';
 import { CharacterScreen } from './character.ts';
 import { QuestsScreen } from './quests.ts';
 import { MailScreen } from './mail.ts';
@@ -54,9 +54,9 @@ function Header({ state }: { state: GameState }) {
       h(Text, { dimColor: true, wrap: 'truncate' },
         `${state.worldName} · ${automation} · `,
         h(Text, { color: LIVE_COLOR[state.liveStatus], dimColor: false }, `● live ${state.liveStatus}`),
-        state.unread.reports ? h(Text, { color: 'yellow' }, ` · ${ICON.mail} new report (M)`) : '',
-        state.unread.messages ? h(Text, { color: 'yellow' }, ` · ${ICON.mail} new telegram (M)`) : '',
-        state.live?.unreadRooms.size ? h(Text, { color: 'cyan' }, ` · chat ${state.live.unreadRooms.size} (C)`) : '',
+        state.unread.reports ? h(Text, { color: 'yellow' }, ` · ${ICON.mail} new report (g r)`) : '',
+        state.unread.messages ? h(Text, { color: 'yellow' }, ` · ${ICON.mail} new telegram (g r)`) : '',
+        state.live?.unreadRooms.size ? h(Text, { color: 'cyan' }, ` · chat ${state.live.unreadRooms.size} (g c)`) : '',
         state.quests.some((q) => q.finishable) ? h(Text, { color: 'green' }, ` · ${ICON.quest} ${state.quests.filter((q) => q.finishable).length} quest(s) to finish`) : '',
         state.autoRoute ? h(Text, { color: 'magenta' }, ` · auto-route ${state.autoRoute.runs.length} left`) : '',
         state.autopilot.config.running ? h(Text, { color: 'green' }, ' · autopilot ●') : '',
@@ -168,8 +168,10 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   const { columns, rows } = size ?? win;
   const [, setTick] = useState(0);
   const [mode, setMode] = useState<Mode>('home');
-  /** Where m / Esc on the map go back to. */
-  const beforeMap = useRef<Mode>('home');
+  /** Screens Esc goes back through (a screen appears at most once, so going back never loops). */
+  const history = useRef<Mode[]>([]);
+  /** g was pressed: the next key picks a screen or action from GOTO. */
+  const [leader, setLeader] = useState(false);
   const [overlay, setOverlay] = useState<null | 'help' | 'poi' | 'hotel' | 'layers'>(null);
   const [layerSel, setLayerSel] = useState(0);
   const [hotelSel, setHotelSel] = useState(0);
@@ -258,18 +260,23 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   const pois = overlay === 'poi' ? poisNear(state, view, poiFilter) : [];
   const poiIdx = Math.min(poiSel, Math.max(0, pois.length - 1));
 
-  const toMap = () => {
-    if (mode !== 'map') beforeMap.current = mode;
-    setMode('map');
-  };
-  const leaveMap = () => {
+  const go = (m: Mode) => {
     capture.current = false;
-    setMode(beforeMap.current);
+    setMapPanel(false);
+    if (m === mode) return;
+    const i = history.current.indexOf(m);
+    if (i >= 0) history.current.length = i;
+    else history.current.push(mode);
+    setMode(m);
+  };
+  const back = () => {
+    capture.current = false;
+    setMapPanel(false);
+    setMode(history.current.pop() ?? 'home');
   };
   const jumpTo = (at: { x: number; y: number }) => {
     setView((v) => clampView({ ...v, x: at.x, y: at.y, zoom: Math.min(v.zoom, 128) }));
-    toMap();
-    setMapPanel(false);
+    go('map');
     setMapSel(0);
   };
 
@@ -283,11 +290,6 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       const d = defaultRoom(hotel);
       setHotelSel(Math.max(0, d ? hotel.rooms.indexOf(d) : 0));
     });
-  };
-  const openScreen = (m: Mode) => {
-    capture.current = false;
-    setMapPanel(false);
-    setMode((cur) => (cur === m ? 'home' : m));
   };
 
   const onScreen = SCREEN_MODES.includes(mode);
@@ -371,19 +373,28 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       return;
     }
 
-    // Global shortcuts.
+    if (leader) {
+      setLeader(false);
+      const g = GOTO.find((x) => x.key === input);
+      if (g?.mode === 'quests') setQuestsOnGivers(false);
+      if (g?.mode) return go(g.mode);
+      if (g?.key === 's') return openHotel(state.character.homeTown?.id);
+      if (g?.key === 'p') {
+        setPoiFilter('');
+        setPoiSel(0);
+        return setOverlay('poi');
+      }
+      if (g?.key === 'L') return state.live?.active ? state.stopLive() : state.startLive();
+      if (g?.key === 'R') return void state.reload();
+      if (g?.key === 'A' && onAccount) return onAccount();
+      return; // Esc or an unknown key cancels
+    }
+
+    // Global shortcuts: everything else is under g, so screens keep the letters.
     if (input === '?') return setOverlay('help');
     if (input === 'q') return exit();
-    if (input === 'm') {
-      setMapPanel(false);
-      return mode === 'map' ? leaveMap() : toMap();
-    }
-    if (input === 'p') {
-      setPoiFilter('');
-      setPoiSel(0);
-      return setOverlay('poi');
-    }
-    if (input === 'r') return void state.reload();
+    if (input === 'g') return setLeader(true);
+    if (input === 'm') return go('map');
     if (input === 'u') {
       if (mode === 'char') return void state.refreshInventory().then(() => state.refreshSkills()).then(() => state.loadEquipSets());
       if (mode === 'quests') return void state.loadQuests();
@@ -393,26 +404,6 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       if (mode === 'town') return void state.loadTownHall();
       return void state.refreshQueue();
     }
-    if (input === 'A' && onAccount) return onAccount();
-    if (input === 'i') return openScreen('char');
-    if (input === 'T') return openScreen('town');
-    if (input === 'o' && !(mode === 'map' && mapPanel)) {
-      setQuestsOnGivers(false);
-      return openScreen('quests');
-    }
-    if (input === 'L') return state.live?.active ? state.stopLive() : state.startLive();
-    if (input === 'W' || (input === 'H' && mode !== 'map')) {
-      capture.current = false;
-      setMapPanel(false);
-      return setMode(input === 'W' ? 'main' : 'home');
-    }
-    if (input === 'M') return openScreen('mail');
-    if (input === '$') return openScreen('trade');
-    if (input === 'D') return openScreen('duels');
-    if (input === 'C') return openScreen('chat');
-    if (input === 'G') return openScreen('autopilot');
-    if (input === 'B') return openScreen('debug');
-    if (input === 's' && !(mode === 'map' && mapPanel)) return openHotel(state.character.homeTown?.id);
     if (onScreen) return; // the screen handles the rest
     const duration = ({ '1': 'short', '2': 'middle', '3': 'long' } as Record<string, DurationKey>)[input];
 
@@ -431,13 +422,12 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
           return void state.openEmployer(e.key, e.at).then((ok) => {
             if (!ok) return;
             setQuestsOnGivers(true);
-            setMapPanel(false);
-            setMode('quests');
+            go('quests');
           });
         }
         return;
       }
-      if (key.escape) return leaveMap();
+      if (key.escape) return back();
       const big = key.shift || key.pageUp || key.pageDown ? 10 : 1;
       const pan = (dc: number, dr: number) => setView((v) => clampView({ ...v, x: v.x + dc * big * v.zoom, y: v.y + dr * big * v.zoom * 2 }));
       if (key.leftArrow || input === 'h' || input === 'H') return pan(-1, 0);
@@ -447,7 +437,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       if (input === '+' || input === '=') return setView((v) => ({ ...v, zoom: ZOOMS[Math.max(0, ZOOMS.indexOf(v.zoom) - 1)]! }));
       if (input === '-' || input === '_') return setView((v) => ({ ...v, zoom: ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(v.zoom) + 1)]! }));
       if (input === '.' || input === 'c') return setView((v) => ({ ...v, ...state.character.position }));
-      if (input === 'g') return setView((v) => ({ ...v, ...state.queueEndPosition }));
+      if (input === 'e') return setView((v) => ({ ...v, ...state.queueEndPosition }));
       if (input === 'v') return setOverlay('layers');
       if (input === '/') {
         setSearch('');
@@ -464,7 +454,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
       return;
     }
 
-    if (key.escape) return setMode('home');
+    if (key.escape) return back();
     if (key.tab) return setFocus((f) => (f === 'jobs' ? 'queue' : 'jobs'));
     const move = (d: number) => {
       if (focus === 'jobs') setJobSel(Math.max(0, Math.min(options.length - 1, jobIdx + d)));
@@ -494,7 +484,9 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   const rightW = Math.max(24, width - leftW);
   // JobDetail: 2 border + 4 info lines + 3 durations (+1 when the queue is full, +1 for a quest job).
   const detailH = 10 + (state.queue.length >= state.taskLimit ? 1 : 0) + (options[jobIdx] && state.mapHighlight?.jobIds.has(options[jobIdx]!.job.id) ? 1 : 0);
-  const help = filtering
+  const help = leader
+    ? `go to: a letter above · ${GOTO.filter((g) => !g.mode).map((g) => `${g.key} ${g.label}`).join(' · ')} · Esc cancel`
+    : filtering
     ? 'type to filter · Enter keep · Esc clear'
     : searching
       ? 'type a job or town name · Enter jump to nearest · Esc cancel'
@@ -503,16 +495,16 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
           ? '↑↓ select · 1/2/3 start job · w walk · o quests · s hotel · Esc back · ? help'
           : `arrows pan · +/- zoom · . me · / find · v layers · Enter select${state.mapHighlight ? ' · x clear !' : ''}`
         : mode === 'char'
-          ? '← → tab · Tab pane · Enter wear/use/take off · U use · +/- skills · i/Esc back · ? help'
+          ? '← → tab · Tab pane · l/h detail · Enter wear/use/take off · U use · +/- skills · Esc back · ? help'
           : mode === 'quests'
-            ? 'Tab log/givers · Enter finish/accept · x cancel · w walk · o/Esc back · ? help'
+            ? 'Tab log/givers · l/h detail · Enter finish/accept · x cancel · w walk · Esc back · ? help'
             : mode === 'town'
-              ? '↑↓ building · Enter construction · u refresh · T/Esc back · ? help'
+              ? '↑↓ building · Enter construction · u refresh · Esc back · ? help'
               : mode === 'home'
-                ? 'Enter chat · ←/→ room · c cancel current · +/- minimap · W jobs · ? help'
+                ? 'Enter chat · ←/→ room · c cancel current · +/- minimap · g go to · ? help'
                 : onScreen
-                  ? `${{ mail: 'M', trade: '$', duels: 'D', chat: 'C', autopilot: 'G', debug: 'B' }[mode as 'mail']}/Esc back · ? help`
-                  : 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel · Esc home';
+                  ? 'g go to · Esc back · ? help'
+                  : 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel · Esc back';
 
   let body;
   if (overlay === 'help') body = h(HelpOverlay, { mode, width, height: bodyH });
@@ -535,7 +527,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   // Character/quest screens stay mounted under overlays so planned points or selections survive '?'.
   let screen = null;
   if (SCREEN_MODES.includes(mode)) {
-    const props = { state, width, height: bodyH, active: !overlay, onCapture: (c: boolean) => (capture.current = c), onExit: () => setMode('home') };
+    const props = { state, width, height: bodyH, active: !overlay, onCapture: (c: boolean) => (capture.current = c), onExit: back };
     const el = mode === 'home' ? h(HomeScreen, props)
       : mode === 'char' ? h(CharacterScreen, props)
       : mode === 'quests' ? h(QuestsScreen, { ...props, startOnGivers: questsOnGivers, onShowOnMap: jumpTo })
@@ -553,7 +545,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
 
   return h(Box, { flexDirection: 'column', width, height },
     h(Header, { state }),
-    h(NavBar, { mode, overlay, width }),
+    h(NavBar, { mode, overlay, leader, width }),
     body,
     screen,
     h(LogPane, { state, lines: logLines }),
@@ -561,38 +553,21 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
   );
 }
 
-/** Screens and their jump keys; the key is highlighted, the open screen shown inverted. */
-const NAV: { key: string; label: string; mode?: Mode; overlay?: string }[] = [
-  { key: 'H', label: 'home', mode: 'home' },
-  { key: 'W', label: 'jobs', mode: 'main' },
-  { key: 'm', label: 'map', mode: 'map' },
-  { key: 'i', label: 'character', mode: 'char' },
-  { key: 'T', label: 'town', mode: 'town' },
-  { key: 'o', label: 'quests', mode: 'quests' },
-  { key: 'M', label: 'mail', mode: 'mail' },
-  { key: '$', label: 'trade', mode: 'trade' },
-  { key: 'D', label: 'duels', mode: 'duels' },
-  { key: 'C', label: 'chat', mode: 'chat' },
-  { key: 'G', label: 'autopilot', mode: 'autopilot' },
-  { key: 'B', label: 'debug', mode: 'debug' },
-  { key: 's', label: 'sleep', overlay: 'hotel' },
-  { key: 'p', label: 'places', overlay: 'poi' },
-  { key: '?', label: 'help', overlay: 'help' },
-];
-
-function NavBar({ mode, overlay, width }: { mode: Mode; overlay: string | null; width: number }) {
-  const items = NAV.map((n) => {
-    const active = overlay ? n.overlay === overlay : n.mode === mode;
-    return { ...n, active };
-  });
+/** The g menu's screens (and sleep / places), each with its second key; the open screen is inverted. */
+function NavBar({ mode, overlay, leader, width }: { mode: Mode; overlay: string | null; leader: boolean; width: number }) {
+  const items = GOTO.filter((g) => g.mode || g.overlay).map((g) => ({ ...g, active: overlay ? g.overlay === overlay : g.mode === mode }));
   return h(Box, { width, paddingX: 1 },
     h(Text, { wrap: 'truncate' },
+      h(Text, { bold: true, inverse: leader, color: 'yellow' }, leader ? ' go to › ' : 'g›'),
       ...items.flatMap((n, i) => [
-        i ? h(Text, { key: `s${i}` }, '  ') : null,
+        h(Text, { key: `s${i}` }, '  '),
         h(Text, { key: n.label, inverse: n.active, color: n.active ? 'cyan' : undefined },
           h(Text, { bold: true, color: n.active ? undefined : 'yellow' }, `${n.key} `),
-          h(Text, { dimColor: !n.active }, n.label)),
+          h(Text, { dimColor: !n.active && !leader }, n.label)),
       ]),
+      h(Text, { dimColor: true }, '   '),
+      h(Text, { bold: true, color: 'yellow', inverse: overlay === 'help' }, '?'),
+      h(Text, { dimColor: true }, ' help'),
     ),
   );
 }

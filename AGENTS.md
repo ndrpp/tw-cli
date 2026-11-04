@@ -26,7 +26,7 @@ the relevant file in `docs/`.
 ## Layout
 - `src/game/`: game logic, no UI. `state.ts` (GameState: owns the client, keeps state in sync), one module per area
   (jobs, tasks, quests, hotel, trade, townhall, duels, …), the autopilot (`autopilot*.ts`, `timeline.ts`), `debug-log.ts` (`state.debug`: everything, with data;
-  hourly JSONL files kept 24 h in `<config dir>/debug/`, Debug screen `B`), `calibration.ts` (what the
+  hourly JSONL files kept 24 h in `<config dir>/debug/`, Debug screen `g x`), `calibration.ts` (what the
   autopilot learns from reports, health, motivation and sleeps; `calibration.json`).
 - `src/tui/`: Ink (React) screens; `app.ts` is the shell (header, nav, ticker, global keys), `root.ts` connects.
 - `src/http/`, `src/auth/`, `src/fingerprint/`, `src/realtime/`: transport, login, fingerprint, chat long-poll.
@@ -54,3 +54,5 @@ the relevant file in `docs/`.
 - Plans are discussed and agreed before building ("grill" style: numbered questions with a recommended answer).
 - Everything the autopilot does is a toggle; defaults are safe (starts paused unless it was running, dry run).
 - Unverified game behaviour is labelled as such in code comments and docs, and checked live when possible.
+- Keys: vim-like and predictable. Esc is always "back", `q` the only quit, no toggle keys, lowercase `j k` (never
+  `J K`) to scroll, mnemonic letters behind the `g` go-to menu rather than odd single keys (see `docs/tui.md`).

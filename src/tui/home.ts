@@ -1,4 +1,4 @@
-// Home screen (H, the start screen): what the character is doing now and what is queued. No browser
+// Home screen (g h, the start screen): what the character is doing now and what is queued. No browser
 // counterpart; it gathers the header, task queue, report list and chat the web shows in separate windows.
 // Layout: working · session · task queue (left) | minimap · reports (right) · chat (bottom, interactive).
 import React, { useEffect, useRef, useState } from 'react';
@@ -71,7 +71,7 @@ export function HomeScreen({ state, width, height, onCapture, active = true }: S
     if (key.leftArrow || input === 'h') return setRoom((i) => (n ? (Math.min(i, n - 1) + n - 1) % n : 0));
     if (key.rightArrow || input === 'l') return setRoom((i) => (n ? (Math.min(i, n - 1) + 1) % n : 0));
     if (key.return) {
-      if (!state.live?.active) return state.error('Live updates are off: press L to connect to chat.');
+      if (!state.live?.active) return state.error('Live updates are off: press g L to connect to chat.');
       if (!n) return state.error('No chat room yet (still connecting).');
       return setDraft('');
     }
@@ -121,7 +121,7 @@ function WorkingPanel({ state, width, confirm }: { state: GameState; width: numb
   let title = 'Idle';
   if (!head) {
     rows.push(h(Text, { key: 'idle', color: 'yellow', wrap: 'truncate' },
-      last ? `Nothing queued for ${formatDuration(now - last.end)}` : 'Nothing queued', h(Text, { dimColor: true }, ' · W jobs · G autopilot')));
+      last ? `Nothing queued for ${formatDuration(now - last.end)}` : 'Nothing queued', h(Text, { dimColor: true }, ' · g j jobs · g a autopilot')));
   } else {
     const walking = !!head.way && head.way.end > now;
     const from = walking ? head.way!.start : head.way?.end ?? head.start;

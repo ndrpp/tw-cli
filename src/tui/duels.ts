@@ -1,4 +1,4 @@
-// Duels screen (D): NPC duels (fought at once) and players in duel range (queued as a duel task).
+// Duels screen (g d): NPC duels (fought at once) and players in duel range (queued as a duel task).
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { DuelNpc, DuelOpponent } from '../game/duels.ts';

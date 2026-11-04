@@ -184,7 +184,7 @@ test('mail: < > change report and telegram pages', async () => {
   const state = makeState();
   const t = tui(state);
   try {
-    await t.keys('M');
+    await t.keys('g', 'r');
     await t.settle(400);
     assert.match(t.plain(), /page 1\/2/);
     await t.keys('>');
@@ -363,7 +363,7 @@ test('TUI: town screen lists the city hall and queues a construction', async () 
 
   const t = tui(state);
   try {
-    await t.keys('T');
+    await t.keys('g', 't');
     await t.settle(300);
     assert.match(t.plain(), /City hall · Slobozia/);
     assert.match(t.plain(), /General store/);
@@ -596,9 +596,9 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
     await t.keys('\r');
     assert.deepEqual(said, ['more ham m q']);
     said.length = 0;
-    // Debug (B): the log pane's lines are listed; Tab shows what the autopilot sees; / filters.
+    // Debug (g x): the log pane's lines are listed; Tab shows what the autopilot sees; / filters.
     state.debug.add('autopilot', 'Carry out: test decision', { why: 'because' });
-    await t.keys('B');
+    await t.keys('g', 'x');
     assert.match(t.plain(), /Debug log/);
     assert.match(t.plain(), /Carry out: test decision/);
     assert.match(t.plain(), /"why": "because"/);
@@ -612,7 +612,7 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
     assert.match(t.plain(), /0\/\d+ · all · \/zzz/);
     await t.keys('\u001b');
     // Mail: reports listed, Enter opens one, Tab → telegrams, Enter reads, n composes and sends.
-    await t.keys('M');
+    await t.keys('g', 'r');
     await t.settle(300);
     assert.match(t.plain(), /Job report: Tending pigs/);
     await t.keys('\r');
@@ -634,10 +634,19 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
     assert.equal(callTo('action=send').length, 1, 'typed letters did not trigger global shortcuts');
     await t.keys('\x1b', '\x1b');
 
+    // Esc goes back through the screens visited (debug → mail → Esc → debug → Esc → home); a screen's key does not toggle.
+    await t.keys('g', 'x', 'g', 'r', 'g', 'r');
+    t.reset();
+    await t.keys('\x1b');
+    assert.match(t.plain(), /Debug log/);
+    t.reset();
+    await t.keys('\x1b');
+    assert.match(t.plain(), /Task queue \d+\/\d+/);
+
     // Header: XP within the level (level 30 starts at 29232 XP and needs 2913; this test character has less).
     assert.match(t.plain(), /XP ░+ 0\/2913 0%/);
     // Trade: bank → Enter → deposit form prefilled with the cash; edit to 20 and submit.
-    await t.keys('$');
+    await t.keys('g', 'b');
     await t.settle(200);
     assert.match(t.plain(), /Deposit fee 4%/);
     assert.match(t.plain(), /home town; you are not there/);
@@ -674,16 +683,16 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
     await t.keys('\x1b', '\x1b');
 
     // Duels
-    await t.keys('D');
+    await t.keys('g', 'd');
     await t.settle(300);
     assert.match(t.plain(), /Dusty Joe/);
-    // W jumps back to the jobs view from any screen.
+    // g j jumps to the jobs view from any screen.
     t.reset();
-    await t.keys('W');
+    await t.keys('g', 'j');
     assert.match(t.plain(), /Task queue/);
 
     // Chat: history and the town roster (status, role, level); Enter, type, Enter sends.
-    await t.keys('C');
+    await t.keys('g', 'c');
     assert.match(t.plain(), /Bob: anyone selling ham\?/);
     assert.match(t.plain(), /Town · 2\/2 online/);
     assert.match(t.plain(), /Mayor/);
@@ -695,7 +704,7 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
     await t.keys('\x1b');
 
     // Quests: finishing with two reward options → choose the second.
-    await t.keys('o');
+    await t.keys('g', 'q');
     await t.settle(200);
     // Move down until the finishable quest is selected (its key hint offers "Enter finish").
     for (let i = 0; i < 8 && !/Enter finish/.test(t.plain().split('Quest log').at(-1)!); i++) {

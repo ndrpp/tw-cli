@@ -1,4 +1,4 @@
-// Autopilot screen (G): priority ranking, module toggles and their settings on the left; what the
+// Autopilot screen (g a): priority ranking, module toggles and their settings on the left; what the
 // autopilot is doing and the projected queue (timeline) on the right. Settings save on every change.
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';

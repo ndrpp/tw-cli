@@ -19,7 +19,7 @@ const h = React.createElement;
 type Phase = { kind: 'connecting'; message?: string; startedAt: number } | { kind: 'setup'; message?: string; canGoBack: boolean } | { kind: 'game' };
 
 const noPrompt = async (): Promise<never> => {
-  throw new Error('Session expired: press A, then log in.');
+  throw new Error('Session expired: press g A, then log in.');
 };
 
 const CONNECT_LABEL = 'Connecting to The West';

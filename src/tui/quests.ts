@@ -47,6 +47,8 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
   const [sel, setSel] = useState(0);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [scroll, setScroll] = useState(0);
+  /** l: j k scroll the quest text instead of moving in the list. */
+  const [detail, setDetail] = useState(false);
   const [route, setRoute] = useState<{ scope: RouteScope; objective: RouteObjective } | null>(null);
 
   useEffect(() => {
@@ -121,12 +123,13 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
       if (input === '2') return setRoute({ ...route, scope: 'chain' });
       if (input === '3') return setRoute({ ...route, scope: 'all' });
       if (input === 'e') return setRoute({ ...route, objective: route.objective === 'energy' ? 'time' : 'energy' });
-      if (input === 'J') return setScroll((s) => s + 3);
-      if (input === 'K') return setScroll((s) => Math.max(0, s - 3));
+      const rstep = key.pageUp || key.pageDown ? 10 : 1;
+      if (key.upArrow || input === 'k' || key.pageUp) return setScroll((s) => Math.max(0, s - rstep));
+      if (key.downArrow || input === 'j' || key.pageDown) return setScroll((s) => s + rstep);
       if (input === 'x' && state.autoRoute) return state.stopAutoRoute();
       if (!plan?.stops.length) return;
       if (key.return) return setConfirm({ kind: 'route', plan });
-      if (input === 'g') {
+      if (input === 'v') {
         const at = state.highlightRoute(plan, `route: ${SCOPE_LABEL[route.scope]}`);
         if (at) {
           state.info(`Route jobs marked with ! on the map (${plan.stops.length} stops).`);
@@ -135,7 +138,9 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
       }
       return;
     }
+    if (detail && (key.escape || input === 'h')) return setDetail(false);
     if (key.escape) return onExit();
+    if (input === 'l' && cur) return setDetail(true);
     if (input === 'R') {
       if (!state.quests.length) return state.error('No accepted quests to plan for.');
       setScroll(0);
@@ -144,9 +149,14 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
     if (key.tab) {
       setSel(0);
       setScroll(0);
+      setDetail(false);
       return setList((l) => (l === 'log' ? 'givers' : 'log'));
     }
     const step = key.pageUp || key.pageDown ? 10 : 1;
+    if (detail) {
+      if (key.upArrow || input === 'k' || key.pageUp) return setScroll((s) => Math.max(0, s - step));
+      if (key.downArrow || input === 'j' || key.pageDown) return setScroll((s) => s + step);
+    }
     if (key.upArrow || input === 'k' || key.pageUp) {
       setScroll(0);
       return setSel(nearestSelectable(Math.max(0, idx - step), -1));
@@ -155,8 +165,6 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
       setScroll(0);
       return setSel(nearestSelectable(Math.min(rows.length - 1, idx + step), 1));
     }
-    if (input === 'J') return setScroll((s) => s + 3);
-    if (input === 'K') return setScroll((s) => Math.max(0, s - 3));
     if (cur?.kind === 'giver' && key.return) return void state.openEmployer(cur.key, cur.at).then(() => setSel(0));
     if (cur?.kind === 'giver' && input === 'w' && cur.at) return void state.walkToQuestGiver(cur.key, cur.name, cur.at);
     if (!quest) return;
@@ -170,7 +178,7 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
       return setConfirm({ kind: 'finish', quest, choice: 0 });
     }
     if (input === 'x' && quest.accepted) return setConfirm({ kind: 'cancel', quest });
-    if (input === 'g') {
+    if (input === 'v') {
       const at = state.highlightQuest(quest);
       if (!at) return state.error('No job on the map provides what this quest still needs.');
       state.info(`Marked ${state.mapHighlight!.jobIds.size} job(s) for "${quest.title}" with ! on the map.`);
@@ -186,7 +194,7 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
   const tabs = (['log', 'givers'] as List[]).map((l) =>
     h(Text, { key: l, inverse: list === l, bold: list === l, color: list === l ? 'cyan' : undefined },
       l === 'log' ? ` Quest log ${state.quests.length}/${state.questCapacity || '?'} ` : ' Quest givers '));
-  const left = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width: leftW, height, paddingX: 1 },
+  const left = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: detail || route ? 'gray' : 'cyan', width: leftW, height, paddingX: 1 },
     h(Text, { wrap: 'truncate' }, ...tabs, h(Text, { dimColor: true }, ' Tab')),
     ...rows.slice(start, end).map((r, i) => {
       const n = start + i;
@@ -211,8 +219,9 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
   );
 
   let detailLines: React.ReactNode[] = [];
+  let maxTop = 0;
   if (route && plan) {
-    detailLines = routeLines(state, plan, route, routeQuests.length, rightW - 4, height - 3, scroll);
+    [detailLines, maxTop] = routeLines(state, plan, route, routeQuests.length, rightW - 4, height - 3, scroll);
   } else if (quest) {
     const dw = Math.max(10, rightW - 4);
     const info: React.ReactNode[] = [
@@ -235,7 +244,7 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
           extra.push(h(Text, { key: `s${i}-${s.job.id}`, color: ok ? 'magentaBright' : 'gray', wrap: 'truncate' },
             `    ↳ ${s.job.name}${s.chance !== null ? ` ${Math.round(s.chance * 100)}%` : ''} · ${s.job.laborPoints} LP${s.way !== null ? ` · ${formatDuration(s.way)}` : ''}${ok ? '' : ' (not enough LP)'}`));
         }
-        if (src.length > 3) extra.push(h(Text, { key: `m${i}`, dimColor: true }, `    +${src.length - 3} more jobs (g shows all on the map)`));
+        if (src.length > 3) extra.push(h(Text, { key: `m${i}`, dimColor: true }, `    +${src.length - 3} more jobs (v shows all on the map)`));
         return [row, ...extra];
       }),
       h(Text, { key: 'rw', bold: true }, 'Rewards'),
@@ -245,7 +254,8 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
     ];
     const text = wrapLines([quest.description, quest.hint && `Hint: ${quest.hint}`].filter(Boolean).join('\n\n'), dw);
     const room = Math.max(0, height - 3 - info.length);
-    const s = Math.min(scroll, Math.max(0, text.length - room));
+    maxTop = Math.max(0, text.length - room);
+    const s = Math.min(scroll, maxTop);
     detailLines = [...info, ...text.slice(s, s + room).map((l, i) => h(Text, { key: `d${i}`, dimColor: true }, l || ' '))];
   } else if (cur?.kind === 'giver') {
     detailLines = [
@@ -254,26 +264,29 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
       h(Text, { key: 'k' }, 'Enter: show quests · w: walk there'),
     ];
   }
+  useEffect(() => {
+    if (scroll > maxTop) setScroll(maxTop);
+  });
   const keys = confirm
     ? confirm.kind === 'finish' && confirm.quest.rewardOptions.length > 1
       ? h(Box, { flexDirection: 'column' },
         h(Text, { color: 'yellow', wrap: 'truncate' }, `Finish "${confirm.quest.title}"? Choose a reward (← → or 1-${confirm.quest.rewardOptions.length}), then y:`),
         ...confirm.quest.rewardOptions.map((o, i) => h(Text, { key: o.id, inverse: i === confirm.choice, color: i === confirm.choice ? 'green' : undefined, wrap: 'truncate' }, ` ${i + 1}) ${o.text}`)))
       : h(Text, { color: 'yellow', wrap: 'truncate' }, confirm.kind === 'route'
-        ? `Queue ${Math.min(confirm.plan.fitRuns, Math.max(0, state.taskLimit - state.queue.length))} of ${confirm.plan.totals.runs} route jobs? y yes · a autopilot: quests first until these are done (G) · n no`
+        ? `Queue ${Math.min(confirm.plan.fitRuns, Math.max(0, state.taskLimit - state.queue.length))} of ${confirm.plan.totals.runs} route jobs? y yes · a autopilot: quests first until these are done (g a) · n no`
         : `${confirm.kind === 'finish' ? 'Finish' : 'Cancel'} "${confirm.quest.title}"${confirm.kind === 'finish' && confirm.quest.rewardOptions.length === 1 ? ` (reward: ${confirm.quest.rewardOptions[0]!.text})` : ''}? y / n`)
     : route
-      ? h(Text, { dimColor: true, wrap: 'truncate' }, `${state.autoRoute ? `auto: ${state.autoRoute.runs.length} left, x stop · ` : ''}1 quest · 2 chain · 3 all · e energy/time · Enter queue · g map · J/K · Esc`)
+      ? h(Text, { dimColor: true, wrap: 'truncate' }, `${state.autoRoute ? `auto: ${state.autoRoute.runs.length} left, x stop · ` : ''}1 quest · 2 chain · 3 all · e energy/time · Enter queue · v map · j k scroll · Esc`)
       : h(Text, { dimColor: true, wrap: 'truncate' }, quest
-        ? `${quest.accepted ? (quest.finishable ? 'Enter finish · ' : '') + 'x cancel quest · R route' : 'a/Enter accept'} · g jobs on map${quest.employerAt ? ' · w walk to giver' : ''} · J/K scroll`
+        ? `${quest.accepted ? (quest.finishable ? 'Enter finish · ' : '') + 'x cancel quest · R route' : 'a/Enter accept'} · v jobs on map${quest.employerAt ? ' · w walk to giver' : ''} · ${detail ? 'j k scroll · h list' : 'l text'}`
         : 'Enter open · R route · Esc back');
-  const right = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width: rightW, height, paddingX: 1 },
+  const right = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: detail || route ? 'cyan' : 'gray', width: rightW, height, paddingX: 1 },
     ...detailLines, h(Box, { flexGrow: 1 }), keys);
   return h(Box, { width, height }, left, right);
 }
 
-/** Right panel for the route planner. */
-function routeLines(state: GameState, plan: RoutePlan, route: { scope: RouteScope; objective: RouteObjective }, questCount: number, width: number, room: number, scroll: number): React.ReactNode[] {
+/** Right panel for the route planner, and how far it scrolls. */
+function routeLines(state: GameState, plan: RoutePlan, route: { scope: RouteScope; objective: RouteObjective }, questCount: number, width: number, room: number, scroll: number): [React.ReactNode[], number] {
   const out: React.ReactNode[] = [];
   const add = (text: string, props: Record<string, unknown> = {}) => out.push(h(Text, { key: out.length, wrap: 'truncate', ...props }, truncate(text, width)));
   const head: React.ReactNode[] = [];
@@ -301,8 +314,9 @@ function routeLines(state: GameState, plan: RoutePlan, route: { scope: RouteScop
   for (const [k, r] of Object.entries(plan.leftover)) add(`… ${label(k)}: ~${Math.round(r * 10) / 10} still open after the run limit`, { color: 'yellow' });
   if (plan.stops.length) add('Drop amounts are expected values (job window %); re-plan after the jobs finish.', { dimColor: true });
   const body = Math.max(0, room - head.length);
-  const top = Math.min(scroll, Math.max(0, out.length - body));
-  return [...head, ...out.slice(top, top + body)];
+  const maxTop = Math.max(0, out.length - body);
+  const top = Math.min(scroll, maxTop);
+  return [[...head, ...out.slice(top, top + body)], maxTop];
 }
 
 /** Quest detail: "≈ 2h 10m · 24 energy · 3 jobs (12m walking)", with what the estimate can't cover. */

@@ -1,4 +1,4 @@
-// Debug screen (B): the debug log (state diffs, requests, autopilot decisions, planner input/output, quest
+// Debug screen (g x): the debug log (state diffs, requests, autopilot decisions, planner input/output, quest
 // module) with the selected entry's data, and a live "Now" view of what the autopilot sees. Entries are also
 // written to <config dir>/debug/ (hourly files, kept 24 h).
 import React, { useEffect, useMemo, useState } from 'react';
@@ -45,6 +45,8 @@ export function DebugScreen({ state, width, height, onCapture, onExit, active = 
   const [typing, setTyping] = useState(false);
   const [sel, setSel] = useState(-1); // -1: follow the newest
   const [scroll, setScroll] = useState(0);
+  /** l: j k scroll the entry data instead of moving in the log. */
+  const [dataFocus, setDataFocus] = useState(false);
 
   useEffect(() => () => onCapture(false), []);
 
@@ -78,14 +80,19 @@ export function DebugScreen({ state, width, height, onCapture, onExit, active = 
       if (input && !key.ctrl && !key.meta) setFilter((x) => x + input);
       return;
     }
+    if (dataFocus && (key.escape || input === 'h')) return setDataFocus(false);
     if (key.escape) return onExit();
-    if (key.tab) return setView((v) => (v === 'log' ? 'now' : 'log'));
-    if (input === 'J' || (key.pageDown && view === 'now')) return setScroll((s) => Math.min(maxScroll, s + (input === 'J' ? 3 : bodyRows)));
-    if (input === 'K' || (key.pageUp && view === 'now')) return setScroll((s) => Math.max(0, s - (input === 'K' ? 3 : bodyRows)));
-    if (view === 'now') {
+    if (key.tab) {
+      setDataFocus(false);
+      return setView((v) => (v === 'log' ? 'now' : 'log'));
+    }
+    if (input === 'l' && view === 'log') return setDataFocus(true);
+    if (view === 'now' || dataFocus) {
+      if (key.pageDown) return setScroll((s) => Math.min(maxScroll, s + bodyRows));
+      if (key.pageUp) return setScroll((s) => Math.max(0, s - bodyRows));
       if (key.downArrow || input === 'j') return setScroll((s) => Math.min(maxScroll, s + 1));
       if (key.upArrow || input === 'k') return setScroll((s) => Math.max(0, s - 1));
-      return;
+      if (view === 'now') return;
     }
     const move = (d: number) => {
       const n = Math.max(0, Math.min(list.length - 1, idx + d));
@@ -124,7 +131,7 @@ export function DebugScreen({ state, width, height, onCapture, onExit, active = 
   }
 
   const [start, end] = scrollWindow(idx, list.length, bodyRows - 1);
-  const left = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width: leftW, height, paddingX: 1 },
+  const left = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: dataFocus ? 'gray' : 'cyan', width: leftW, height, paddingX: 1 },
     head,
     ...list.slice(start, end).map((e, i) => h(Text, { key: e.id, inverse: start + i === idx, wrap: 'truncate' },
       h(Text, { dimColor: true }, `${clock(e.at)} `),
@@ -132,7 +139,7 @@ export function DebugScreen({ state, width, height, onCapture, onExit, active = 
       truncate(e.title, leftW - 22))),
     list.length ? null : h(Text, { dimColor: true }, 'Nothing logged yet.'),
   );
-  const right = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width: rightW, height, paddingX: 1 },
+  const right = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: dataFocus ? 'cyan' : 'gray', width: rightW, height, paddingX: 1 },
     h(Text, { bold: true, wrap: 'truncate' }, entry ? `${clock(entry.at)} ${entry.cat}` : ' '),
     h(Text, { wrap: 'truncate' }, entry?.title ?? ''),
     ...detail.slice(scroll, scroll + bodyRows - 2).map((l, i) => h(Text, { key: i, wrap: 'truncate' }, l)),

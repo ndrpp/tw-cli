@@ -587,7 +587,7 @@ export class GameState extends EventEmitter {
       const lost = hpBefore - c.health;
       if (lost > Math.max(2, c.maxHealth * 0.01)) {
         const cash = cashBefore > c.cash ? `, cash $${cashBefore} → $${c.cash}` : '';
-        this.error(`⚔ Health ${hpBefore} → ${c.health}${cash}. Attacked? See reports (M).`);
+        this.error(`⚔ Health ${hpBefore} → ${c.health}${cash}. Attacked? See reports (g r).`);
       }
       this.changed();
     } catch (err) {

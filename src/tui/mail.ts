@@ -1,4 +1,4 @@
-// Mail screen (M): reports and telegrams. Read, delete, reply, write.
+// Mail screen (g r): reports and telegrams. Read, delete, reply, write.
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { REPORT_FOLDERS, type Report, type Telegram } from '../game/mail.ts';
@@ -17,6 +17,8 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
   const [sel, setSel] = useState(0);
   const [opened, setOpened] = useState<Opened>(null);
   const [scroll, setScroll] = useState(0);
+  /** l / Enter: j k scroll the open message instead of moving in the list. */
+  const [detail, setDetail] = useState(false);
   const [form, setForm] = useState<FormState | null>(null);
   const [pending, setPending] = useState<Pending>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -87,21 +89,31 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
       setOpened(null);
       return;
     }
+    if (detail && input === 'h') return setDetail(false);
     if (key.escape) {
+      setDetail(false);
       if (opened) return setOpened(null);
       return onExit();
     }
     if (key.tab || key.leftArrow || key.rightArrow) {
       setSel(0);
       setOpened(null);
+      setDetail(false);
       return setTab((t) => (t === 'reports' ? 'telegrams' : 'reports'));
     }
     const step = key.pageUp || key.pageDown ? 10 : 1;
+    if (detail) {
+      if (key.upArrow || input === 'k' || key.pageUp) return setScroll((s) => Math.max(0, s - step));
+      if (key.downArrow || input === 'j' || key.pageDown) return setScroll((s) => s + step);
+    }
     if (key.upArrow || input === 'k' || key.pageUp) return (setSel(Math.max(0, idx - step)), setOpened(null));
     if (key.downArrow || input === 'j' || key.pageDown) return (setSel(Math.min(count - 1, idx + step)), setOpened(null));
-    if (input === 'J') return setScroll((s) => s + 3);
-    if (input === 'K') return setScroll((s) => Math.max(0, s - 3));
-    if (key.return) return void open(idx);
+    if (key.return || input === 'l') {
+      if (!count) return;
+      setDetail(true);
+      if (!opened || key.return) return void open(idx);
+      return;
+    }
     // Kitty-protocol terminals report Shift+, / Shift+. as the base keys with the shift flag.
     const nextPage = input === '>' || (key.shift && input === '.');
     const prevPage = input === '<' || (key.shift && input === ',');
@@ -110,6 +122,7 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
       if (page < 1 || page > (list?.pages ?? 1)) return;
       setSel(0);
       setOpened(null);
+      setDetail(false);
       return void (tab === 'reports' ? state.loadReports(page) : state.loadTelegrams(page));
     }
     if (input === 'f' && tab === 'reports') {
@@ -147,7 +160,7 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
       `${t.unread ? '•' : t.answered ? '↩' : ' '} ${truncate(t.subject, leftW - 30)} `,
       h(Text, { color: 'magenta' }, truncate(t.partners.length ? t.partners.join(', ') : 'System', 12)), ' ',
       h(Text, { dimColor: true }, truncate(t.date, 10))));
-  const left = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width: leftW, height, paddingX: 1 },
+  const left = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: detail ? 'gray' : 'cyan', width: leftW, height, paddingX: 1 },
     h(Text, { wrap: 'truncate' }, ...tabs, h(Text, { dimColor: true }, ' Tab')),
     h(Text, { dimColor: true, wrap: 'truncate' }, sub),
     ...rows,
@@ -156,12 +169,14 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
 
   const dw = Math.max(10, rightW - 4);
   let lines: React.ReactNode[] = [];
+  let maxTop = 0;
   if (form) lines = [h(FormView, { key: 'form', form, width: rightW - 2 })];
   else if (opened?.kind === 'report') {
     const r = opened.report;
     const body = wrap(r.text, dw);
     const room = Math.max(1, height - 6);
-    const top = Math.min(scroll, Math.max(0, body.length - room));
+    maxTop = Math.max(0, body.length - room);
+    const top = Math.min(scroll, maxTop);
     lines = [
       h(Text, { key: 't', bold: true, wrap: 'truncate' }, r.title),
       h(Text, { key: 'd', dimColor: true, wrap: 'truncate' }, `${r.date}${r.type ? ` · ${r.type}` : ''}`),
@@ -171,7 +186,8 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
     const t = opened.telegram;
     const body = t.posts.flatMap((p) => [`▸ ${p.from} · ${p.date}`, ...wrap(p.text, dw), '']);
     const room = Math.max(1, height - 6);
-    const top = Math.min(scroll, Math.max(0, body.length - room));
+    maxTop = Math.max(0, body.length - room);
+    const top = Math.min(scroll, maxTop);
     lines = [
       h(Text, { key: 't', bold: true, wrap: 'truncate' }, t.subject),
       h(Text, { key: 'd', dimColor: true, wrap: 'truncate' }, `${t.posts.length} post(s)${t.pages > 1 ? ` · page ${t.page + 1}/${t.pages}` : ''}`),
@@ -182,10 +198,14 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
     lines = [h(Text, { key: 'h', dimColor: true }, count ? 'Enter: read' : '')];
     if (cur?.summary) lines.push(...wrap(cur.summary, dw).slice(0, height - 6).map((l, i) => h(Text, { key: `s${i}`, dimColor: true }, l)));
   }
+  // Scrolling past the end would leave j/k with nothing to undo.
+  useEffect(() => {
+    if (scroll > maxTop) setScroll(maxTop);
+  });
   const keys = confirmDelete
     ? h(Text, { color: 'red', wrap: 'truncate' }, `Delete this ${tab === 'reports' ? 'report' : 'telegram'}? y / n`)
-    : h(Text, { dimColor: true, wrap: 'truncate' }, `Enter read · J/K scroll · d delete${tab === 'telegrams' ? ' · R reply' : ''} · n new telegram · Esc back`);
-  const right = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width: rightW, height, paddingX: 1 },
+    : h(Text, { dimColor: true, wrap: 'truncate' }, `${detail ? 'j k scroll · h list' : 'Enter read'} · d delete${tab === 'telegrams' ? ' · R reply' : ''} · n new telegram · Esc back`);
+  const right = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: detail ? 'cyan' : 'gray', width: rightW, height, paddingX: 1 },
     ...lines, h(Box, { flexGrow: 1 }), keys);
   return h(Box, { width, height }, left, right);
 }

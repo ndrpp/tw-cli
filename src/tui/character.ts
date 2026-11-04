@@ -81,6 +81,8 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
   const [plan, setPlan] = useState<SkillPlan>(emptyPlan);
   const [confirm, setConfirm] = useState(false);
   const [detailScroll, setDetailScroll] = useState(0);
+  /** l: j k scroll the item detail instead of moving in the list. */
+  const [detail, setDetail] = useState(false);
   const [useForm, setUseForm] = useState<{ itemId: number; form: FormState } | null>(null);
   const [setSel, setSetSel] = useState(0);
   const [setSwitch, setSetSwitch] = useState<EquipSet | null>(null);
@@ -146,7 +148,9 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       if (input === 'y') void state.saveSkills(plan).then((ok) => ok && setPlan(emptyPlan()));
       return;
     }
+    if (detail && (key.escape || input === 'h')) return setDetail(false);
     if (key.leftArrow || key.rightArrow) {
+      setDetail(false);
       const d = key.rightArrow ? 1 : CHAR_TABS.length - 1;
       return setTab((t) => CHAR_TABS[(CHAR_TABS.indexOf(t) + d) % CHAR_TABS.length]!);
     }
@@ -187,11 +191,18 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       if (key.return && sets[si]) setSetSwitch(sets[si]!);
       return;
     }
-    if (input === 'J') return setDetailScroll((n) => n + 3);
-    if (input === 'K') return setDetailScroll((n) => Math.max(0, n - 3));
-    if (key.tab) return setPane((p) => (p === 'bag' ? 'wear' : 'bag'));
+    if (detail) {
+      if (up || key.pageUp) return setDetailScroll((n) => Math.max(0, n - step));
+      if (down || key.pageDown) return setDetailScroll((n) => n + step);
+    }
+    if (input === 'l') return setDetail(true);
+    if (key.tab) {
+      setDetail(false);
+      return setPane((p) => (p === 'bag' ? 'wear' : 'bag'));
+    }
     if (input === '/') {
       setPane('bag');
+      setDetail(false);
       onCapture(true); // before the next keystroke reaches the global shortcuts
       return setFiltering(true);
     }
@@ -232,7 +243,7 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
 
   const formH = useForm ? useForm.form.fields.length + 4 : 0;
   const body = tab === 'inventory'
-    ? h(InventoryTab, { state, width, height: height - 1 - formH, pane, wearSel, rows, bagIdx, typeFilter, filter, filtering, detailScroll })
+    ? h(InventoryTab, { state, width, height: height - 1 - formH, pane, wearSel, rows, bagIdx, typeFilter, filter, filtering, detailScroll, detail, clampScroll: (max: number) => setDetailScroll((n) => Math.min(n, max)) })
     : tab === 'sets'
       ? h(SetsTab, { state, width, height: height - 1, selected: setSel, confirm: setSwitch })
       : h(SkillsTab, { state, width, height: height - 1, rows: skillRows, selected: skillSel, plan, confirm });
@@ -271,8 +282,9 @@ export function bonusLines(stats: ItemStats | null | undefined): string[] {
   return stats ? stats.lines.map((l) => l.text) : [];
 }
 
-export function ItemDetail(p: { state: GameState; itemId: number | undefined; count: number; wornId: number | undefined; compare: boolean; pane: 'wear' | 'bag'; width: number; height: number; scroll: number }) {
-  const { state, itemId, count, wornId, compare, pane, width, height, scroll } = p;
+/** `clampScroll` (character screen): the detail can take focus (l) and scroll; it reports how far. */
+export function ItemDetail(p: { state: GameState; itemId: number | undefined; count: number; wornId: number | undefined; compare: boolean; pane: 'wear' | 'bag'; width: number; height: number; scroll: number; focused?: boolean; clampScroll?: (max: number) => void }) {
+  const { state, itemId, count, wornId, compare, pane, width, height, scroll, focused, clampScroll } = p;
   const def = itemId !== undefined ? state.items?.get(itemId) : undefined;
   const worn = wornId !== undefined ? state.items?.get(wornId) : undefined;
   const w = Math.max(10, width - 4);
@@ -333,22 +345,27 @@ export function ItemDetail(p: { state: GameState; itemId: number | undefined; co
   }
   const canWear = !!def && WEAR_SLOTS.includes(def.type);
   const canUse = !!def && def.usetype !== 'none';
+  const scrollHint = !clampScroll ? '' : focused ? ' · j k scroll · h back' : ' · l detail';
   const hint = pane === 'wear'
-    ? 'Enter/x take off · Tab bag · J/K scroll'
-    : `${canUse ? 'Enter/e use' : canWear ? 'Enter/e wear' : 'Enter/e no action'}${canUse ? ' · U use' : ''} · / filter · t/y type · J/K scroll`;
+    ? `Enter/x take off · Tab bag${scrollHint}`
+    : `${canUse ? 'Enter/e use' : canWear ? 'Enter/e wear' : 'Enter/e no action'}${canUse ? ' · U use' : ''} · / filter · t/y type${scrollHint}`;
   const room = Math.max(1, height - 3);
-  const top = Math.min(scroll, Math.max(0, lines.length - room));
+  const maxTop = Math.max(0, lines.length - room);
+  const top = Math.min(scroll, maxTop);
   const more = lines.length - top - room;
-  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'yellow', paddingX: 1, width, height, flexShrink: 0 },
+  useEffect(() => {
+    if (scroll > maxTop) clampScroll?.(maxTop);
+  });
+  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: focused ? 'cyan' : 'yellow', paddingX: 1, width, height, flexShrink: 0 },
     ...lines.slice(top, top + room), h(Box, { flexGrow: 1 }),
-    h(Text, { dimColor: true, wrap: 'truncate' }, more > 0 ? `↓ ${more} more (J) · ${hint}` : hint));
+    h(Text, { dimColor: true, wrap: 'truncate' }, more > 0 ? `↓ ${more} more · ${hint}` : hint));
 }
 
 function InventoryTab(p: {
   state: GameState; width: number; height: number; pane: 'wear' | 'bag'; wearSel: number; rows: BagItem[]; bagIdx: number;
-  typeFilter: string; filter: string; filtering: boolean; detailScroll: number;
+  typeFilter: string; filter: string; filtering: boolean; detailScroll: number; detail: boolean; clampScroll: (max: number) => void;
 }) {
-  const { state, width, height, pane, wearSel, rows, bagIdx, typeFilter, filter, filtering, detailScroll } = p;
+  const { state, width, height, pane, wearSel, rows, bagIdx, typeFilter, filter, filtering, detailScroll, detail: detailFocus, clampScroll } = p;
   const inv = state.inventory;
   // Wide terminals: equipped | bag | details side by side. Narrow: details below, still tall.
   const side = width >= 100;
@@ -361,7 +378,7 @@ function InventoryTab(p: {
   const def = sel !== undefined ? state.items?.get(sel) : undefined;
   const wornId = def && pane === 'bag' ? inv.wear.get(def.type) : undefined;
 
-  const wearPane = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: pane === 'wear' ? 'cyan' : 'gray', width: wearW, height: listH, paddingX: 1, flexShrink: 0 },
+  const wearPane = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: pane === 'wear' && !detailFocus ? 'cyan' : 'gray', width: wearW, height: listH, paddingX: 1, flexShrink: 0 },
     h(Text, { bold: true }, 'Equipped'),
     ...WEAR_SLOTS.map((slot, i) => {
       const id = inv.wear.get(slot);
@@ -376,7 +393,7 @@ function InventoryTab(p: {
   const [start, end] = scrollWindow(bagIdx, rows.length, listRows);
   const nameW = Math.max(10, bagW - 16);
   const typeLabel = typeFilter === 'all' ? 'all types' : SLOT_NAMES[typeFilter] ?? typeFilter;
-  const bagPane = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: pane === 'bag' ? 'cyan' : 'gray', width: bagW, height: listH, paddingX: 1, flexShrink: 0 },
+  const bagPane = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: pane === 'bag' && !detailFocus ? 'cyan' : 'gray', width: bagW, height: listH, paddingX: 1, flexShrink: 0 },
     h(Text, { bold: true, wrap: 'truncate' }, `Bag  ${rows.length ? `${bagIdx + 1}/${rows.length}` : '0'}${rows.length !== inv.bag.size ? ` of ${inv.bag.size}` : ''}`),
     h(Text, { wrap: 'truncate' },
       h(Text, { color: filtering ? 'cyan' : filter ? 'yellow' : 'gray' }, filtering ? `/${filter}▏` : filter ? `/${filter}` : '/ filter'),
@@ -392,7 +409,7 @@ function InventoryTab(p: {
     rows.length === 0 ? h(Text, { dimColor: true }, inv.bag.size ? 'Nothing matches. Esc clears the filter.' : 'Bag is empty (u refreshes).') : null,
   );
 
-  const detail = h(ItemDetail, { state, itemId: sel, count: sel !== undefined ? inv.count(sel) : 0, wornId, compare: pane === 'bag', pane, width: detailW, height: detailH, scroll: detailScroll });
+  const detail = h(ItemDetail, { state, itemId: sel, count: sel !== undefined ? inv.count(sel) : 0, wornId, compare: pane === 'bag', pane, width: detailW, height: detailH, scroll: detailScroll, focused: detailFocus, clampScroll });
   return side
     ? h(Box, null, wearPane, bagPane, detail)
     : h(Box, { flexDirection: 'column' }, h(Box, null, wearPane, bagPane), detail);

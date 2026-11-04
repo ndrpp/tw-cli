@@ -1,4 +1,4 @@
-// Town screen (T): the city hall of your home town — building levels, progress and construction jobs.
+// Town screen (g t): the city hall of your home town — building levels, progress and construction jobs.
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { formKey, formValues, FormView, makeForm, type FormState } from './form.ts';

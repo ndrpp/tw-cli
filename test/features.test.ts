@@ -438,7 +438,7 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
   try {
     await settle();
     assert.match(plain(), /1 quest\(s\) to finish/);
-    await keys('i');
+    await keys('g', 'i');
     await settle(300);
     assert.match(plain(), /Equipped/);
     assert.match(plain(), /Vampire's bat/);
@@ -449,7 +449,7 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     await keys('\r');
     assert.equal(calls.filter((c) => c.url.includes('action=carry')).length, 1);
     // Coffee is usable but not wearable: Enter opens the use form instead of trying to equip it.
-    await keys('\x1b', '\x1b', 'i');
+    await keys('\x1b', '\x1b', 'g', 'i');
     await settle(200);
     out = '';
     await keys('t', 't', 't', 't', 't', 't'); // type filter: Product (yield)
@@ -493,7 +493,7 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     // Quests: finishable quest is listed first; Enter → confirm → finish_quest.
     await keys('\x1b');
     await settle(100);
-    await keys('o');
+    await keys('g', 'q');
     assert.match(plain(), /Quest log 3\//);
     assert.match(plain(), /Mike and Jenny/);
     assert.match(plain(), /Angel of love\s+1 ✔1/); // chain header with count and ready-to-finish
@@ -508,7 +508,7 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     assert.match(plain(), /Barkeeper \(saloon\)/);
 
     // Hotel overlay from anywhere: s → rooms → Esc.
-    await keys('\x1b', 's');
+    await keys('\x1b', 'g', 's');
     await settle(200);
     assert.match(plain(), /Hotel · Slobozia/);
     assert.match(plain(), /Cubby/);
@@ -598,14 +598,14 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     assert.match(plain(), /Esc skip/);
     await keys('\x1b');
     await settle(200);
-    // Starts on home; W opens the jobs view. Jobs without enough labor points are hidden until `a`.
+    // Starts on home; g j opens the jobs view. Jobs without enough labor points are hidden until `a`.
     assert.match(plain(), /Task queue \d+\/\d+/);
     assert.match(plain(), / 25%  45:00 left/);
     assert.match(plain(), /\+50 xp  \$90  luck \$0–\$400/);
     assert.match(plain(), /Drops: Ham 200%/);
     assert.match(plain(), /•Job report: Tending pigs/);
     assert.match(plain(), /measuring…/);
-    await keys('W');
+    await keys('g', 'j');
     assert.match(plain(), /ends [\d:]+(\s?[AP]M)? · \+50 xp \$90/);
     state.queue = [];
     assert.match(plain(), /enough LP only/);
@@ -639,10 +639,10 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     assert.equal(state.mapLayers.jobs, false);
     await keys('a');
     assert.equal(state.mapLayers.jobs, true);
-    await keys('\x1b', 'm');
+    await keys('\x1b', '\x1b'); // layers closed, then back to jobs
     // Quest route: the horse quest needs 2 reins → Leather work (Saddler lacks LP).
     out = '';
-    await keys('o');
+    await keys('g', 'q');
     await settle(300);
     assert.match(plain(), /~\d+h/, 'estimate in the quest list');
     out = '';

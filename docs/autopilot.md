@@ -2,7 +2,7 @@
 
 Plays the character on its own while the TUI is open: queues jobs by your priority, sleeps (and wakes early),
 banks cash, uses consumables, does quests and safe NPC duels. Every behaviour is a toggle on the Autopilot
-screen (`G`; `P` is taken by the trade screen). Spec agreed with the user in a grill session ("Decisions").
+screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
 
 ## Files
 | File | What |
@@ -12,12 +12,12 @@ screen (`G`; `P` is taken by the trade screen). Spec agreed with the user in a g
 | `src/game/autopilot.ts` | Pure planner `planAutopilot(input)`: HP → bank → inserts → jobs by priority, energy sleeps / consumables when short. `parseConsumable`, `expectedHpLoss`. |
 | `src/game/autopilot-runner.ts` | `AutopilotRunner` (`state.runner`): replans on input change, sends tasks, wakes from sleep, deposits, uses items, cancels for a better plan, NPC duels for XP, retries/backoff, spend cap. |
 | `src/game/autopilot-quests.ts` | `QuestModule`: finish (reward by priority), wear + restore gear, buy in town shops, accept saloon quests. `chooseReward`. |
-| `src/game/debug-log.ts`, `src/tui/debug.ts` | Debug log (`state.debug`) and its screen (`B`); see "Debugging". |
+| `src/game/debug-log.ts`, `src/tui/debug.ts` | Debug log (`state.debug`) and its screen (`g x`); see "Debugging". |
 | `src/tui/autopilot.ts` | Screen: priority, module toggles and values on the left, plan pane (`PlanPane`, rows from `planRows`) on the right; `Q` full queue view. |
 | `test/autopilot.test.ts`, `test/social.test.ts` (runner) | Timeline, config, planner, consumables, inserts, screen, queue view, rewards, duels; runner against a fake server. |
 
 ## Using it
-- `G` opens the screen. `R` run/pause (paused still plans and shows "would do", sends nothing), `X` stop
+- `g a` opens the screen. `R` run/pause (paused still plans and shows "would do", sends nothing), `X` stop
   (pause + clear the plan; rules stay), `Space`/`Enter` toggle, `←→`/`+-` values, `J K` reorder priority.
 - `Q` queue view: queued + planned rows (ETA, travel, energy, HP, XP, $, module). `c` cancel a queued task,
   `d` exclude a planned job / remove an inserted row, `u` clear exclusions, `s`/`b` insert a sleep / bank stop at
@@ -35,7 +35,7 @@ screen (`G`; `P` is taken by the trade screen). Spec agreed with the user in a g
 - Header shows `autopilot ●` while running. Resumes on launch if it was running (after startup + first replan).
 
 ## Debugging
-- `B` opens the Debug screen. Every entry also goes to `<config dir>/debug/YYYY-MM-DDTHH.jsonl` (UTC hour,
+- `g x` opens the Debug screen. Every entry also goes to `<config dir>/debug/YYYY-MM-DDTHH.jsonl` (UTC hour,
   one JSON object per line: `id, at, cat, title, data`). Files older than 24 h are deleted when a new hour
   starts. Only the TUI (`root.ts` `makeState`) turns the files on; tests and CLI commands do not write any.
 - Categories: `log` (every log-pane line), `state` (diff of server values, queue, quests, bag, worn gear once
@@ -127,7 +127,7 @@ town you stand in, use an item).
 | Expanded queue + rules | built (planned jobs can only be excluded, not reordered; inserts can move) |
 | Quests: finish, rewards, wear + restore, shop buy in the current town, accept from saloons | built |
 | Quests: market instant-buy, detours to map quest givers, visit-place and duel requirements | **not built** (logged once and skipped) |
-| NPC duels for XP | built; fights only levels the duel record knows (fight NPCs yourself in `D` to fill it) |
+| NPC duels for XP | built; fights only levels the duel record knows (fight NPCs yourself in `g d` to fill it) |
 
 ## Decisions (grill session)
 TUI only (core has no UI deps) · may cancel anything, running tasks included, when the plan is better by the

@@ -1,4 +1,4 @@
-// Chat screen (C): rooms from the live connection (town, saloon, …) and whispers. Needs live updates (L).
+// Chat screen (g c): rooms from the live connection (town, saloon, …) and whispers. Needs live updates (g L).
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { ScreenProps } from './character.ts';
@@ -181,7 +181,7 @@ export function ChatPanel({ state, width, height, focused, roomIdx, draft }: {
   const shown = wrapped.slice(-Math.max(1, height - 4));
   const others = ids.filter((id) => id !== room && live?.unreadRooms.has(id)).length;
   const title = room && live ? live.roomTitle(room) : 'Chat';
-  const status = !live?.active ? 'live updates off (L)' : ids.length ? `${Math.min(roomIdx, ids.length - 1) + 1}/${ids.length}${others ? ` · ${others} unread` : ''}` : 'connecting…';
+  const status = !live?.active ? 'live updates off (g L)' : ids.length ? `${Math.min(roomIdx, ids.length - 1) + 1}/${ids.length}${others ? ` · ${others} unread` : ''}` : 'connecting…';
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: focused ? 'cyan' : 'gray', width, height, paddingX: 1, flexShrink: 0 },
     h(Text, { bold: true, wrap: 'truncate' }, `${ids.length > 1 ? '◂ ' : ''}${title}${ids.length > 1 ? ' ▸' : ''}`, h(Text, { dimColor: true, bold: false }, `  ${status}`)),
     ...shown.map((l, i) => segLine(l, i, 'truncate')),
