@@ -8,6 +8,7 @@
 import type { GameClient } from '../http/game-client.ts';
 import type { FormValue } from '../http/form.ts';
 import { plainText } from './quests.ts';
+import { obj, objs, vals, type JsonObject } from '../util/json.ts';
 
 export interface TownBuilding {
   key: string;
@@ -57,7 +58,7 @@ export interface Construction {
   singleDuration: boolean;
 }
 
-const errText = (json: any, what: string) => plainText(json?.msg ?? (typeof json?.error === 'string' ? json.error : '') ?? '') || `${what} failed`;
+const errText = (json: JsonObject, what: string) => plainText(json.msg ?? (typeof json.error === 'string' ? json.error : '')) || `${what} failed`;
 
 export async function fetchTownHall(client: GameClient, townId: number): Promise<TownHall> {
   const json = await client.remoteCall('building_cityhall', '', { town_id: townId });
@@ -66,7 +67,7 @@ export async function fetchTownHall(client: GameClient, townId: number): Promise
     townId,
     townName: plainText(json.townName) || `town ${townId}`,
     noLeave: !!json.townNoLeave,
-    buildings: (Array.isArray(json.buildings) ? json.buildings : []).map((r: Record<string, any>) => ({
+    buildings: objs(json.buildings).map((r) => ({
       key: String(r.key),
       name: String(r.name ?? r.key),
       stage: Number(r.stage) || 0,
@@ -78,18 +79,19 @@ export async function fetchTownHall(client: GameClient, townId: number): Promise
   };
 }
 
-export function parseConstruction(json: Record<string, any>): Construction {
-  const raw = json.jobDurationData && typeof json.jobDurationData === 'object' ? json.jobDurationData : {};
-  const durations: BuildDuration[] = Object.values<any>(raw)
+export function parseConstruction(json: JsonObject): Construction {
+  const durations: BuildDuration[] = vals(json.jobDurationData)
+    .map(obj)
     .map((d) => ({
       seconds: Number(d.calcduration) || 0,
       formatted: String(d.formatted ?? ''),
-      xpMin: Number(d.expCalc?.min) || 0,
-      xpMax: Number(d.expCalc?.max) || 0,
+      xpMin: Number(obj(d.expCalc).min) || 0,
+      xpMax: Number(obj(d.expCalc).max) || 0,
     }))
     .filter((d) => d.seconds > 0)
     .sort((a, b) => a.seconds - b.seconds);
-  const def = Number(json.defaultData?.calcduration) || 0;
+  const def = Number(obj(json.defaultData).calcduration) || 0;
+  const skills = obj(json.build_skills);
   return {
     townId: Number(json.id) || 0,
     x: Number(json.x) || 0,
@@ -102,11 +104,11 @@ export function parseConstruction(json: Record<string, any>): Construction {
     deposit: String(json.deposit ?? '0'),
     buildPoints: Number(json.build_point) || 0,
     buildPointLimit: Number(json.build_point_limit) || 0,
-    skills: (Array.isArray(json.build_skills?.skills) ? json.build_skills.skills : []).map((s: Record<string, any>) => ({
+    skills: objs(skills.skills).map((s) => ({
       skill: String(s.skill ?? ''),
       coefficient: Number(s.coefficient) || 0,
     })),
-    malus: Number(json.build_skills?.malus) || 0,
+    malus: Number(skills.malus) || 0,
     durations,
     defaultDuration: durations.some((d) => d.seconds === def) ? def : durations[0]?.seconds ?? null,
     singleDuration: !!json.singleDuration,

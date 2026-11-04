@@ -98,7 +98,7 @@ test('web page: token + host checks, no external assets, fingerprint save, login
     assert.equal(r.status, 200);
     assert.deepEqual(saved, [profile.fp]);
     assert.equal(statSync(PROFILE_FILE).mode & 0o777, 0o600);
-    assert.equal(JSON.parse(readFileSync(PROFILE_FILE, 'utf8')).fp, profile.fp);
+    assert.equal((JSON.parse(readFileSync(PROFILE_FILE, 'utf8')) as { fp: string }).fp, profile.fp);
 
     r = await http(`${base}/api/login?t=${srv.token}`, { method: 'POST', body: 'name=x', type: 'application/x-www-form-urlencoded' });
     assert.equal(r.status, 415);

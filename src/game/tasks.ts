@@ -12,6 +12,7 @@
 import type { GameClient } from '../http/game-client.ts';
 import type { FormValue } from '../http/form.ts';
 import type { Position } from './character.ts';
+import { obj, objs, vals, type JsonObject } from '../util/json.ts';
 
 export interface TaskWay {
   queueId: number;
@@ -27,34 +28,36 @@ export interface QueuedTask {
   end: number;
   coords: Position;
   title: string;
-  jobId?: number;
-  way?: TaskWay;
-  raw: Record<string, any>;
+  jobId?: number | undefined;
+  way?: TaskWay | undefined;
+  raw: JsonObject;
 }
 
-export function parseQueueEntry(t: Record<string, any>): QueuedTask {
-  const data = t.data_obj ?? t.data ?? {};
+const coordsOf = (v: unknown): Position => ({ x: Number(obj(v).x ?? 0), y: Number(obj(v).y ?? 0) });
+
+export function parseQueueEntry(t: JsonObject): QueuedTask {
+  const data = obj(t.data_obj ?? t.data);
   let way: TaskWay | undefined;
   if (data.wayData) {
-    const w = data.wayData;
-    const wd = w.data_obj ?? w.data ?? {};
-    way = { queueId: w.queue_id, start: w.date_start, end: w.date_done, to: { x: wd.coords?.x ?? 0, y: wd.coords?.y ?? 0 } };
+    const w = obj(data.wayData);
+    const wd = obj(w.data_obj ?? w.data);
+    way = { queueId: Number(w.queue_id), start: Number(w.date_start), end: Number(w.date_done), to: coordsOf(wd.coords) };
   }
   return {
-    queueId: t.queue_id,
-    type: t.type,
-    start: t.date_start,
-    end: t.date_done,
-    coords: { x: data.coords?.x ?? 0, y: data.coords?.y ?? 0 },
-    title: data.title ?? data.town_name ?? data.name ?? t.type,
-    jobId: data.job_id,
+    queueId: Number(t.queue_id),
+    type: String(t.type),
+    start: Number(t.date_start),
+    end: Number(t.date_done),
+    coords: coordsOf(data.coords),
+    title: String(data.title ?? data.town_name ?? data.name ?? t.type),
+    jobId: data.job_id === undefined || data.job_id === null ? undefined : Number(data.job_id),
     way,
     raw: t,
   };
 }
 
 export function parseQueue(list: unknown): QueuedTask[] {
-  return Array.isArray(list) ? list.map(parseQueueEntry) : [];
+  return objs(list).map(parseQueueEntry);
 }
 
 export type TaskPost =
@@ -79,7 +82,7 @@ export function sleepPost(townId: number, room: string): Record<string, FormValu
 export interface AddResult {
   added: QueuedTask[];
   errors: string[];
-  energy?: number;
+  energy?: number | undefined;
 }
 
 export class TaskLimitError extends Error {}
@@ -93,7 +96,7 @@ export class TaskApi {
 
   async list(): Promise<QueuedTask[]> {
     const json = await this.client.remoteCallMode('task', 'get_tasks');
-    if (json.error) throw new Error(json.msg ?? 'task/get_tasks failed');
+    if (json.error) throw new Error(String(json.msg ?? 'task/get_tasks failed'));
     return parseQueue(json.queue);
   }
 
@@ -109,17 +112,17 @@ export class TaskApi {
     batch.forEach((p, i) => (tasks[String(queueLength + i)] = p));
     const json = await this.client.remoteCall('task', 'add', { tasks });
     const result: AddResult = { added: [], errors: [] };
-    for (const [, q] of Object.entries<any>(json.tasks ?? {})) {
-      if (q?.task) result.added.push(parseQueueEntry(q.task));
-      if (q?.error) result.errors.push(q.msg ?? String(q.error));
+    for (const q of vals(json.tasks).map(obj)) {
+      if (q.task) result.added.push(parseQueueEntry(obj(q.task)));
+      if (q.error) result.errors.push(String(q.msg ?? q.error));
     }
-    if (json.error && json.msg) result.errors.push(json.msg);
-    if (json.energy !== undefined) result.energy = json.energy;
+    if (json.error && json.msg) result.errors.push(String(json.msg));
+    if (json.energy !== undefined) result.energy = Number(json.energy);
     return result;
   }
 
   /** Cancels tasks by queue position. Returns the server's new queue. */
-  async cancel(queue: QueuedTask[], positions: number[]): Promise<{ queue: QueuedTask[]; errors: string[]; energy?: number; money?: number }> {
+  async cancel(queue: QueuedTask[], positions: number[]): Promise<{ queue: QueuedTask[]; errors: string[]; energy?: number | undefined; money?: number | undefined }> {
     const tasks: Record<string, FormValue> = {};
     for (const pos of positions) {
       const t = queue[pos];
@@ -129,10 +132,11 @@ export class TaskApi {
     const errors: string[] = [];
     let energy: number | undefined;
     let money: number | undefined;
-    for (const [, q] of Object.entries<any>(json.tasks ?? {})) {
-      if (q?.error) errors.push(q.msg ?? String(q.error));
-      if (q?.extra?.energy !== undefined) energy = q.extra.energy;
-      if (q?.extra?.money !== undefined) money = q.extra.money;
+    for (const q of vals(json.tasks).map(obj)) {
+      const extra = obj(q.extra);
+      if (q.error) errors.push(String(q.msg ?? q.error));
+      if (extra.energy !== undefined) energy = Number(extra.energy);
+      if (extra.money !== undefined) money = Number(extra.money);
     }
     return { queue: parseQueue(json.queue), errors, energy, money };
   }

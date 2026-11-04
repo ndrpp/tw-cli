@@ -17,7 +17,7 @@ test('calibration: drops blend reports with the game\'s number; HP, rooms and mo
   assert.ok(Math.abs(c.roomScale - 0.6) < 1e-9);
   // Motivation: −3 % per run, +1 % per hour.
   assert.deepEqual(c.motivation, { perRun: 0.02, perHour: 0, samples: 0 });
-  for (const [runs, hours] of [[2, 1], [0, 3], [4, 0.5], [1, 2]]) c.addMotivation(runs, hours, -0.03 * runs + 0.01 * hours);
+  for (const [runs, hours] of [[2, 1], [0, 3], [4, 0.5], [1, 2]] as const) c.addMotivation(runs, hours, -0.03 * runs + 0.01 * hours);
   assert.ok(Math.abs(c.motivation.perRun - 0.03) < 1e-9 && Math.abs(c.motivation.perHour - 0.01) < 1e-9);
   c.addLevelUp(true);
   assert.deepEqual(c.data.levelUps, { seen: 1, refilled: 1 });

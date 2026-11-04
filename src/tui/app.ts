@@ -21,6 +21,7 @@ import { TownScreen } from './town.ts';
 import { HomeScreen } from './home.ts';
 import { defaultRoom } from '../game/hotel.ts';
 import { poisNear } from '../game/poi.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 const QUEUE_POLL_MS = 60_000;
@@ -116,7 +117,7 @@ function JobsPane(props: { state: GameState; options: JobOption[]; selected: num
       const sel = idx === selected;
       const doable = o.job.jobPoints >= o.job.workPoints;
       const mark = quest?.has(o.job.id) ? h(Text, { color: 'magentaBright', bold: true }, '! ') : '  ';
-      return h(Text, { key: o.job.id, inverse: sel && focused, color: doable ? undefined : 'gray', wrap: 'truncate' },
+      return h(Text, defined({ key: o.job.id, inverse: sel && focused, color: doable ? undefined : 'gray', wrap: 'truncate' }),
         mark, `${truncate(o.job.name, nameW).padEnd(nameW)} ${jobCells(o, wide, luck)}`);
     }),
     options.length === 0 ? h(Text, { dimColor: true }, state0(filter, showAll)) : null,
@@ -156,7 +157,7 @@ function LogPane({ state, lines }: { state: GameState; lines: number }) {
   const entries = state.log.slice(-lines);
   return h(Box, { flexDirection: 'column', paddingX: 1 },
     ...entries.map((e, i) =>
-      h(Text, { key: i, color: e.level === 'error' ? 'red' : undefined, dimColor: e.level === 'info', wrap: 'truncate' },
+      h(Text, defined({ key: i, color: e.level === 'error' ? 'red' : undefined, dimColor: e.level === 'info', wrap: 'truncate' }),
         `${e.at.toLocaleTimeString()}  ${e.msg}`)),
   );
 }
@@ -561,8 +562,8 @@ function NavBar({ mode, overlay, leader, width }: { mode: Mode; overlay: string 
       h(Text, { bold: true, inverse: leader, color: 'yellow' }, leader ? ' go to › ' : 'g›'),
       ...items.flatMap((n, i) => [
         h(Text, { key: `s${i}` }, '  '),
-        h(Text, { key: n.label, inverse: n.active, color: n.active ? 'cyan' : undefined },
-          h(Text, { bold: true, color: n.active ? undefined : 'yellow' }, `${n.key} `),
+        h(Text, defined({ key: n.label, inverse: n.active, color: n.active ? 'cyan' : undefined }),
+          h(Text, defined({ bold: true, color: n.active ? undefined : 'yellow' }), `${n.key} `),
           h(Text, { dimColor: !n.active && !leader }, n.label)),
       ]),
       h(Text, { dimColor: true }, '   '),
@@ -589,7 +590,7 @@ function LoadingScreen({ state, width, height }: { state: GameState; width: numb
 
 /** The loading screen's box: title, startup steps with spinner and timings, last message, errors. Root uses it while connecting. */
 export function LoadingFrame({ width, height, subtitle, steps, latest, errors = [], keys }: {
-  width: number; height: number; subtitle?: string; steps: StartupStep[]; latest?: string; errors?: string[]; keys: string;
+  width: number; height: number; subtitle?: string | undefined; steps: StartupStep[]; latest?: string | undefined; errors?: string[] | undefined; keys: string;
 }) {
   const frame = SPINNER[Math.floor(Date.now() / 120) % SPINNER.length];
   return h(Box, { width, height, flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },

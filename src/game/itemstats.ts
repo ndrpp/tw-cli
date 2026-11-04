@@ -6,6 +6,7 @@
 //   ItemPopup.getXHTML @636900 (order and wording of the lines)
 //   west.item.ItemSet.getMergedStages @933000 (set bonus for the number of worn set items)
 import { NAMES } from './skills.ts';
+import { isObj, obj } from '../util/json.ts';
 
 /** One entry of item.bonus.item / an item set stage. */
 export interface RawBonus {
@@ -18,6 +19,21 @@ export interface RawBonus {
   roundingMethod?: string;
   isSector?: boolean;
   bonus?: RawBonus;
+}
+
+/** A bonus entry from the item or item-set JSON (unknown fields dropped). */
+export function parseRawBonus(v: unknown): RawBonus {
+  const r = obj(v);
+  const b: RawBonus = { type: String(r.type ?? '') };
+  if (typeof r.key === 'string') b.key = r.key;
+  if (typeof r.name === 'string') b.name = r.name;
+  if (r.value !== undefined && r.value !== null) b.value = Number(r.value);
+  if (typeof r.job === 'string' || typeof r.job === 'number') b.job = r.job;
+  if (typeof r.desc === 'string') b.desc = r.desc;
+  if (typeof r.roundingMethod === 'string') b.roundingMethod = r.roundingMethod;
+  if (r.isSector !== undefined) b.isSector = !!r.isSector;
+  if (isObj(r.bonus)) b.bonus = parseRawBonus(r.bonus);
+  return b;
 }
 
 /** The fields of an item the popup needs (kept in the slim item cache). */
@@ -90,7 +106,7 @@ type Modifier = (v: number) => number;
 export class BonusExtractor {
   charLevel: number | undefined;
   itemLevel: number;
-  jobName?: (id: number) => string | undefined;
+  jobName: ((id: number) => string | undefined) | undefined;
 
   constructor(ctx: StatContext, itemLevel = 0) {
     this.charLevel = ctx.charLevel;

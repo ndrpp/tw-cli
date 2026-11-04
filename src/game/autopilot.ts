@@ -48,29 +48,29 @@ export interface PlanInput {
   itemValue: (itemId: number) => number;
   hotels: HotelOption[];
   /** Usable consumables (already filtered by the reserve). */
-  consumables?: Consumable[];
-  homeTownId?: number;
+  consumables?: Consumable[] | undefined;
+  homeTownId?: number | undefined;
   /** Named towns, for banking. */
   towns: { id: number; name: string; at: Position }[];
   /**
    * Town of a bank walk already queued: when the queue ends there, deposit first whatever the cash projection
    * says, so no job is queued behind the walk and the trip is not made twice.
    */
-  bankTownId?: number;
+  bankTownId?: number | undefined;
   /** Quest shopping / market pickups (Quests module): planned when the town is within `quests.buyTrip`. */
-  buyTrips?: BuyTrip[];
+  buyTrips?: BuyTrip[] | undefined;
   /** Money the autopilot may still spend today. */
   budget: number;
   /** Step keys that keep failing: not planned. */
-  skip?: Set<string>;
+  skip?: Set<string> | undefined;
   /** Cap on planned jobs (default MAX_JOBS; tests use fewer). The plan otherwise runs to the horizon. */
-  maxJobs?: number;
+  maxJobs?: number | undefined;
   /** Exchange rates per goal (best gain per cost); a cancel check passes the current plan's so values compare. */
-  rates?: Record<Goal, number>;
+  rates?: Record<Goal, number> | undefined;
   /** Calibrated motivation model (calibration.ts): lost per run, recovered per hour (fractions). */
-  motivation?: { perRun: number; perHour: number };
+  motivation?: { perRun: number; perHour: number } | undefined;
   /** Calibrated multiplier for the danger → HP heuristic. */
-  hpScale?: number;
+  hpScale?: number | undefined;
 }
 
 /** Safety cap on jobs in one plan; normally the horizon ends it first. */

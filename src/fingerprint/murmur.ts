@@ -4,11 +4,13 @@
 // while the tail switch does NOT (chars > 0xFF leak extra bits there).
 
 type U64 = [number, number];
+/** A U64 split into four 16-bit limbs, high first. */
+type Limbs = [number, number, number, number];
 
 function add(a: U64, b: U64): U64 {
-  const e = [a[0] >>> 16, a[0] & 0xffff, a[1] >>> 16, a[1] & 0xffff];
-  const t = [b[0] >>> 16, b[0] & 0xffff, b[1] >>> 16, b[1] & 0xffff];
-  const n = [0, 0, 0, 0];
+  const e: Limbs = [a[0] >>> 16, a[0] & 0xffff, a[1] >>> 16, a[1] & 0xffff];
+  const t: Limbs = [b[0] >>> 16, b[0] & 0xffff, b[1] >>> 16, b[1] & 0xffff];
+  const n: Limbs = [0, 0, 0, 0];
   n[3] += e[3] + t[3]; n[2] += n[3] >>> 16; n[3] &= 0xffff;
   n[2] += e[2] + t[2]; n[1] += n[2] >>> 16; n[2] &= 0xffff;
   n[1] += e[1] + t[1]; n[0] += n[1] >>> 16; n[1] &= 0xffff;
@@ -17,9 +19,9 @@ function add(a: U64, b: U64): U64 {
 }
 
 function mul(a: U64, b: U64): U64 {
-  const e = [a[0] >>> 16, a[0] & 0xffff, a[1] >>> 16, a[1] & 0xffff];
-  const t = [b[0] >>> 16, b[0] & 0xffff, b[1] >>> 16, b[1] & 0xffff];
-  const n = [0, 0, 0, 0];
+  const e: Limbs = [a[0] >>> 16, a[0] & 0xffff, a[1] >>> 16, a[1] & 0xffff];
+  const t: Limbs = [b[0] >>> 16, b[0] & 0xffff, b[1] >>> 16, b[1] & 0xffff];
+  const n: Limbs = [0, 0, 0, 0];
   n[3] += e[3] * t[3]; n[2] += n[3] >>> 16; n[3] &= 0xffff;
   n[2] += e[2] * t[3]; n[1] += n[2] >>> 16; n[2] &= 0xffff;
   n[2] += e[3] * t[2]; n[1] += n[2] >>> 16; n[2] &= 0xffff;

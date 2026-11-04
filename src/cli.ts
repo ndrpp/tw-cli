@@ -20,14 +20,18 @@ import type { Credentials } from './auth/login.ts';
 import { GameState } from './game/state.ts';
 import { formatClock, formatDuration } from './tui/format.ts';
 import { queueSummary } from './game/tasks.ts';
+import { obj } from './util/json.ts';
 
 function ask(question: string, hidden = false): Promise<string> {
   return new Promise((resolve) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
     if (hidden) {
-      (rl as any)._writeToOutput = (s: string) => {
-        if (s.startsWith(question)) process.stdout.write(question);
-      };
+      // Interface._writeToOutput is internal (not in the typings): echo the prompt, not the typed password.
+      Object.assign(rl, {
+        _writeToOutput: (s: string) => {
+          if (s.startsWith(question)) process.stdout.write(question);
+        },
+      });
     }
     rl.question(question, (answer) => {
       rl.close();
@@ -136,10 +140,10 @@ async function main(argv: string[]): Promise<number> {
       const c = bootstrap.character ?? {};
       console.log(
         [
-          `${c.name} (level ${c.level}, ${c.charClass?.type ?? '?'}) on ${bootstrap.game?.currentWorldName ?? DEFAULT_WORLD.url}`,
+          `${c.name} (level ${c.level}, ${String(obj(c.charClass).type ?? '?')}) on ${String(bootstrap.game?.currentWorldName ?? DEFAULT_WORLD.url)}`,
           `HP ${c.health}/${c.maxHealth ?? '?'}  Energy ${c.energy}/${c.maxEnergy}  XP ${c.experience}`,
           `$${c.cash} cash, $${c.deposit} bank  Nuggets ${c.nuggets}`,
-          `Position ${c.pos?.x},${c.pos?.y}  Tasks queued ${Array.isArray(c.taskQueue) ? c.taskQueue.length : '?'}/${c.taskLimit}`,
+          `Position ${String(obj(c.pos).x)},${String(obj(c.pos).y)}  Tasks queued ${Array.isArray(c.taskQueue) ? c.taskQueue.length : '?'}/${c.taskLimit}`,
         ].join('\n'),
       );
       return 0;

@@ -9,14 +9,16 @@
 //   inventory/switch_equip {id, last_inv_id}  → {changes, wear:[item ids], setItems, workPointBonus, speed, weapon}
 import type { GameClient } from '../http/game-client.ts';
 import { baseId, WEAR_SLOTS, type ItemCatalog } from './items.ts';
+import { arr, objs, vals, type JsonObject } from '../util/json.ts';
 
 export interface BagItem { itemId: number; count: number; invId: number; type: string }
 
 export interface ClothChange {
-  changes: BagItem[];
-  speed?: number;
+  /** Raw bag rows, for Inventory.applyChanges. */
+  changes: unknown[];
+  speed?: number | undefined;
   workPointBonus?: unknown;
-  error?: string;
+  error?: string | undefined;
 }
 
 /** A saved equipment set: item id per wear slot (null when the slot is empty). */
@@ -41,7 +43,7 @@ export interface SwitchEquipResult extends ClothChange {
   setItems: number[];
 }
 
-const toBagItem = (r: Record<string, any>): BagItem => ({
+const toBagItem = (r: JsonObject): BagItem => ({
   itemId: Number(r.item_id), count: Number(r.count) || 0, invId: Number(r.inv_id) || 0, type: String(r.type ?? ''),
 });
 
@@ -52,12 +54,12 @@ export class Inventory {
   wear = new Map<string, number>();
   lastInvId = 0;
 
-  static fromInit(bagInit: Record<string, any> | null | undefined, catalog?: ItemCatalog): Inventory {
+  static fromInit(bagInit: JsonObject | null | undefined, catalog?: ItemCatalog): Inventory {
     const inv = new Inventory();
-    for (const list of Object.values<any>(bagInit?.bag ?? {})) {
-      for (const r of list as any[]) inv.put(toBagItem(r));
+    for (const list of vals(bagInit?.bag)) {
+      for (const r of objs(list)) inv.put(toBagItem(r));
     }
-    for (const id of (bagInit?.wear ?? []) as number[]) {
+    for (const id of arr(bagInit?.wear).map(Number)) {
       const type = catalog?.get(id)?.type;
       if (type) inv.wear.set(type, Number(id));
       else inv.wear.set(`#${id}`, Number(id)); // type unknown until items load; fixed by retype()
@@ -83,8 +85,7 @@ export class Inventory {
   }
 
   applyChanges(changes: unknown): void {
-    if (!Array.isArray(changes)) return;
-    for (const r of changes) {
+    for (const r of objs(changes)) {
       const c = toBagItem(r);
       if (c.count <= 0) this.bag.delete(c.itemId);
       else this.put({ ...this.bag.get(c.itemId), ...c, type: c.type || this.bag.get(c.itemId)?.type || '' });
@@ -142,9 +143,9 @@ export class InventoryApi {
     this.client = client;
   }
 
-  private cloth(json: Record<string, any>): ClothChange {
+  private cloth(json: JsonObject): ClothChange {
     return {
-      changes: Array.isArray(json.changes) ? json.changes : [],
+      changes: arr(json.changes),
       speed: typeof json.speed === 'number' ? json.speed : undefined,
       workPointBonus: json.workPointBonus,
       error: json.error ? String(json.message || json.msg || json.error) : undefined,
@@ -168,7 +169,7 @@ export class InventoryApi {
   async equipSets(): Promise<EquipSets> {
     const json = await this.client.remoteCallMode('inventory', 'show_equip', {});
     if (json.error) throw new Error(String(json.msg ?? json.error));
-    const sets: EquipSet[] = (Array.isArray(json.data) ? json.data : []).map((r: Record<string, any>) => {
+    const sets: EquipSet[] = objs(json.data).map((r) => {
       const slots: Record<string, number | null> = {};
       for (const slot of WEAR_SLOTS) {
         const id = Number(r[slot]);

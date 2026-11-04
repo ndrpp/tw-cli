@@ -3,6 +3,7 @@
 // Sleeping is a task: TaskSleep(town_id, room) → task/add post {town_id, room, taskType:'sleep'}.
 // Room keys: cubby, bedroom, hotel_room, apartment, luxurious_apartment (TaskSleep.getIcon @686067).
 import type { GameClient } from '../http/game-client.ts';
+import { entries, obj, type JsonObject } from '../util/json.ts';
 
 export interface HotelRoom { key: string; name: string; level: number; available: boolean; free: boolean; costs: number; energy: number; health: number }
 export interface Hotel { townId: number; townName: string; level: number; own: boolean; waytime: string; attackable: string | null; rooms: HotelRoom[] }
@@ -10,17 +11,20 @@ export interface Hotel { townId: number; townName: string; level: number; own: b
 /** A room's energy / health number as a fraction of max per hour (read as % per hour; checked by calibration.ts). */
 export const roomRate = (v: number) => Math.max(0, v) / 100;
 
-export function parseHotel(townId: number, json: Record<string, any>): Hotel {
-  const rooms = Object.entries<any>(json.rooms ?? {}).map(([key, r]) => ({
-    key,
-    name: String(r?.name ?? key),
-    level: Number(r?.level) || 0,
-    available: !!r?.available,
-    free: !!r?.free,
-    costs: Number(r?.costs) || 0,
-    energy: Number(r?.energy) || 0,
-    health: Number(r?.health) || 0,
-  }));
+export function parseHotel(townId: number, json: JsonObject): Hotel {
+  const rooms = entries(json.rooms).map(([key, v]) => {
+    const r = obj(v);
+    return {
+      key,
+      name: String(r.name ?? key),
+      level: Number(r.level) || 0,
+      available: !!r.available,
+      free: !!r.free,
+      costs: Number(r.costs) || 0,
+      energy: Number(r.energy) || 0,
+      health: Number(r.health) || 0,
+    };
+  });
   rooms.sort((a, b) => a.level - b.level);
   return {
     townId,
@@ -42,6 +46,6 @@ export function defaultRoom(h: Hotel): HotelRoom | undefined {
 
 export async function fetchHotel(client: GameClient, townId: number): Promise<Hotel> {
   const json = await client.remoteCallMode('building_hotel', 'get_data', { town_id: townId });
-  if (json.error) throw new Error(json.msg ?? 'Hotel failed');
+  if (json.error) throw new Error(String(json.msg ?? 'Hotel failed'));
   return parseHotel(townId, json);
 }

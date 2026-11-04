@@ -4,6 +4,7 @@ import { Box, Text, useInput } from 'ink';
 import type { DuelNpc, DuelOpponent } from '../game/duels.ts';
 import type { ScreenProps } from './character.ts';
 import { formatDuration, scrollWindow, truncate } from './format.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -68,7 +69,7 @@ export function DuelsScreen({ state, width, height, onCapture, onExit, active = 
       const n = start + i;
       if (r.kind === 'head') return h(Text, { key: `h${n}`, bold: true, color: 'yellow', wrap: 'truncate' }, r.text);
       if (r.kind === 'npc') {
-        return h(Text, { key: `n${r.npc.id}`, inverse: n === idx, color: r.npc.readyIn > 0 ? 'gray' : undefined, wrap: 'truncate' },
+        return h(Text, defined({ key: `n${r.npc.id}`, inverse: n === idx, color: r.npc.readyIn > 0 ? 'gray' : undefined, wrap: 'truncate' }),
           `  ${truncate(r.npc.name, leftW - 22)} L${String(r.npc.level).padStart(3)} ${r.npc.readyIn > 0 ? formatDuration(r.npc.readyIn).padStart(8) : '   ready'}`);
       }
       return h(Text, { key: `p${r.o.playerId}`, inverse: n === idx, wrap: 'truncate' },

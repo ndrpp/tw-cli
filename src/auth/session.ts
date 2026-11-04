@@ -11,13 +11,13 @@ export const DEFAULT_WORLD: WorldConfig = {
 };
 
 export interface EnsureOptions {
-  world?: WorldConfig;
-  profile?: FingerprintProfile;
-  credentials?: () => Promise<Credentials>;
-  forceLogin?: boolean;
-  policy?: HostPolicy;
-  sessionFile?: string;
-  log?: (msg: string) => void;
+  world?: WorldConfig | undefined;
+  profile?: FingerprintProfile | undefined;
+  credentials?: (() => Promise<Credentials>) | undefined;
+  forceLogin?: boolean | undefined;
+  policy?: HostPolicy | undefined;
+  sessionFile?: string | undefined;
+  log?: ((msg: string) => void) | undefined;
 }
 
 export function envCredentials(): Credentials | null {

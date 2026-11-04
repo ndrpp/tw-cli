@@ -3,13 +3,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { formKey, formValues, FormView, makeForm, type FormState } from './form.ts';
 import type { GameState } from '../game/state.ts';
-import { bonusText, SLOT_NAMES, WEAR_SLOTS, type ItemDef } from '../game/items.ts';
+import { bonusText, SLOT_NAMES, WEAR_SLOTS } from '../game/items.ts';
 import type { ItemStats, StatKind } from '../game/itemstats.ts';
 import {
   adjustPlan, ATTRIBUTE_COLOR, ATTRIBUTE_OF, ATTRIBUTES, emptyPlan, NAMES, plannedDelta, planUsed, SKILLS_OF, type SkillPlan,
 } from '../game/skills.ts';
 import type { BagItem, EquipSet } from '../game/inventory.ts';
 import { money, scrollWindow, truncate } from './format.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -237,7 +238,7 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
   const TAB_LABEL: Record<CharTab, string> = { inventory: 'Inventory', sets: 'Sets', skills: 'Skills' };
   const tabs = h(Text, { wrap: 'truncate' },
     ...CHAR_TABS.map((t) =>
-      h(Text, { key: t, inverse: tab === t, bold: tab === t, color: tab === t ? 'cyan' : undefined }, ` ${TAB_LABEL[t]} `)),
+      h(Text, defined({ key: t, inverse: tab === t, bold: tab === t, color: tab === t ? 'cyan' : undefined }), ` ${TAB_LABEL[t]} `)),
     h(Text, { dimColor: true }, '   ← → switch · Esc back'),
     state.items ? null : h(Text, { color: 'yellow' }, '   loading item data…'));
 
@@ -433,7 +434,7 @@ function SetsTab({ state, width, height, selected, confirm }: { state: GameState
     h(Text, { dimColor: true, wrap: 'truncate' }, state.equipSets ? `maximum ${state.equipSets.hasPremium ? state.equipSets.premiumMax : state.equipSets.max} · u refresh` : 'Loading…'),
     ...sets.slice(start, end).map((s, i) => {
       const full = setFullyWorn(state, s);
-      return h(Text, { key: s.id, inverse: start + i === idx, color: full ? 'green' : undefined, wrap: 'truncate' },
+      return h(Text, defined({ key: s.id, inverse: start + i === idx, color: full ? 'green' : undefined, wrap: 'truncate' }),
         `${full ? '●' : '○'} ${truncate(s.name, listW - 6)}`);
     }),
     sets.length === 0 && state.equipSets ? h(Text, { dimColor: true, wrap: 'wrap' }, 'No saved sets. Save them in the browser inventory for now.') : null,
@@ -447,7 +448,7 @@ function SetsTab({ state, width, height, selected, confirm }: { state: GameState
       const want = set.slots[slot] ?? null;
       const current = state.inventory.wear.get(slot) ?? null;
       const same = want === current;
-      return h(Text, { key: slot, color: same ? 'green' : want && !owned(want) ? 'red' : undefined, wrap: 'truncate' },
+      return h(Text, defined({ key: slot, color: same ? 'green' : want && !owned(want) ? 'red' : undefined, wrap: 'truncate' }),
         `${(SLOT_NAMES[slot] ?? slot).padEnd(12)} ${want === null ? '—' : state.itemName(want)}`,
         want && !owned(want) ? '  (not in bag)' : '',
         !same && current !== null ? h(Text, { dimColor: true }, `  now ${state.itemName(current)}`) : '');
@@ -466,8 +467,8 @@ function SkillsTab(p: { state: GameState; width: number; height: number; rows: s
   const [start, end] = scrollWindow(selected, rows.length, listRows);
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', paddingX: 1, width, height },
     h(Text, { wrap: 'truncate' },
-      'Free: ', h(Text, { color: s.freeAttributes - used.attributes ? 'green' : undefined, bold: true }, `${s.freeAttributes - used.attributes} attribute`),
-      ' · ', h(Text, { color: s.freeSkills - used.skills ? 'green' : undefined, bold: true }, `${s.freeSkills - used.skills} skill`),
+      'Free: ', h(Text, defined({ color: s.freeAttributes - used.attributes ? 'green' : undefined, bold: true }), `${s.freeAttributes - used.attributes} attribute`),
+      ' · ', h(Text, defined({ color: s.freeSkills - used.skills ? 'green' : undefined, bold: true }), `${s.freeSkills - used.skills} skill`),
       h(Text, { dimColor: true }, '   + / − plan a point · Enter save · Esc discard'),
     ),
     h(Text, { dimColor: true, wrap: 'truncate' }, `${''.padEnd(22)}${'own'.padStart(5)}${'bonus'.padStart(7)}${'total'.padStart(7)}`),

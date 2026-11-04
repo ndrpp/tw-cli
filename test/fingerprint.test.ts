@@ -96,7 +96,7 @@ test('validateProfile accepts a consistent profile', () => {
 
 test('validateProfile rejects hash mismatch, wrong order and missing components', () => {
   assert.throws(() => validateProfile(profile({ fp: '0'.repeat(32) })), FingerprintProfileError);
-  const swapped = [components[1], components[0], ...components.slice(2)];
+  const swapped = [components[1]!, components[0]!, ...components.slice(2)];
   assert.throws(() => validateProfile(profile({ components: swapped, fp: hashComponents(swapped) })), /out of order/);
   const missing = components.filter((c) => c.key !== 'audio_fp');
   assert.throws(() => validateProfile(profile({ components: missing, fp: hashComponents(missing) })), /audio_fp/);

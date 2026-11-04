@@ -4,6 +4,7 @@
 import { jqueryParam, type FormValue } from './form.ts';
 import type { CookieJar } from './cookie-jar.ts';
 import { INTERACTIVE_POLICY, throttledFetch, type HostPolicy } from './throttle.ts';
+import { obj, type JsonObject } from '../util/json.ts';
 
 export interface Identity {
   /** Same User-Agent as the browser the fingerprint profile was captured in. */
@@ -22,7 +23,7 @@ export async function send(
   jar: CookieJar,
   identity: Identity,
   url: string,
-  init: { method?: string; body?: string; accept?: string; referer?: string; origin?: string; ajax?: boolean; signal?: AbortSignal } = {},
+  init: { method?: string; body?: string; accept?: string; referer?: string; origin?: string; ajax?: boolean; signal?: AbortSignal | undefined } = {},
   policy: HostPolicy = INTERACTIVE_POLICY,
 ): Promise<Response> {
   const headers: Record<string, string> = {
@@ -41,7 +42,7 @@ export async function send(
     headers['x-requested-with'] = 'XMLHttpRequest';
     headers.accept = init.accept ?? JSON_ACCEPT;
   }
-  const res = await throttledFetch(url, { method: init.method ?? 'GET', headers, body: init.body, redirect: 'manual', signal: init.signal }, policy);
+  const res = await throttledFetch(url, { method: init.method ?? 'GET', headers, body: init.body ?? null, redirect: 'manual', signal: init.signal ?? null }, policy);
   jar.store(url, res);
   return res;
 }
@@ -70,7 +71,8 @@ export class GameClient {
     return `${this.worldUrl}/game.php${params.length ? '?' + params.join('&') : ''}`;
   }
 
-  async request<T = any>(url: string, data: Record<string, FormValue> = {}): Promise<T> {
+  /** The parsed reply as is: most are objects, a few (messages/reply, messages/send, reports delete) arrays. */
+  async requestRaw(url: string, data: Record<string, FormValue> = {}): Promise<unknown> {
     const res = await send(
       this.jar,
       this.identity,
@@ -83,27 +85,37 @@ export class GameClient {
       throw new SessionInvalidError(`redirected to ${res.headers.get('location') ?? '?'}`);
     }
     const text = await res.text();
-    let json: any;
+    let parsed: unknown;
     try {
-      json = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
       throw new Error(`non-JSON response from ${url}: ${text.slice(0, 80)}`);
     }
-    if (json && json.logout) throw new SessionInvalidError(json.message ?? 'session invalid');
-    if (json && json.error === 'fatal') throw new FatalServerError(`fatal server error for ${url}`);
-    return json as T;
+    const json = obj(parsed);
+    if (json.logout) throw new SessionInvalidError(typeof json.message === 'string' ? json.message : 'session invalid');
+    if (json.error === 'fatal') throw new FatalServerError(`fatal server error for ${url}`);
+    return parsed;
   }
 
-  remoteCall<T = any>(window: string, action: string, data: Record<string, FormValue> = {}) {
-    return this.request<T>(this.buildUrl({ window, action }), data);
+  /** The reply as an object (`{}` if it was not one). */
+  async request(url: string, data: Record<string, FormValue> = {}): Promise<JsonObject> {
+    return obj(await this.requestRaw(url, data));
+  }
+
+  remoteCall(window: string, action: string, data: Record<string, FormValue> = {}) {
+    return this.request(this.buildUrl({ window, action }), data);
+  }
+
+  remoteCallRaw(window: string, action: string, data: Record<string, FormValue> = {}) {
+    return this.requestRaw(this.buildUrl({ window, action }), data);
   }
 
   /** Ajax.get: game.php?window=<w>&ajax=<a> (no h). */
-  get<T = any>(window: string, ajax: string, data: Record<string, FormValue> = {}) {
-    return this.request<T>(this.buildUrl({ window, ajax }), data);
+  get(window: string, ajax: string, data: Record<string, FormValue> = {}) {
+    return this.request(this.buildUrl({ window, ajax }), data);
   }
 
-  remoteCallMode<T = any>(window: string, mode: string, data: Record<string, FormValue> = {}) {
-    return this.request<T>(this.buildUrl({ window, mode }), data);
+  remoteCallMode(window: string, mode: string, data: Record<string, FormValue> = {}) {
+    return this.request(this.buildUrl({ window, mode }), data);
   }
 }

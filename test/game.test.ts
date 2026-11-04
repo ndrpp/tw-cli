@@ -28,7 +28,7 @@ const FAST: HostPolicy = {
 
 /** Real bootstrap from the saved page, with the clock moved so the saved queue is still running. */
 function realBootstrap(): Bootstrap {
-  const b = parseBootstrap(readFileSync(GAME_PHP, 'utf8'));
+  const b: any = parseBootstrap(readFileSync(GAME_PHP, 'utf8'));
   const shift = Math.floor(Date.now() / 1000) - b.game!.sincepoch;
   b.game!.sincepoch += shift;
   for (const t of b.character!.taskQueue) {
@@ -113,7 +113,7 @@ test('task/add body matches jQuery serialisation of TaskQueue.sendAdd', () => {
 
 test('character from the real Character.init: max HP formula and regen', { skip: !HAVE_GAME && 'game.php missing' }, () => {
   const b = realBootstrap();
-  const clock = new ServerClock(b.game!.sincepoch);
+  const clock = new ServerClock(Number(b.game!.sincepoch));
   const c = CharacterState.fromInit(b.character!, clock);
   assert.equal(c.maxHealth, 600); // 100 + 29*10 + (7+14)*10
   assert.equal(c.name, 'shallax');
@@ -129,7 +129,7 @@ test('level progress follows Character.calcLowerExp / getExperience4Level', { sk
   assert.equal(levelStartXp(121), Math.floor(((121 * 122 * 243) / 6 + 1220 - 21) * 3 + 1000));
   const b = realBootstrap();
   assert.equal(b.game!.maxLevel, 250);
-  const c = CharacterState.fromInit(b.character!, new ServerClock(b.game!.sincepoch));
+  const c = CharacterState.fromInit(b.character!, new ServerClock(Number(b.game!.sincepoch)));
   assert.deepEqual([c.level, c.experience], [30, 32067]);
   const p = c.progress;
   assert.deepEqual([p.have, p.need, p.maxed], [32067 - 29232, 32145 - 29232, false]);

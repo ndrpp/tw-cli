@@ -9,6 +9,7 @@ import type { PlannedTask } from '../game/autopilot-config.ts';
 import type { ProjectedStep, Timeline } from '../game/timeline.ts';
 import { formatDuration, money, scrollWindow, shortDuration, truncate } from './format.ts';
 import { ICON, stepIcon } from './icons.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -27,15 +28,17 @@ type Row =
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const mins = (v: number) => formatDuration(v);
 const mod = (module: ModuleKey, label: string): Row => ({ kind: 'toggle', label, module, get: (c) => c.modules[module], set: (c, v) => (c.modules[module] = v) });
-const sub = <K extends keyof AutopilotConfig>(key: K, field: keyof AutopilotConfig[K] & string, label: string): Row => ({
+/** A boolean `field` of the config section `section` picks (the field name is checked against it). */
+const sub = <F extends PropertyKey>(section: (c: AutopilotConfig) => Record<NoInfer<F>, boolean>, field: F, label: string): Row => ({
   kind: 'toggle', label, indent: true,
-  get: (c) => !!(c[key] as any)[field],
-  set: (c, v) => ((c[key] as any)[field] = v),
+  get: (c) => section(c)[field],
+  set: (c, v) => (section(c)[field] = v),
 });
-const num = <K extends keyof AutopilotConfig>(key: K, field: (keyof AutopilotConfig[K] & string) | null, label: string, step: number, min: number, max: number, fmt: (v: number) => string): Row => ({
+/** A number `field` of the config section `section` picks (`(c) => c` for top-level settings). */
+const num = <F extends PropertyKey>(section: (c: AutopilotConfig) => Record<NoInfer<F>, number>, field: F, label: string, step: number, min: number, max: number, fmt: (v: number) => string): Row => ({
   kind: 'num', label, step, min, max, fmt,
-  get: (c) => Number(field ? (c[key] as any)[field] : c[key]),
-  set: (c, v) => (field ? ((c[key] as any)[field] = v) : ((c as any)[key] = v)),
+  get: (c) => section(c)[field],
+  set: (c, v) => (section(c)[field] = v),
 });
 
 export const ROWS: Row[] = [
@@ -45,41 +48,41 @@ export const ROWS: Row[] = [
   { kind: 'head', text: 'Modules (Space toggles · ← → change values)' },
   mod('jobs', 'Queue jobs'),
   mod('energySleep', 'Sleep when out of energy'),
-  sub('wake', 'levelUp', 'wake: enough to level up'),
-  sub('wake', 'stretch', 'wake: enough for the next stretch'),
-  sub('wake', 'hpSafe', 'wake: HP safe'),
-  sub('wake', 'full', 'wake: full'),
-  num('ownTownWithin', null, 'own-town hotel / bank within', 900, 0, 6 * 3600, mins),
+  sub((c) => c.wake, 'levelUp', 'wake: enough to level up'),
+  sub((c) => c.wake, 'stretch', 'wake: enough for the next stretch'),
+  sub((c) => c.wake, 'hpSafe', 'wake: HP safe'),
+  sub((c) => c.wake, 'full', 'wake: full'),
+  num((c) => c, 'ownTownWithin', 'own-town hotel / bank within', 900, 0, 6 * 3600, mins),
   mod('hpSleep', 'Sleep or heal when HP is low'),
-  num('hp', 'sleepBelow', 'below', 0.05, 0.05, 0.95, pct),
-  num('hp', 'wakeAbove', 'get up at', 0.05, 0.1, 1, pct),
+  num((c) => c.hp, 'sleepBelow', 'below', 0.05, 0.05, 0.95, pct),
+  num((c) => c.hp, 'wakeAbove', 'get up at', 0.05, 0.1, 1, pct),
   mod('consumables', 'Use consumables'),
-  sub('consumables', 'energy', 'energy'),
-  sub('consumables', 'health', 'health'),
-  sub('consumables', 'motivation', 'motivation'),
-  num('consumables', 'reserve', 'keep in reserve', 1, 0, 20, String),
+  sub((c) => c.consumables, 'energy', 'energy'),
+  sub((c) => c.consumables, 'health', 'health'),
+  sub((c) => c.consumables, 'motivation', 'motivation'),
+  num((c) => c.consumables, 'reserve', 'keep in reserve', 1, 0, 20, String),
   mod('bank', 'Bank cash'),
-  num('bank', 'above', 'when cash over', 500, 500, 100_000, money),
-  num('bank', 'maxDetour', 'max detour', 300, 0, 4 * 3600, mins),
+  num((c) => c.bank, 'above', 'when cash over', 500, 500, 100_000, money),
+  num((c) => c.bank, 'maxDetour', 'max detour', 300, 0, 4 * 3600, mins),
   { kind: 'scope' },
   mod('quests', 'Do quests'),
-  sub('quests', 'repeatable', 'repeatable quests'),
-  sub('quests', 'unfinishable', 'also quests it cannot finish'),
-  sub('quests', 'buy', 'buy items no job drops (shops, mobile trader)'),
-  num('quests', 'buyLimit', 'buy limit per quest', 500, 0, 1_000_000, money),
-  sub('quests', 'market', 'also the market (instant buy, picked up there)'),
-  num('quests', 'marketLimit', 'market limit per quest', 500, 0, 1_000_000, money),
-  num('quests', 'buyTrip', 'furthest walk to a shop / market town', 900, 0, 6 * 3600, mins),
-  num('quests', 'walkValue', 'a minute of walking is worth', 5, 0, 10_000, money),
+  sub((c) => c.quests, 'repeatable', 'repeatable quests'),
+  sub((c) => c.quests, 'unfinishable', 'also quests it cannot finish'),
+  sub((c) => c.quests, 'buy', 'buy items no job drops (shops, mobile trader)'),
+  num((c) => c.quests, 'buyLimit', 'buy limit per quest', 500, 0, 1_000_000, money),
+  sub((c) => c.quests, 'market', 'also the market (instant buy, picked up there)'),
+  num((c) => c.quests, 'marketLimit', 'market limit per quest', 500, 0, 1_000_000, money),
+  num((c) => c.quests, 'buyTrip', 'furthest walk to a shop / market town', 900, 0, 6 * 3600, mins),
+  num((c) => c.quests, 'walkValue', 'a minute of walking is worth', 5, 0, 10_000, money),
   mod('npcDuels', 'NPC duels (never players)'),
-  sub('duels', 'forXp', 'also for XP when worth it'),
-  num('duels', 'levelMargin', 'NPC level vs duel level', 1, -20, 10, (v) => (v > 0 ? `+${v}` : String(v))),
+  sub((c) => c.duels, 'forXp', 'also for XP when worth it'),
+  num((c) => c.duels, 'levelMargin', 'NPC level vs duel level', 1, -20, 10, (v) => (v > 0 ? `+${v}` : String(v))),
   { kind: 'head', text: 'Replanning & limits' },
-  num('slotCost', null, 'cost per queue slot (TUI not always open)', 300, 0, 4 * 3600, mins),
-  num('cancel', 'margin', 'cancel tasks when plan better by', 0.05, 0, 1, pct),
-  num('cancel', 'horizon', 'plan ahead / compare over', 3600, 3600, 48 * 3600, mins),
-  num('cancel', 'cooldown', 'between cancels', 300, 0, 4 * 3600, mins),
-  num('spend', 'daily', 'daily spend cap', 100, 0, 1_000_000, money),
+  num((c) => c, 'slotCost', 'cost per queue slot (TUI not always open)', 300, 0, 4 * 3600, mins),
+  num((c) => c.cancel, 'margin', 'cancel tasks when plan better by', 0.05, 0, 1, pct),
+  num((c) => c.cancel, 'horizon', 'plan ahead / compare over', 3600, 3600, 48 * 3600, mins),
+  num((c) => c.cancel, 'cooldown', 'between cancels', 300, 0, 4 * 3600, mins),
+  num((c) => c.spend, 'daily', 'daily spend cap', 100, 0, 1_000_000, money),
   mod('dryRun', 'Dry run (plan only, send nothing)'),
 ];
 
@@ -155,12 +158,12 @@ export function AutopilotScreen({ state, width, height, onCapture, onExit, activ
 export interface PlanRow {
   icon: string;
   title: string;
-  why?: string;
+  why?: string | undefined;
   fixed: boolean;
   wait?: boolean;
   levelUp: boolean;
   /** Same key on consecutive rows: merged into one ("×3"). */
-  key?: string;
+  key?: string | undefined;
   count: number;
   step?: ProjectedStep;
   xp: number;
@@ -280,9 +283,9 @@ function PlanPane({ state, width, height }: { state: GameState; width: number; h
     }
     const t = texts[i]!;
     const mark = r.fixed ? (i === 0 ? '▶ ' : '  ') : r.wait ? '  ' : String(++n).padStart(2);
-    body.push(h(Text, { key: `r${i}`, wrap: 'truncate', dimColor: r.wait },
-      h(Text, { color: r.fixed && i === 0 ? 'green' : undefined, dimColor: !r.fixed }, mark), ' ',
-      h(Text, { color: ICON_COLOR[r.icon] }, r.icon), ' ',
+    body.push(h(Text, defined({ key: `r${i}`, wrap: 'truncate', dimColor: r.wait }),
+      h(Text, defined({ color: r.fixed && i === 0 ? 'green' : undefined, dimColor: !r.fixed }), mark), ' ',
+      h(Text, defined({ color: ICON_COLOR[r.icon] }), r.icon), ' ',
       h(Text, { bold: !r.fixed && n === 1 && !r.wait }, truncate(t.title, titleW)), ' ',
       h(Text, { dimColor: true }, t.info.slice(0, infoW).padStart(infoW)),
       r.levelUp ? h(Text, { color: 'yellow' }, ` ${ICON.level}`) : ''));
@@ -368,7 +371,7 @@ function QueueView({ state, width, height, active, onCapture, onClose }: { state
     const xp = st.step.kind === 'job' ? `+${st.step.xp}` : st.levelUp ? '★' : '';
     const cash = st.step.kind === 'job' ? `+${st.step.money}` : st.step.kind === 'action' && st.step.cash ? String(Math.round(st.step.cash)) : '';
     const by = i < fixedN ? 'queued' : insertAt(t?.key) ? 'you' : t?.module ?? '';
-    return h(Text, { key: i, inverse: i === idx, dimColor: i >= fixedN && i !== idx, color: st.levelUp ? 'yellow' : undefined, wrap: 'truncate' },
+    return h(Text, defined({ key: i, inverse: i === idx, dimColor: i >= fixedN && i !== idx, color: st.levelUp ? 'yellow' : undefined, wrap: 'truncate' }),
       `${i < fixedN ? '▪' : '·'} ${stepIcon(st.step, t?.action)} ${truncate(st.step.title, nameW - 2).padEnd(nameW - 2)} ${formatDuration(Math.max(0, st.end - now)).padStart(8)} ${(st.travel ? formatDuration(st.travel) : '').padStart(7)} ${String(Math.floor(st.energy)).padStart(4)} ${String(Math.floor(st.health)).padStart(5)} ${xp.padStart(6)} ${cash.padStart(6)}  ${by}${st.levelUp ? ' ★ level up' : ''}`);
   });
   const keys = confirm !== null

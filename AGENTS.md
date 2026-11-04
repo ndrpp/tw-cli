@@ -41,12 +41,23 @@ the summary. Small gains compound; nobody needs to schedule a cleanup.
   hourly JSONL files kept 24 h in `<config dir>/debug/`, Debug screen `g x`), `calibration.ts` (what the
   autopilot learns from reports, health, motivation and sleeps; `calibration.json`).
 - `src/tui/`: Ink (React) screens; `app.ts` is the shell (header, nav, ticker, global keys), `root.ts` connects.
+- `src/util/`: `json.ts` (narrowing unknown JSON), `defined.ts` (drop undefined props), disk cache, wake detection.
+  `src/types/reset.d.ts`: lib typings that would hand out `any`.
 - `src/http/`, `src/auth/`, `src/fingerprint/`, `src/realtime/`: transport, login, fingerprint, chat long-poll.
 - `test/`: node:test. `features`/`social`/`setup` tests set `TW_CLI_HOME` to a temp dir; new tests that write
   config must do the same (never write the user's real `~/.config/tw-cli`).
 
 ## Conventions
 - TypeScript run directly by Node ≥ 26 (no build). `.ts` import specifiers. ES modules.
+- Types are as strict as tsc allows (`tsconfig.json`: `strict` plus `noUncheckedIndexedAccess`,
+  `exactOptionalPropertyTypes`, unused locals/params, no implicit returns/overrides). Left out on purpose:
+  `noPropertyAccessFromIndexSignature` (only forces `o['x']` over `o.x`, no safety gained).
+- No `any` outside `test/` (`test/types.test.ts` fails on one). Server and file JSON is `unknown`
+  (`src/types/reset.d.ts` makes `JSON.parse`, `res.json()` and `Array.isArray` say so); narrow it with
+  `src/util/json.ts` (`obj`, `arr`, `objs`, `vals`, `entries`, `nums`, `mergeDefaults`) and coerce each field
+  (`Number()`, `String()`, `plainText()`). `GameClient.remoteCall`/`get`/`remoteCallMode` return a `JsonObject`;
+  `remoteCallRaw` for the few array replies. An optional field that may be set to `undefined` is typed
+  `x?: T | undefined`; Ink props built with `cond ? v : undefined` go through `defined()` (`src/util/defined.ts`).
 - Match the surrounding style: short header comment per file saying what it mirrors in the browser client
   (often with `@offset` into tw2game), terse JSDoc on non-obvious members, no comments that restate code.
 - Pure logic (planners, parsers, formulas) lives apart from requests so it can be unit-tested with fixtures.

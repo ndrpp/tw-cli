@@ -2,7 +2,7 @@
 // "[quest=<id>]" into clickable names; we replace them with the name and a colour. The quest tag form
 // is unverified (no bundle to check against); unknown tags are left as they are.
 /** A run of text with its own colour (Ink colour name). */
-export interface Segment { text: string; color?: string }
+export interface Segment { text: string; color?: string | undefined }
 
 export interface ChatLinkNames {
   item: (id: number) => { name: string; set?: boolean };

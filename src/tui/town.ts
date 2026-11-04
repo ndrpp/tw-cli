@@ -3,8 +3,9 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { formKey, formValues, FormView, makeForm, type FormState } from './form.ts';
 import type { ScreenProps } from './character.ts';
-import type { Construction, TownBuilding } from '../game/townhall.ts';
+import type { TownBuilding } from '../game/townhall.ts';
 import { bar, formatDuration, scrollWindow, truncate } from './format.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -73,7 +74,7 @@ export function TownScreen({ state, width, height, onCapture, onExit, active = t
       const stage = b.infinite ? `${b.stage}/∞` : `${b.stage}/${b.maxStage}`;
       const full = !b.infinite && b.stage >= b.maxStage;
       const prog = b.infinite || full ? '' : bar(b.buildPoints, b.nextStagePoints, 8);
-      return h(Text, { key: b.key, inverse: start + i === idx, color: full ? 'green' : undefined, wrap: 'truncate' },
+      return h(Text, defined({ key: b.key, inverse: start + i === idx, color: full ? 'green' : undefined, wrap: 'truncate' }),
         `${truncate(b.name, Math.max(12, leftW - 25)).padEnd(Math.max(12, leftW - 25))} ${stage.padStart(6)} ${prog}`);
     }),
     buildings.length === 0 && hall ? h(Text, { dimColor: true }, 'No buildings returned.') : null,

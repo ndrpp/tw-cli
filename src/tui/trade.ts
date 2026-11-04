@@ -7,6 +7,7 @@ import { depositFee, marketFee, MARKET_CATEGORIES, SHOPS, suggestedBid, type Mar
 import { ItemDetail, type ScreenProps } from './character.ts';
 import { formatDuration, money, scrollWindow, truncate } from './format.ts';
 import { formKey, formValues, FormView, makeForm, type FormField, type FormState } from './form.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -267,7 +268,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
   const listRows = Math.max(2, height - 6 - (confirm ? 1 : 0));
   const [start, end] = scrollWindow(idx, rowsCount, listRows);
   const tabs = h(Text, { wrap: 'truncate' }, ...TABS.map((t) =>
-    h(Text, { key: t.key, inverse: tab === t.key, bold: tab === t.key, color: tab === t.key ? 'cyan' : undefined }, ` ${t.label} `)),
+    h(Text, defined({ key: t.key, inverse: tab === t.key, bold: tab === t.key, color: tab === t.key ? 'cyan' : undefined }), ` ${t.label} `)),
   h(Text, { dimColor: true }, ' ← →'));
   const trader = state.mobileTrader;
   const traderLeft = trader?.changesAt ? Math.max(0, trader.changesAt - state.clock.now()) : 0;
@@ -297,7 +298,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
       const price = p ? priceLabel(p) : '—';
       const unaffordable = !!p && p.currency === 'dollar' && p.amount > state.character.cash + state.character.deposit;
       const limited = item.limitedAt ? endsIn(item.limitedAt - state.clock.now()) : item.limitedCount !== null ? `${item.limitedCount} left` : '';
-      rows.push(h(Text, { key: item.itemId, inverse: start + i === idx, color: soldOut ? 'gray' : unaffordable ? 'red' : undefined, wrap: 'truncate' },
+      rows.push(h(Text, defined({ key: item.itemId, inverse: start + i === idx, color: soldOut ? 'gray' : unaffordable ? 'red' : undefined, wrap: 'truncate' }),
         `${truncate(state.itemName(item.itemId), leftW - 28)} ${level ? `L${level}`.padStart(4) : '    '} ${price.padStart(9)} ${truncate(limited, 6).padStart(6)}`));
     });
     const item = traderItems[idx];
@@ -312,7 +313,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
     bagItems.slice(start, end).forEach((b, i) => {
       const d = state.items?.get(b.itemId);
       const ok = isShop(tab) ? d?.sellable !== false : d?.auctionable !== false;
-      rows.push(h(Text, { key: b.itemId, inverse: start + i === idx, color: ok ? undefined : 'gray', wrap: 'truncate' },
+      rows.push(h(Text, defined({ key: b.itemId, inverse: start + i === idx, color: ok ? undefined : 'gray', wrap: 'truncate' }),
         `${truncate(state.itemName(b.itemId), leftW - 18)} ${b.count > 1 ? `×${b.count}`.padStart(4) : '    '} ${money(d?.sell ?? 0).padStart(8)}`));
     });
     const it = bagItems[idx];
@@ -324,7 +325,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
       const req = state.requiredLevel(id);
       const tooLow = req && req.level > state.character.level;
       const price = state.shopPrice(id);
-      rows.push(h(Text, { key: id, inverse: start + i === idx, color: tooLow ? 'gray' : price > state.character.cash + state.character.deposit ? 'red' : undefined, wrap: 'truncate' },
+      rows.push(h(Text, defined({ key: id, inverse: start + i === idx, color: tooLow ? 'gray' : price > state.character.cash + state.character.deposit ? 'red' : undefined, wrap: 'truncate' }),
         `${truncate(state.itemName(id), leftW - 18)} ${req ? `L${req.level}`.padStart(4) : '    '} ${money(price).padStart(8)}`));
     });
     const id = shopItems[idx];
@@ -347,7 +348,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
       const price = o.buyNow !== null ? money(o.buyNow) : '';
       const bid = o.bid !== null ? money(o.bid) : '';
       const have = o.direction === 'BUY' && state.inventory.count(o.itemId) >= o.count;
-      rows.push(h(Text, { key: o.id, inverse: start + i === idx, bold: o.highestBidder, color: have ? 'green' : undefined, wrap: 'truncate' },
+      rows.push(h(Text, defined({ key: o.id, inverse: start + i === idx, bold: o.highestBidder, color: have ? 'green' : undefined, wrap: 'truncate' }),
         `${truncate(itemsLabel(state, o), leftW - 30)} ${bid.padStart(7)} ${price.padStart(7)} ${endsIn(o.endsIn).padStart(5)}`));
     });
     const o = m.offers[idx];
@@ -362,7 +363,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
         ? mineKind === 'bid' ? (o.highestBidder ? 'won, pick up' : 'ended') : 'ended, collect'
         : endsIn(o.endsIn);
       const label = mineKind === 'bid' ? (o.direction === 'BUY' ? 'sell ' : 'bid  ') : mineKind === 'want' ? 'want ' : 'offer';
-      rows.push(h(Text, { key: `${mineKind}${o.id}`, inverse: start + i === idx, color: o.finished ? 'green' : undefined, wrap: 'truncate' },
+      rows.push(h(Text, defined({ key: `${mineKind}${o.id}`, inverse: start + i === idx, color: o.finished ? 'green' : undefined, wrap: 'truncate' }),
         `${label} ${truncate(itemsLabel(state, o), leftW - 30)} ${(o.bid !== null ? money(o.bid) : '').padStart(7)} ${status.padStart(14)}`));
     });
     const m = mine[idx];

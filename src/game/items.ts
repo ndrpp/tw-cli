@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { send, type GameClient } from '../http/game-client.ts';
 import { CONFIG_DIR } from '../auth/session-store.ts';
 import { NAMES } from './skills.ts';
-import { itemStats, type ItemSetDef, type ItemStats, type RawBonus, type StatContext } from './itemstats.ts';
+import { itemStats, parseRawBonus, type ItemSetDef, type ItemStats, type RawBonus, type StatContext } from './itemstats.ts';
+import { arr, entries, isObj, nums, numOrNull, obj, objs, strOrNull, vals, type JsonObject } from '../util/json.ts';
 
 export interface ItemDef {
   id: number; // base id
@@ -53,48 +54,45 @@ export const WEAR_SLOTS = ['head', 'neck', 'body', 'right_arm', 'left_arm', 'yie
 export const baseId = (itemId: number) => Math.floor(itemId / 1000);
 export const upgradeLevel = (itemId: number) => itemId % 1000;
 
-const obj = (o: unknown): Record<string, number> =>
-  o && typeof o === 'object' && !Array.isArray(o) ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Number(v) || 0])) : {};
-
-export function slimItem(raw: Record<string, any>): ItemDef {
-  const b = raw.bonus ?? {};
+export function slimItem(raw: JsonObject): ItemDef {
+  const b = obj(raw.bonus);
   return {
     id: baseId(Number(raw.item_id)),
     name: String(raw.name ?? '?'),
     type: String(raw.type ?? ''),
-    level: raw.level ?? null,
+    level: numOrNull(raw.level),
     price: Number(raw.price) || 0,
     sell: Number(raw.sell_price) || 0,
-    set: raw.set ?? null,
-    attributes: obj(b.attributes),
-    skills: obj(b.skills),
-    extra: Array.isArray(b.item) ? b.item.map((i: any) => String(i.desc ?? '')).filter(Boolean) : [],
-    bonusItems: Array.isArray(b.item) ? b.item : [],
-    fortbattle: obj(b.fortbattle),
-    fortbattlesector: obj(b.fortbattlesector),
-    damage: raw.damage && typeof raw.damage === 'object' ? { min: Number(raw.damage.damage_min) || 0, max: Number(raw.damage.damage_max) || 0 } : null,
+    set: strOrNull(raw.set),
+    attributes: nums(b.attributes),
+    skills: nums(b.skills),
+    extra: objs(b.item).map((i) => String(i.desc ?? '')).filter(Boolean),
+    bonusItems: arr(b.item).map(parseRawBonus),
+    fortbattle: nums(b.fortbattle),
+    fortbattlesector: nums(b.fortbattlesector),
+    damage: isObj(raw.damage) ? { min: Number(raw.damage.damage_min) || 0, max: Number(raw.damage.damage_max) || 0 } : null,
     upgradeable: !!raw.upgradeable,
     usetype: String(raw.usetype ?? 'none'),
-    speed: raw.speed ?? null,
-    charClass: raw.characterClass ?? null,
-    charSex: raw.characterSex ?? null,
-    duelLevel: raw.duelLevel ?? null,
-    subType: raw.sub_type ?? null,
-    description: raw.description || null,
-    usebonus: Array.isArray(raw.usebonus) ? raw.usebonus.map(String) : [],
+    speed: numOrNull(raw.speed),
+    charClass: strOrNull(raw.characterClass),
+    charSex: strOrNull(raw.characterSex),
+    duelLevel: numOrNull(raw.duelLevel),
+    subType: strOrNull(raw.sub_type),
+    description: raw.description ? String(raw.description) : null,
+    usebonus: arr(raw.usebonus).map(String),
     action: !!raw.action,
     unique: !!raw.unique,
     sellable: raw.sellable !== false,
     auctionable: !!raw.auctionable,
-    profession: raw.profession ?? null,
-    professionLevel: raw.min_level ?? null,
+    profession: strOrNull(raw.profession),
+    professionLevel: numOrNull(raw.min_level),
   };
 }
 
 export class ItemCatalog {
   private items = new Map<number, ItemDef>();
 
-  static fromRaw(list: Record<string, any>[]): ItemCatalog {
+  static fromRaw(list: JsonObject[]): ItemCatalog {
     const c = new ItemCatalog();
     for (const r of list) c.add(slimItem(r));
     return c;
@@ -180,7 +178,7 @@ const cacheFile = (itemsFile: string) => {
  * Static game data file: disk cache for this version, else a local copy from `envVar`, else a GET from
  * the world host like the browser. `slim` keeps only what we use.
  */
-async function loadStatic<T>(client: GameClient, file: string, envVar: string, label: string, slim: (raw: any[]) => T[], log?: (m: string) => void): Promise<T[]> {
+async function loadStatic<T>(client: GameClient, file: string, envVar: string, label: string, slim: (raw: unknown[]) => T[], log?: (m: string) => void): Promise<T[]> {
   const cached = cacheFile(file);
   if (existsSync(cached) && Date.now() - statSync(cached).mtimeMs < STATIC_CACHE_MS) {
     try {
@@ -189,7 +187,7 @@ async function loadStatic<T>(client: GameClient, file: string, envVar: string, l
       /* re-fetch */
     }
   }
-  let raw: any[];
+  let raw: unknown;
   const local = process.env[envVar];
   if (local && existsSync(local)) {
     raw = JSON.parse(readFileSync(local, 'utf8'));
@@ -200,9 +198,9 @@ async function loadStatic<T>(client: GameClient, file: string, envVar: string, l
       accept: 'application/json, text/javascript, */*; q=0.01', ajax: true, referer: `${client.worldUrl}/game.php`,
     }, { ...client.policy, timeoutMs: 120_000 });
     if (!res.ok) throw new Error(`${label}: HTTP ${res.status}`);
-    raw = (await res.json()) as any[];
+    raw = await res.json();
   }
-  const out = slim(Array.isArray(raw) ? raw : Object.values(raw));
+  const out = slim(vals(raw));
   mkdirSync(join(CONFIG_DIR, 'cache'), { recursive: true, mode: 0o700 });
   writeFileSync(cached, JSON.stringify(out), { mode: 0o600 });
   return out;
@@ -210,7 +208,7 @@ async function loadStatic<T>(client: GameClient, file: string, envVar: string, l
 
 /** Item catalog (Game.init.itemsFile; local override TW_ITEMS_FILE). */
 export async function loadItemCatalog(client: GameClient, itemsFile: string | undefined, log?: (m: string) => void): Promise<ItemCatalog> {
-  const list = await loadStatic(client, itemsFile ?? 'cache/items_en_DK.json', 'TW_ITEMS_FILE', 'item data (~13 MB)', (raw) => raw.map(slimItem), log);
+  const list = await loadStatic(client, itemsFile ?? 'cache/items_en_DK.json', 'TW_ITEMS_FILE', 'item data (~13 MB)', (raw) => raw.filter(isObj).map(slimItem), log);
   return ItemCatalog.fromSlim(list);
 }
 
@@ -224,14 +222,14 @@ export class ItemSetCatalog {
   }
 }
 
-export const slimItemSet = (r: Record<string, any>): ItemSetDef => ({
+export const slimItemSet = (r: JsonObject): ItemSetDef => ({
   key: String(r.key),
   name: String(r.name ?? r.key),
-  items: Array.isArray(r.items) ? r.items.map(Number) : [],
-  bonus: r.bonus && typeof r.bonus === 'object' && !Array.isArray(r.bonus) ? r.bonus : {},
+  items: arr(r.items).map(Number),
+  bonus: Object.fromEntries(entries(obj(r.bonus)).map(([stage, list]) => [stage, vals(list).map(parseRawBonus)])),
 });
 
 /** Item sets (Game.init.itemSetsFile; local override TW_ITEMSETS_FILE). */
 export async function loadItemSets(client: GameClient, file: string | undefined, log?: (m: string) => void): Promise<ItemSetCatalog> {
-  return new ItemSetCatalog(await loadStatic(client, file ?? 'cache/itemsets_en_DK.json', 'TW_ITEMSETS_FILE', 'item sets', (raw) => raw.map(slimItemSet), log));
+  return new ItemSetCatalog(await loadStatic(client, file ?? 'cache/itemsets_en_DK.json', 'TW_ITEMSETS_FILE', 'item sets', (raw) => raw.filter(isObj).map(slimItemSet), log));
 }

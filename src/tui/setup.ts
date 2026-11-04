@@ -22,7 +22,7 @@ const PROMPTS: Record<Field, string> = {
   password: 'Password',
 };
 
-interface ProfileStatus { ok: boolean; fp?: string; detail: string }
+interface ProfileStatus { ok: boolean; fp?: string | undefined; detail: string }
 
 function profileStatus(): ProfileStatus {
   const raw = readProfileRaw(PROFILE_FILE);
@@ -37,11 +37,11 @@ function profileStatus(): ProfileStatus {
 
 export interface SetupProps {
   onReady: (game: OpenGame) => void;
-  onBack?: () => void;
+  onBack?: (() => void) | undefined;
   onQuit: () => void;
-  message?: string;
+  message?: string | undefined;
   /** Request pacing override (tests). */
-  policy?: HostPolicy;
+  policy?: HostPolicy | undefined;
 }
 
 export function SetupScreen({ onReady, onBack, onQuit, message, policy }: SetupProps) {

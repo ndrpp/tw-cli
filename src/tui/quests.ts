@@ -6,6 +6,7 @@ import { groupByChain, type Quest, type QuestChain } from '../game/quests.ts';
 import { formatDuration, money, scrollWindow, shortDuration, truncate } from './format.ts';
 import type { RouteObjective, RoutePlan } from '../game/route.ts';
 import type { ScreenProps } from './character.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -192,7 +193,7 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
   const listRows = Math.max(2, height - 3);
   const [start, end] = scrollWindow(idx, rows.length, listRows);
   const tabs = (['log', 'givers'] as List[]).map((l) =>
-    h(Text, { key: l, inverse: list === l, bold: list === l, color: list === l ? 'cyan' : undefined },
+    h(Text, defined({ key: l, inverse: list === l, bold: list === l, color: list === l ? 'cyan' : undefined }),
       l === 'log' ? ` Quest log ${state.quests.length}/${state.questCapacity || '?'} ` : ' Quest givers '));
   const left = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: detail || route ? 'gray' : 'cyan', width: leftW, height, paddingX: 1 },
     h(Text, { wrap: 'truncate' }, ...tabs, h(Text, { dimColor: true }, ' Tab')),
@@ -211,7 +212,7 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
       const mark = q.finishable ? '✔' : q.accepted ? '·' : r.tag === 'new' ? '!' : ' ';
       const est = q.finishable ? '' : estimateTag(estimates.byQuest.get(q.id));
       const titleW = leftW - 10 - (est ? est.length + 1 : 0);
-      return h(Text, { key: q.id, inverse: n === idx, wrap: 'truncate', color: q.finishable ? 'green' : r.tag === 'locked' ? 'gray' : undefined },
+      return h(Text, defined({ key: q.id, inverse: n === idx, wrap: 'truncate', color: q.finishable ? 'green' : r.tag === 'locked' ? 'gray' : undefined }),
         `${list === 'givers' ? '    ' : '  '}${mark} ${truncate(q.soloTitle || q.title, titleW).padEnd(titleW)}`,
         est ? h(Text, { color: 'cyan' }, ` ${est}`) : '');
     }),
@@ -271,7 +272,7 @@ export function QuestsScreen({ state, width, height, onCapture, onExit, startOnG
     ? confirm.kind === 'finish' && confirm.quest.rewardOptions.length > 1
       ? h(Box, { flexDirection: 'column' },
         h(Text, { color: 'yellow', wrap: 'truncate' }, `Finish "${confirm.quest.title}"? Choose a reward (← → or 1-${confirm.quest.rewardOptions.length}), then y:`),
-        ...confirm.quest.rewardOptions.map((o, i) => h(Text, { key: o.id, inverse: i === confirm.choice, color: i === confirm.choice ? 'green' : undefined, wrap: 'truncate' }, ` ${i + 1}) ${o.text}`)))
+        ...confirm.quest.rewardOptions.map((o, i) => h(Text, defined({ key: o.id, inverse: i === confirm.choice, color: i === confirm.choice ? 'green' : undefined, wrap: 'truncate' }), ` ${i + 1}) ${o.text}`)))
       : h(Text, { color: 'yellow', wrap: 'truncate' }, confirm.kind === 'route'
         ? `Queue ${Math.min(confirm.plan.fitRuns, Math.max(0, state.taskLimit - state.queue.length))} of ${confirm.plan.totals.runs} route jobs? y yes · a autopilot: quests first until these are done (g a) · n no`
         : `${confirm.kind === 'finish' ? 'Finish' : 'Cancel'} "${confirm.quest.title}"${confirm.kind === 'finish' && confirm.quest.rewardOptions.length === 1 ? ` (reward: ${confirm.quest.rewardOptions[0]!.text})` : ''}? y / n`)

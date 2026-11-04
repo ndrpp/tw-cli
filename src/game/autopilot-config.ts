@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { CONFIG_DIR } from '../auth/session-store.ts';
 import type { FormValue } from '../http/form.ts';
 import type { TimelineStep } from './timeline.ts';
+import { arr, isObj, mergeDefaults, obj, objs } from '../util/json.ts';
 
 export type Goal = 'quests' | 'xp' | 'money' | 'products';
 export const GOALS: Goal[] = ['quests', 'xp', 'money', 'products'];
@@ -118,39 +119,30 @@ export interface DuelRecord { at: number; level: number; won: boolean; xp: numbe
 
 export const AUTOPILOT_FILE = () => join(CONFIG_DIR, 'autopilot.json');
 
-const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
-
-/** Saved values over the defaults, one level deep, keeping only known keys of the default's type. */
-function merge<T extends Record<string, any>>(def: T, saved: unknown): T {
-  if (!isObj(saved)) return structuredClone(def);
-  const out: Record<string, any> = structuredClone(def);
-  for (const [k, d] of Object.entries(def)) {
-    const v = saved[k];
-    if (v === undefined) continue;
-    if (isObj(d) && isObj(v)) out[k] = merge(d, v);
-    else if (d === null || typeof v === typeof d) out[k] = v;
-  }
-  return out as T;
-}
-
 export function parseAutopilotFile(json: unknown): AutopilotFile {
-  const raw = isObj(json) ? json : {};
-  const config = merge(DEFAULT_CONFIG, raw.config);
+  const raw = obj(json);
+  const config = mergeDefaults(DEFAULT_CONFIG, raw.config);
   // The ranking must hold every goal once; drop unknowns, append missing ones.
-  const ranked = Array.isArray(raw.config?.priority) ? raw.config.priority.filter((g: unknown): g is Goal => GOALS.includes(g as Goal)) : [];
+  const ranked = arr(obj(raw.config).priority).filter((g): g is Goal => GOALS.some((goal) => goal === g));
   config.priority = [...new Set([...ranked, ...GOALS])];
-  const rules = merge(EMPTY_RULES, raw.rules);
+  const rules = mergeDefaults(EMPTY_RULES, raw.rules);
   const plan = isObj(raw.plan) && typeof raw.plan.fingerprint === 'string' && Array.isArray(raw.plan.tasks)
     ? { fingerprint: raw.plan.fingerprint, savedAt: Number(raw.plan.savedAt) || 0, tasks: raw.plan.tasks as PlannedTask[] }
     : null;
   const spent = isObj(raw.spent) && typeof raw.spent.day === 'string' ? { day: raw.spent.day, amount: Number(raw.spent.amount) || 0 } : { day: '', amount: 0 };
-  const duels = Array.isArray(raw.duels) ? raw.duels.filter((d: any) => isObj(d) && Number.isFinite(d.level)).slice(-200) as DuelRecord[] : [];
+  const duels: DuelRecord[] = objs(raw.duels)
+    .filter((d) => Number.isFinite(d.level))
+    .slice(-200)
+    .map((d) => ({ at: Number(d.at) || 0, level: Number(d.level), won: !!d.won, xp: Number(d.xp) || 0, energy: Number(d.energy) || 0 }));
   const bankWalk = isObj(raw.bankWalk) && Number.isFinite(raw.bankWalk.queueId) && Number.isFinite(raw.bankWalk.townId)
     ? { queueId: Number(raw.bankWalk.queueId), townId: Number(raw.bankWalk.townId) }
     : null;
-  const pickups = Array.isArray(raw.pickups)
-    ? raw.pickups.filter((p: any) => isObj(p) && Number.isFinite(p.offerId) && Number.isFinite(p.townId) && isObj(p.at)) as MarketPickup[]
-    : [];
+  const pickups: MarketPickup[] = objs(raw.pickups)
+    .filter((p) => Number.isFinite(p.offerId) && Number.isFinite(p.townId) && isObj(p.at))
+    .map((p) => ({
+      offerId: Number(p.offerId), itemId: Number(p.itemId) || 0, count: Number(p.count) || 0, townId: Number(p.townId),
+      townName: String(p.townName ?? ''), at: { x: Number(obj(p.at).x) || 0, y: Number(obj(p.at).y) || 0 }, quest: String(p.quest ?? ''),
+    }));
   return { config, rules, plan, spent, duels, bankWalk, pickups };
 }
 

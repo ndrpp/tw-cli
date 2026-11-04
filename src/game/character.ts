@@ -1,6 +1,7 @@
 // Character state from Character.init (game.php) plus the client's own regen ticker
 // (Character.tick4Character @723978) and max-health formula (calcMaxHealth @723529).
 import type { ServerClock } from './clock.ts';
+import { isObj, nums, obj, type JsonObject } from '../util/json.ts';
 
 export interface Position { x: number; y: number }
 
@@ -74,35 +75,37 @@ export class CharacterState {
     this.clock = clock;
   }
 
-  static fromInit(data: Record<string, any>, clock: ServerClock): CharacterState {
+  static fromInit(data: JsonObject, clock: ServerClock): CharacterState {
     const c = new CharacterState(clock);
-    c.playerId = data.playerId;
-    c.name = data.name;
-    c.level = data.level;
-    c.charClass = data.charClass?.type ?? '';
-    c.charSex = data.charSex ?? '';
+    c.playerId = Number(data.playerId);
+    c.name = String(data.name ?? '');
+    c.level = Number(data.level);
+    c.charClass = String(obj(data.charClass).type ?? '');
+    c.charSex = String(data.charSex ?? '');
     c.duelLevel = Number(data.duelLevel) || 0;
-    c.itemLevelDecrease = data.itemLevelRequirementDecrease && !Array.isArray(data.itemLevelRequirementDecrease) ? data.itemLevelRequirementDecrease : {};
-    c.experience = data.experience;
-    c.cash = data.cash;
-    c.deposit = data.deposit;
-    c.nuggets = data.nuggets;
-    c.position = { x: data.pos?.x ?? 0, y: data.pos?.y ?? 0 };
-    c.homeTown = data.town ? { id: data.town.id, x: data.town.coords.x, y: data.town.coords.y } : null;
-    c.speed = data.charSpeed ?? 1;
-    c.maxEnergy = data.maxEnergy;
-    c.healthRegen = data.healthRegenFactor ?? 0;
-    c.energyRegen = data.energyRegenFactor ?? 0;
-    if (data.taskLimit) c.taskLimit = data.taskLimit;
-    c.skills = data.skillData?.skills ?? {};
-    c.skillBonus = data.skillData?.skillBonus ?? {};
-    const lp = data.lpPerPoint ?? 0;
+    c.itemLevelDecrease = nums(data.itemLevelRequirementDecrease);
+    c.experience = Number(data.experience);
+    c.cash = Number(data.cash);
+    c.deposit = Number(data.deposit);
+    c.nuggets = Number(data.nuggets);
+    const pos = obj(data.pos);
+    c.position = { x: Number(pos.x ?? 0), y: Number(pos.y ?? 0) };
+    const town = isObj(data.town) ? data.town : null;
+    c.homeTown = town ? { id: Number(town.id), x: Number(obj(town.coords).x), y: Number(obj(town.coords).y) } : null;
+    c.speed = Number(data.charSpeed ?? 1);
+    c.maxEnergy = Number(data.maxEnergy);
+    c.healthRegen = Number(data.healthRegenFactor ?? 0);
+    c.energyRegen = Number(data.energyRegenFactor ?? 0);
+    if (isObj(data.taskLimit)) c.taskLimit = { normal: Number(data.taskLimit.normal) || 4, premium: Number(data.taskLimit.premium) || 9 };
+    c.skills = nums(obj(data.skillData).skills);
+    c.skillBonus = nums(obj(data.skillData).skillBonus);
+    const lp = Number(data.lpPerPoint ?? 0);
     c.lpPerPoint = lp;
-    const lpBonus = data.lpPerPointBonus ?? 0;
+    const lpBonus = Number(data.lpPerPointBonus ?? 0);
     const healthPoints = (c.skills.health ?? 0) + (c.skillBonus.health ?? 0);
     c.maxHealth = Math.trunc(100 + (c.level - 1) * lp + healthPoints * (lp + lpBonus));
-    c.setHealth(data.health);
-    c.setEnergy(data.energy);
+    c.setHealth(Number(data.health));
+    c.setEnergy(Number(data.energy));
     return c;
   }
 

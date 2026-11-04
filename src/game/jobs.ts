@@ -8,6 +8,7 @@
 //  - travel time: GameMap.calcWayTime = distance * Game.travelSpeed * Character.speed (seconds)
 import type { GameClient } from '../http/game-client.ts';
 import type { Position } from './character.ts';
+import { arr, entries, obj, objs, type JsonObject } from '../util/json.ts';
 
 export type DurationKey = 'short' | 'middle' | 'long';
 export const DURATION_KEYS: DurationKey[] = ['short', 'middle', 'long'];
@@ -53,18 +54,20 @@ export interface JobInfo extends JobDef {
 export class JobCatalog {
   readonly byId = new Map<number, JobDef>();
 
-  constructor(gameInit: Record<string, any> | null) {
-    for (const j of (gameInit?.jobs ?? []) as any[]) {
-      this.byId.set(j.id, {
-        id: j.id,
-        groupid: j.groupid,
-        name: j.name,
-        shortname: j.shortname,
-        level: j.level,
-        malus: j.malus,
-        skills: j.skills ?? {},
-        durations: j.durations ?? { short: 15, middle: 600, long: 3600 },
-        yields: Object.fromEntries(Object.entries<any>(j.yields ?? {}).map(([id, y]) => [Number(id), Number(y?.prop) || 0])),
+  constructor(gameInit: JsonObject | null) {
+    for (const j of objs(gameInit?.jobs)) {
+      const d = obj(j.durations);
+      const id = Number(j.id);
+      this.byId.set(id, {
+        id,
+        groupid: Number(j.groupid),
+        name: String(j.name ?? ''),
+        shortname: String(j.shortname ?? ''),
+        level: Number(j.level) || 0,
+        malus: Number(j.malus) || 0,
+        skills: Object.fromEntries(entries(j.skills).map(([k, v]) => [k, Number(v) || 0])),
+        durations: { short: Number(d.short ?? 15), middle: Number(d.middle ?? 600), long: Number(d.long ?? 3600) },
+        yields: Object.fromEntries(entries(j.yields).map(([id, y]) => [Number(id), Number(obj(y).prop) || 0])),
       });
     }
   }
@@ -99,7 +102,7 @@ export interface JobDetail {
 }
 
 /** job/job → the live values the browser's job window shows for one job at one location. */
-export function parseJobDetail(raw: Record<string, any>): JobDetail {
+export function parseJobDetail(raw: JsonObject): JobDetail {
   const motivation = raw.motivation === null || raw.motivation === undefined ? NaN : Number(raw.motivation);
   return {
     danger: parseDanger(raw.danger),
@@ -110,22 +113,24 @@ export function parseJobDetail(raw: Record<string, any>): JobDetail {
 /** work/index → per-character job values merged onto the static definitions. */
 export async function fetchJobInfos(client: GameClient, catalog: JobCatalog): Promise<JobInfo[]> {
   const json = await client.remoteCallMode('work', 'index');
-  if (json.error) throw new Error(json.msg ?? 'work/index failed');
+  if (json.error) throw new Error(String(json.msg ?? 'work/index failed'));
   const out: JobInfo[] = [];
-  for (const [key, be] of Object.entries<any>(json.jobs ?? {})) {
+  for (const [key, v] of entries(json.jobs)) {
+    const be = obj(v);
     const def = catalog.get(Number(key));
     if (!def) continue;
     const values: JobInfo['values'] = {};
     DURATION_KEYS.forEach((k, i) => {
-      const d = be.durations?.[i];
-      if (!d) return;
+      const raw = arr(be.durations)[i];
+      if (!raw) return;
+      const d = obj(raw);
       values[k] = {
-        duration: d.duration,
-        energy: d.cost,
-        money: d.money + (d.featured_money || 0),
-        experience: d.xp + (d.featured_xp || 0),
-        luck: d.luck,
-        items: (Array.isArray(d.items) ? d.items : []).filter((y: any) => y && !y.random && y.itemid).map((y: any) => {
+        duration: Number(d.duration),
+        energy: Number(d.cost),
+        money: Number(d.money) + (Number(d.featured_money) || 0),
+        experience: Number(d.xp) + (Number(d.featured_xp) || 0),
+        luck: Number(d.luck),
+        items: objs(d.items).filter((y) => !y.random && y.itemid).map((y) => {
           const percent = (Number(y.prop) || 0) + (Number(y.probBonus) || 0);
           return { itemId: Number(y.itemid), expected: percent / 100, percent };
         }),
@@ -133,12 +138,12 @@ export async function fetchJobInfos(client: GameClient, catalog: JobCatalog): Pr
     });
     out.push({
       ...def,
-      jobPoints: be.jobSkillPoints,
+      jobPoints: Number(be.jobSkillPoints),
       workPoints: def.malus + 1,
-      laborPoints: typeof be.workpoints === 'number' ? be.workpoints : be.jobSkillPoints - def.malus,
-      motivation: be.motivation,
+      laborPoints: typeof be.workpoints === 'number' ? be.workpoints : Number(be.jobSkillPoints) - def.malus,
+      motivation: Number(be.motivation),
       danger: parseDanger(be.danger),
-      luckValue: Array.isArray(be.minMaxItemVal) ? [Number(be.minMaxItemVal[0]) || 0, Number(be.minMaxItemVal[1]) || 0] : [0, 0],
+      luckValue: [Number(arr(be.minMaxItemVal)[0]) || 0, Number(arr(be.minMaxItemVal)[1]) || 0],
       values,
     });
   }
@@ -150,13 +155,14 @@ export type JobLocations = Map<number, Position[]>;
 /** map/get_minimap → job group id → list of map coordinates. */
 export async function fetchJobLocations(client: GameClient): Promise<JobLocations> {
   const json = await client.get('map', 'get_minimap');
-  if (json.error) throw new Error(json.msg ?? 'map/get_minimap failed');
+  if (json.error) throw new Error(String(json.msg ?? 'map/get_minimap failed'));
   const map: JobLocations = new Map();
-  for (const [group, coords] of Object.entries<any>(json.job_groups ?? {})) {
-    map.set(Number(group), (coords as any[]).map((c) => ({ x: Number(c[0]), y: Number(c[1]) })));
-  }
+  for (const [group, coords] of entries(json.job_groups)) map.set(Number(group), toPositions(coords));
   return map;
 }
+
+/** [[x, y], ...] → positions. */
+export const toPositions = (coords: unknown): Position[] => arr(coords).map((c) => ({ x: Number(arr(c)[0]), y: Number(arr(c)[1]) }));
 
 export function distance(a: Position, b: Position): number {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
@@ -182,8 +188,8 @@ export function nearestLocation(locations: Position[] | undefined, from: Positio
 }
 
 /** job/job {jobId,x,y}: details for one job at one place (raw server object). */
-export async function fetchJobDetail(client: GameClient, jobId: number, at: Position): Promise<Record<string, any>> {
+export async function fetchJobDetail(client: GameClient, jobId: number, at: Position): Promise<JsonObject> {
   const json = await client.remoteCallMode('job', 'job', { jobId, x: at.x, y: at.y });
-  if (json.error) throw new Error(json.msg ?? 'job/job failed');
+  if (json.error) throw new Error(String(json.msg ?? 'job/job failed'));
   return json;
 }

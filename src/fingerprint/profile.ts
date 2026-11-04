@@ -5,6 +5,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { x64hash128 } from './murmur.ts';
+import { obj, objs } from '../util/json.ts';
 
 export type ComponentValue = string | number | boolean | null | Array<string | number | boolean | null>;
 
@@ -77,15 +78,44 @@ export function hashComponents(components: readonly FpComponent[]): string {
 
 export class FingerprintProfileError extends Error {}
 
-export function validateProfile(p: FingerprintProfile): FingerprintProfile {
-  if (p.version !== 1) throw new FingerprintProfileError(`unsupported profile version ${p.version}`);
-  if (!/^[0-9a-f]{32}$/.test(p.fp)) throw new FingerprintProfileError('fp must be 32 lowercase hex chars');
-  if (!p.userAgent) {
+const isPrimitive = (v: unknown): v is string | number | boolean | null => v === null || ['string', 'number', 'boolean'].includes(typeof v);
+
+/** A component value as JSON gave it; anything else becomes the string the hash would have joined anyway. */
+function componentValue(v: unknown): ComponentValue {
+  if (v === undefined) return null;
+  if (Array.isArray(v)) return v.map((e) => (e === undefined ? null : isPrimitive(e) ? e : String(e)));
+  return isPrimitive(v) ? v : String(v);
+}
+
+/** The well-typed fields of a profile file or upload (the rest dropped). */
+function partialProfile(raw: unknown): Partial<FingerprintProfile> {
+  const r = obj(raw);
+  const p: Partial<FingerprintProfile> = {};
+  if (r.version === 1) p.version = 1;
+  if (typeof r.capturedAt === 'string') p.capturedAt = r.capturedAt;
+  if (typeof r.userAgent === 'string') p.userAgent = r.userAgent;
+  if (Array.isArray(r.languages)) p.languages = r.languages.map(String);
+  if (typeof r.webdriver === 'boolean' || r.webdriver === null) p.webdriver = r.webdriver;
+  if (typeof r.fp === 'string') p.fp = r.fp;
+  if (Array.isArray(r.components)) p.components = objs(r.components).map((c) => ({ key: String(c.key), value: componentValue(c.value) }));
+  return p;
+}
+
+export function validateProfile(raw: unknown): FingerprintProfile {
+  const r = partialProfile(raw);
+  if (r.version !== 1) throw new FingerprintProfileError(`unsupported profile version ${String(obj(raw).version)}`);
+  const fp = r.fp ?? '';
+  if (!/^[0-9a-f]{32}$/.test(fp)) throw new FingerprintProfileError('fp must be 32 lowercase hex chars');
+  if (!r.userAgent) {
     throw new FingerprintProfileError(
       'userAgent missing: run `tw fp ua "<value of navigator.userAgent from the same browser>"`',
     );
   }
-  if (!Array.isArray(p.components) || p.components.length === 0) return p; // hash-only profile
+  const p: FingerprintProfile = {
+    version: 1, capturedAt: r.capturedAt ?? '', userAgent: r.userAgent, languages: r.languages ?? [], webdriver: r.webdriver ?? null, fp,
+    components: r.components ?? [],
+  };
+  if (p.components.length === 0) return p; // hash-only profile
 
   const keys = p.components.map((c) => c.key);
   let cursor = 0;
@@ -121,12 +151,12 @@ export function loadProfile(path: string): FingerprintProfile {
         'Capture one with tools/capture-fingerprint.js in your browser, then run: tw fp import <file>',
     );
   }
-  return validateProfile(raw as FingerprintProfile);
+  return validateProfile(raw);
 }
 
 export function readProfileRaw(path: string): Partial<FingerprintProfile> | null {
   try {
-    return JSON.parse(readFileSync(path, 'utf8'));
+    return partialProfile(JSON.parse(readFileSync(path, 'utf8')));
   } catch {
     return null;
   }

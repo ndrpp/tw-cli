@@ -5,6 +5,7 @@ import { REPORT_FOLDERS, type Report, type Telegram } from '../game/mail.ts';
 import type { ScreenProps } from './character.ts';
 import { scrollWindow, truncate } from './format.ts';
 import { formKey, formValues, FormView, makeForm, wrap, type FormState } from './form.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -147,7 +148,7 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
   const [start, end] = scrollWindow(idx, count, listRows);
   const tabs = (['reports', 'telegrams'] as Tab[]).map((t) => {
     const unread = t === 'reports' ? state.unread.reports : state.unread.messages;
-    return h(Text, { key: t, inverse: tab === t, bold: tab === t, color: tab === t ? 'cyan' : undefined }, ` ${t === 'reports' ? 'Reports' : 'Telegrams'}${unread ? ' •' : ''} `);
+    return h(Text, defined({ key: t, inverse: tab === t, bold: tab === t, color: tab === t ? 'cyan' : undefined }), ` ${t === 'reports' ? 'Reports' : 'Telegrams'}${unread ? ' •' : ''} `);
   });
   const folder = REPORT_FOLDERS.find((f) => f.key === state.reportFolder)?.label ?? 'All';
   const sub = tab === 'reports'
@@ -191,7 +192,7 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
     lines = [
       h(Text, { key: 't', bold: true, wrap: 'truncate' }, t.subject),
       h(Text, { key: 'd', dimColor: true, wrap: 'truncate' }, `${t.posts.length} post(s)${t.pages > 1 ? ` · page ${t.page + 1}/${t.pages}` : ''}`),
-      ...body.slice(top, top + room).map((l, i) => h(Text, { key: i, color: l.startsWith('▸ ') ? 'magenta' : undefined }, l || ' ')),
+      ...body.slice(top, top + room).map((l, i) => h(Text, defined({ key: i, color: l.startsWith('▸ ') ? 'magenta' : undefined }), l || ' ')),
     ];
   } else {
     const cur = tab === 'reports' ? reports[idx] : null;

@@ -5,6 +5,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { truncate } from './format.ts';
 import type { Segment } from '../game/chatlinks.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -23,7 +24,7 @@ export interface FormState {
   fields: FormField[];
   focus: number;
   /** Shown under the fields (e.g. a computed fee). */
-  note?: (values: Record<string, string>) => string;
+  note?: ((values: Record<string, string>) => string) | undefined;
 }
 
 export interface KeyLike {
@@ -70,7 +71,7 @@ export function FormView({ form, width }: { form: FormState; width: number }) {
       const focused = i === form.focus;
       const shown = x.kind === 'choice' ? `‹ ${x.value} ›` : `${x.value}${focused ? '▏' : ''}`;
       return h(Text, { key: x.key, wrap: 'truncate' },
-        h(Text, { color: focused ? 'cyan' : undefined, bold: focused }, `${x.label.padEnd(labelW)} `),
+        h(Text, defined({ color: focused ? 'cyan' : undefined, bold: focused }), `${x.label.padEnd(labelW)} `),
         h(Text, { inverse: focused && x.kind === 'choice' }, truncate(shown, Math.max(4, width - labelW - 5)).trimEnd()),
         x.hint && focused ? h(Text, { dimColor: true }, `  ${x.hint}`) : '');
     }),
@@ -100,7 +101,7 @@ export function wrapSegments(segs: Segment[], width: number): Segment[][] {
         line = [];
         len = 0;
       }
-      if (len) put(' ', line[line.length - 1].color === color ? color : undefined);
+      if (len) put(' ', line.at(-1)?.color === color ? color : undefined);
       put(piece, color);
     }
   }

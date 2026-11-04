@@ -6,6 +6,8 @@
 //   counties[{county_id,name,start_x,start_y,end_x,end_y}], current_county
 // World size: GameMap.max {x:181,y:79} tiles of 256 px (tw2game @401628).
 import type { Position } from './character.ts';
+import { entries, isObj, obj, objs, vals, type JsonObject } from '../util/json.ts';
+import { toPositions } from './jobs.ts';
 
 export const TILE = 256;
 export const WORLD_W = 182 * TILE; // 46592
@@ -29,31 +31,27 @@ export class WorldMap {
   /** Travelling fair location when one is active (minimap.fair is false otherwise). */
   fair: Position | null = null;
 
-  static fromMinimap(json: Record<string, any>): WorldMap {
+  static fromMinimap(json: JsonObject): WorldMap {
     const w = new WorldMap();
-    for (const t of Object.values<any>(json.towns ?? {})) {
-      w.towns.push({ id: t.town_id, x: t.x, y: t.y, name: t.name ?? null, members: t.member_count ?? 0, npc: !!t.npctown, points: t.town_points ?? 0 });
+    for (const t of vals(json.towns).map(obj)) {
+      w.towns.push({ id: Number(t.town_id), x: Number(t.x), y: Number(t.y), name: t.name == null ? null : String(t.name), members: Number(t.member_count ?? 0), npc: !!t.npctown, points: Number(t.town_points ?? 0) });
     }
-    for (const [x, ys] of Object.entries<any>(json.forts ?? {})) {
-      for (const [y, v] of Object.entries<any>(ys ?? {})) {
-        const f = v && typeof v === 'object' ? v.fort : null;
-        w.forts.push({ id: f?.fort_id ?? 0, x: Number(x), y: Number(y), name: f?.name ?? 'Fort site', townId: f?.town_id ?? 0 });
+    for (const [x, ys] of entries(json.forts)) {
+      for (const [y, v] of entries(ys)) {
+        const f = isObj(v) && isObj(v.fort) ? v.fort : null;
+        w.forts.push({ id: Number(f?.fort_id ?? 0), x: Number(x), y: Number(y), name: String(f?.name ?? 'Fort site'), townId: Number(f?.town_id ?? 0) });
       }
     }
-    for (const [group, coords] of Object.entries<any>(json.job_groups ?? {})) {
-      w.jobGroups.set(Number(group), (coords as any[]).map((c) => ({ x: Number(c[0]), y: Number(c[1]) })));
-    }
-    for (const coords of Object.values<any>(json.quest_locations ?? {})) {
-      for (const c of coords as any[]) w.quests.push({ x: Number(c[0]), y: Number(c[1]) });
-    }
-    const points = (list: any) => (Array.isArray(list) ? list.map((p) => ({ x: p.x, y: p.y, amount: p.amount ?? 1 })) : []);
+    for (const [group, coords] of entries(json.job_groups)) w.jobGroups.set(Number(group), toPositions(coords));
+    for (const coords of vals(json.quest_locations)) w.quests.push(...toPositions(coords));
+    const points = (list: unknown) => objs(list).map((p) => ({ x: Number(p.x), y: Number(p.y), amount: Number(p.amount ?? 1) }));
     w.markets = points(json.market_locations);
     w.friends = points(json.friend_locations);
     w.townMembers = points(json.town_members);
-    w.counties = (json.counties ?? []).map((c: any) => ({ id: c.county_id, name: c.name, x1: c.start_x, y1: c.start_y, x2: c.end_x, y2: c.end_y }));
-    w.currentCounty = json.current_county ?? 0;
+    w.counties = objs(json.counties).map((c) => ({ id: Number(c.county_id), name: String(c.name ?? ''), x1: Number(c.start_x), y1: Number(c.start_y), x2: Number(c.end_x), y2: Number(c.end_y) }));
+    w.currentCounty = Number(json.current_county ?? 0);
     const fair = json.fair;
-    if (fair && typeof fair === 'object' && Number.isFinite(Number(fair.x))) w.fair = { x: Number(fair.x), y: Number(fair.y) };
+    if (isObj(fair) && Number.isFinite(Number(fair.x))) w.fair = { x: Number(fair.x), y: Number(fair.y) };
     return w;
   }
 

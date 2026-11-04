@@ -8,6 +8,7 @@ import { render } from 'ink';
 import { parseBootstrap, type Bootstrap } from '../src/auth/bootstrap.ts';
 import { CookieJar } from '../src/http/cookie-jar.ts';
 import { GameClient } from '../src/http/game-client.ts';
+import { obj } from '../src/util/json.ts';
 import { resetThrottle, type HostPolicy } from '../src/http/throttle.ts';
 import { GameState } from '../src/game/state.ts';
 import { WorldMap } from '../src/game/world.ts';
@@ -54,7 +55,7 @@ afterEach(() => {
 });
 
 function bootstrap(): Bootstrap {
-  const b = parseBootstrap(readFileSync(GAME_PHP, 'utf8'));
+  const b: any = parseBootstrap(readFileSync(GAME_PHP, 'utf8'));
   const shift = Math.floor(Date.now() / 1000) - b.game!.sincepoch;
   b.game!.sincepoch += shift;
   for (const t of b.character!.taskQueue) {
@@ -74,7 +75,7 @@ async function makeState(): Promise<GameState> {
 }
 
 test('minimap (live shape) parses towns, forts, job groups, counties', () => {
-  const w = WorldMap.fromMinimap(JSON.parse(fixture('minimap')));
+  const w = WorldMap.fromMinimap(obj(JSON.parse(fixture('minimap'))));
   assert.equal(w.towns.length, 3);
   assert.ok(w.towns.some((t) => t.name === 'Slobozia' && t.id === 1421));
   assert.ok(w.towns.some((t) => t.name === null)); // empty town site
@@ -88,7 +89,7 @@ test('minimap (live shape) parses towns, forts, job groups, counties', () => {
 
 test('tile data (live shape) yields the silver job and crowds', () => {
   const t = new TileCache();
-  t.ingest(JSON.parse(fixture('complete_data')), [[116, 60]]);
+  t.ingest(obj(JSON.parse(fixture('complete_data'))), [[116, 60]]);
   const silver = [...t.specialJobs.values()];
   assert.deepEqual(silver, [{ x: 30380, y: 16308, jobId: 5, groupId: 7, gold: false, silver: true }]);
   assert.ok([...t.crowds.values()].some((c) => c.x === 29888 && c.y === 15564 && c.count === 2));
@@ -96,7 +97,7 @@ test('tile data (live shape) yields the silver job and crowds', () => {
 
 const TILE_SAMPLE = fileURLToPath(new URL('../../en32.the_west.net/en32.the-west.net/game-38d090cd2e3a4.php', import.meta.url));
 test('quest giver names come from tile quests (saved sample)', { skip: !existsSync(TILE_SAMPLE) && 'saved tile sample missing' }, () => {
-  const sample = JSON.parse(readFileSync(TILE_SAMPLE, 'utf8'));
+  const sample = obj(JSON.parse(readFileSync(TILE_SAMPLE, 'utf8')));
   const t = new TileCache();
   t.ingest(sample, [[109, 65]]);
   const q = t.questGivers.get('28002,16658');
@@ -128,7 +129,7 @@ test('entries under the cursor list jobs there; find jumps to nearest job/town',
 
 test('points of interest include towns, fort, quest givers, silver job, markets; sorted by distance', { skip: !HAVE_GAME && 'game.php missing' }, async () => {
   const st = await makeState();
-  st.tiles.ingest(JSON.parse(fixture('complete_data')), [[116, 60]]);
+  st.tiles.ingest(obj(JSON.parse(fixture('complete_data'))), [[116, 60]]);
   const kinds = new Set(collectPois(st).map((p) => p.kind));
   for (const k of ['me', 'queue', 'home', 'town', 'fort', 'quest', 'silver', 'market', 'friend', 'crowd'] as const) assert.ok(kinds.has(k), k);
   const near = poisNear(st, st.character.position);

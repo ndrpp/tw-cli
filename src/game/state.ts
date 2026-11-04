@@ -40,6 +40,8 @@ import { Calibration } from './calibration.ts';
 import { expectedHpLoss, type BuyTrip } from './autopilot.ts';
 import { BuyCatalog, chooseBuys, where, type BuyNeed, type BuyPick } from './quest-buy.ts';
 import { RateTracker } from './rates.ts';
+import { entries } from '../util/json.ts';
+import { isObj, obj, type JsonObject } from '../util/json.ts';
 
 export interface LogEntry { at: Date; level: 'info' | 'error'; msg: string }
 
@@ -53,7 +55,7 @@ export interface JobOption {
 const LAYERS_FILE = () => join(CONFIG_DIR, 'map-layers.json');
 function loadMapLayers(): Record<string, boolean> {
   try {
-    return JSON.parse(readFileSync(LAYERS_FILE(), 'utf8'));
+    return Object.fromEntries(entries(JSON.parse(readFileSync(LAYERS_FILE(), 'utf8'))).filter((e): e is [string, boolean] => typeof e[1] === 'boolean'));
   } catch {
     return {};
   }
@@ -160,7 +162,7 @@ export class GameState extends EventEmitter {
   lastNpcDuel: NpcDuelResult | null = null;
   private itemsFile: string | undefined;
   private itemSetsFile: string | undefined;
-  private bagInit: Record<string, any> | null = null;
+  private bagInit: JsonObject | null = null;
   private reopen: () => Promise<OpenGame>;
 
   constructor(game: OpenGame, reopen: () => Promise<OpenGame>) {
@@ -171,24 +173,27 @@ export class GameState extends EventEmitter {
 
   private apply({ client, bootstrap }: OpenGame): void {
     this.client = client;
-    this.clock = new ServerClock(bootstrap.game?.sincepoch);
+    const game = bootstrap.game ?? {};
+    const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
+    this.clock = new ServerClock(game.sincepoch === undefined ? undefined : Number(game.sincepoch));
     this.character = CharacterState.fromInit(bootstrap.character ?? {}, this.clock);
-    if (Number(bootstrap.game?.maxLevel) > 0) this.character.maxLevel = Number(bootstrap.game!.maxLevel);
+    if (Number(game.maxLevel) > 0) this.character.maxLevel = Number(game.maxLevel);
     this.catalog = new JobCatalog(bootstrap.game);
     this.tasks = new TaskApi(client);
-    this.travelSpeed = bootstrap.game?.travelSpeed ?? 1;
-    this.worldName = bootstrap.game?.currentWorldName ?? '';
-    this.automationUntil = bootstrap.premium?.premiumBoni?.automation?.expiration ?? 0;
+    this.travelSpeed = Number(game.travelSpeed ?? 1);
+    this.worldName = String(game.currentWorldName ?? '');
+    this.automationUntil = Number(obj(obj(obj(bootstrap.premium).premiumBoni).automation).expiration ?? 0);
     this.queue = parseQueue(bootstrap.character?.taskQueue);
-    this.itemsFile = bootstrap.game?.itemsFile;
-    this.itemSetsFile = bootstrap.game?.itemSetsFile;
-    this.bagInit = bootstrap.bag ?? bootstrap.character?.inventory ?? null;
+    this.itemsFile = str(game.itemsFile);
+    this.itemSetsFile = str(game.itemSetsFile);
+    const inventory = bootstrap.character?.inventory;
+    this.bagInit = bootstrap.bag ?? (isObj(inventory) ? inventory : null);
     this.inventory = Inventory.fromInit(this.bagInit, this.items ?? undefined);
     this.equipSets = null;
     this.mobileTrader = null;
     this.townHall = null;
     this.construction = null;
-    this.skills = Skills.fromInit(bootstrap.character?.skillData);
+    this.skills = Skills.fromInit(isObj(bootstrap.character?.skillData) ? bootstrap.character.skillData : undefined);
     const wasLive = !!this.live?.active;
     this.live?.stop();
     this.live = null;
@@ -484,7 +489,7 @@ export class GameState extends EventEmitter {
       void this.announceNewReport();
       void this.syncCharacter('report');
     });
-    poller.on('read', (p: Record<string, any>) => {
+    poller.on('read', (p) => {
       this.unread.reports = !p.reports;
       this.unread.messages = !p.messages;
       this.changed();
@@ -579,8 +584,8 @@ export class GameState extends EventEmitter {
       c.maxHealth = fresh.maxHealth;
       c.healthRegen = fresh.healthRegen;
       c.energyRegen = fresh.energyRegen;
-      c.setEnergy(data.energy);
-      c.setHealth(data.health);
+      c.setEnergy(Number(data.energy));
+      c.setHealth(Number(data.health));
       c.lpPerPoint = fresh.lpPerPoint;
       this.observeHealth(hpBefore, c.health);
       if (leveled) this.observeLevelUp();
@@ -904,7 +909,7 @@ export class GameState extends EventEmitter {
       const jobs = await fetchJobInfos(this.client, this.catalog);
       const minimap = await cachedJson(`minimap-${new URL(this.client.worldUrl).host}`, async () => {
         const m = await this.client.get('map', 'get_minimap');
-        if (m.error) throw new Error(m.msg ?? 'map/get_minimap failed');
+        if (m.error) throw new Error(String(m.msg ?? 'map/get_minimap failed'));
         return m;
       }, { fresh: freshMap });
       this.jobs = jobs.sort((a, b) => a.name.localeCompare(b.name));
@@ -1607,7 +1612,7 @@ export class GameState extends EventEmitter {
     return Math.round((this.items?.get(itemId)?.price ?? 0) * (this.shop?.charge || 1));
   }
 
-  private applyMoney(r: { cash?: number; deposit?: number }): void {
+  private applyMoney(r: { cash?: number | undefined; deposit?: number | undefined }): void {
     if (typeof r.cash === 'number') this.character.cash = r.cash;
     if (typeof r.deposit === 'number') this.character.deposit = r.deposit;
   }
@@ -1751,7 +1756,7 @@ export class GameState extends EventEmitter {
   }
 
   /** Places a buy order at the trade town's market for an item by name. */
-  async placeBuyOrder(o: { query: string; count: number; days: number; maxBid?: number; instant?: number; fromBank: boolean }): Promise<boolean> {
+  async placeBuyOrder(o: { query: string; count: number; days: number; maxBid?: number | undefined; instant?: number | undefined; fromBank: boolean }): Promise<boolean> {
     const town = this.tradeTown;
     if (!town) {
       this.error('You need to be in a town (or have a home town) to place a buy order.');
@@ -1778,7 +1783,7 @@ export class GameState extends EventEmitter {
     return !!ok;
   }
 
-  async sellOnMarket(o: { itemId: number; count: number; days: number; startPrice?: number; buyNow?: number }): Promise<boolean> {
+  async sellOnMarket(o: { itemId: number; count: number; days: number; startPrice?: number | undefined; buyNow?: number | undefined }): Promise<boolean> {
     const town = this.tradeTown;
     if (!town) {
       this.error('You need to be in a town (or have a home town) to sell on the market.');

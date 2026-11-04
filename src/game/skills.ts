@@ -8,6 +8,7 @@
 //   skill_modifications, attribute_points_used, skill_points_used})}) → {error, msg, ...}
 // Raising an attribute raises each of its five skills by one (SkillsWindow.Attributes[...]).
 import type { GameClient } from '../http/game-client.ts';
+import { nums, type JsonObject } from '../util/json.ts';
 
 export const ATTRIBUTES = ['strength', 'flexibility', 'dexterity', 'charisma'] as const;
 export type Attribute = (typeof ATTRIBUTES)[number];
@@ -36,11 +37,6 @@ export const ATTRIBUTE_COLOR: Record<Attribute, string> = {
   strength: 'red', flexibility: 'green', dexterity: 'blue', charisma: 'yellow',
 };
 
-const nums = (o: unknown): Record<string, number> => {
-  const out: Record<string, number> = {};
-  if (o && typeof o === 'object' && !Array.isArray(o)) for (const [k, v] of Object.entries(o)) out[k] = Number(v) || 0;
-  return out;
-};
 
 export class Skills {
   attributes: Record<string, number> = {};
@@ -50,7 +46,7 @@ export class Skills {
   freeAttributes = 0;
   freeSkills = 0;
 
-  static fromInit(skillData: Record<string, any> | undefined): Skills {
+  static fromInit(skillData: JsonObject | undefined): Skills {
     const s = new Skills();
     if (!skillData) return s;
     s.attributes = nums(skillData.attributes);
@@ -62,7 +58,7 @@ export class Skills {
     return s;
   }
 
-  static fromOverview(json: Record<string, any>): Skills {
+  static fromOverview(json: JsonObject): Skills {
     const s = new Skills();
     s.attributes = nums(json.attributes);
     s.attributeBonus = nums(json.attributeBonuspoints);
@@ -140,13 +136,13 @@ export class SkillApi {
 
   async overview(): Promise<Skills> {
     const json = await this.client.remoteCallMode('skill', 'overview');
-    if (json.error) throw new Error(json.msg ?? 'skill/overview failed');
+    if (json.error) throw new Error(String(json.msg ?? 'skill/overview failed'));
     return Skills.fromOverview(json);
   }
 
   async save(plan: SkillPlan): Promise<string> {
     const json = await this.client.remoteCall('skill', 'save_skill_changes', savePayload(plan));
-    if (json.error) throw new Error(json.msg ?? 'Saving skills failed');
+    if (json.error) throw new Error(String(json.msg ?? 'Saving skills failed'));
     return String(json.msg ?? 'Skills saved.');
   }
 }

@@ -11,6 +11,7 @@
 // questRewardsOptions, description(html), questHint(html), limited}.
 // finish_quest replies may carry `eval` (JS for the browser): never executed here.
 import type { GameClient } from '../http/game-client.ts';
+import { entries, obj, objs, vals, type JsonObject } from '../util/json.ts';
 
 /** jsInfo: inventory_changed / wear_changed {id: item, count}; task-finish-job {id: job, count: seconds}. */
 /**
@@ -104,8 +105,8 @@ export function plainText(html: unknown, opts: { compact?: boolean } = {}): stri
     .trim();
 }
 
-function rewardText(r: Record<string, any>, itemName?: (id: number) => string): QuestReward {
-  const info = r.info ?? {};
+function rewardText(r: JsonObject, itemName?: (id: number) => string): QuestReward {
+  const info = obj(r.info);
   if (r.isItem) {
     const id = Number(info.text);
     return { item: id, text: itemName ? itemName(id) : `item ${id}` };
@@ -114,10 +115,10 @@ function rewardText(r: Record<string, any>, itemName?: (id: number) => string): 
   return { item: null, text: `${plainText(info.text)} ${label}`.trim() };
 }
 
-function parseRequirement(r: Record<string, any>): QuestRequirement {
+function parseRequirement(r: JsonObject): QuestRequirement {
   const req: QuestRequirement = { solved: !!r.solved, info: plainText(r.info), kind: 'other' };
-  const js = r.jsInfo;
-  if (js && typeof js === 'object' && js.id !== undefined) {
+  const js = obj(r.jsInfo);
+  if (js.id !== undefined) {
     if (js.type === 'inventory_changed' || js.type === 'wear_changed') {
       req.itemId = Number(js.id);
       req.kind = js.type === 'wear_changed' ? 'wear' : 'item';
@@ -127,10 +128,10 @@ function parseRequirement(r: Record<string, any>): QuestRequirement {
     }
     if (js.count !== undefined) req.count = Number(js.count);
   }
-  const bought = req.kind === 'other' ? req.info.match(/^Item '(.+)' bought$/i) : null;
+  const bought = req.kind === 'other' ? req.info.match(/^Item '(.+)' bought$/i)?.[1] : undefined;
   if (bought) {
     req.kind = 'bought';
-    req.buy = bought[1];
+    req.buy = bought;
   }
   const window = req.kind === 'other' ? req.info.match(/only available between (\d{1,2}:\d{2}) and (\d{1,2}:\d{2})/i) : null;
   if (window) {
@@ -140,9 +141,8 @@ function parseRequirement(r: Record<string, any>): QuestRequirement {
   return req;
 }
 
-export function parseQuest(q: Record<string, any>, itemName?: (id: number) => string): Quest {
-  const coords = q.employer_coords && typeof q.employer_coords === 'object' ? q.employer_coords : null;
-  const opts = q.questRewardsOptions && typeof q.questRewardsOptions === 'object' ? q.questRewardsOptions : null;
+export function parseQuest(q: JsonObject, itemName?: (id: number) => string): Quest {
+  const coords = q.employer_coords && typeof q.employer_coords === 'object' ? obj(q.employer_coords) : null;
   return {
     id: Number(q.id),
     title: plainText(q.title),
@@ -155,11 +155,12 @@ export function parseQuest(q: Record<string, any>, itemName?: (id: number) => st
     accepted: !!q.accepted,
     acceptable: q.acceptable === undefined ? !q.accepted : !!q.acceptable,
     finishable: !!q.finishable,
-    requirements: (Array.isArray(q.requirements) ? q.requirements : []).map(parseRequirement),
-    rewards: (Array.isArray(q.questRewards) ? q.questRewards : []).filter((r: any) => !r.hidden).map((r: any) => rewardText(r, itemName)),
-    rewardOptions: opts
-      ? Object.entries<any>(opts).map(([id, o]) => ({ id: Number(o?.id ?? id), text: plainText(o?.title ?? o?.text ?? o?.info?.text ?? `option ${id}`) }))
-      : [],
+    requirements: objs(q.requirements).map(parseRequirement),
+    rewards: objs(q.questRewards).filter((r) => !r.hidden).map((r) => rewardText(r, itemName)),
+    rewardOptions: entries(q.questRewardsOptions).map(([id, v]) => {
+      const o = obj(v);
+      return { id: Number(o.id ?? id), text: plainText(o.title ?? o.text ?? obj(o.info).text ?? `option ${id}`) };
+    }),
     description: plainText(q.description),
     hint: plainText(q.questHint),
     limited: plainText(q.limited),
@@ -183,7 +184,7 @@ export function groupByChain(quests: Quest[]): QuestChain[] {
 
 export class QuestApi {
   client: GameClient;
-  itemName?: (id: number) => string;
+  itemName: ((id: number) => string) | undefined;
 
   constructor(client: GameClient, itemName?: (id: number) => string) {
     this.client = client;
@@ -192,44 +193,44 @@ export class QuestApi {
 
   async openQuests(): Promise<{ quests: Quest[]; capacity: number }> {
     const json = await this.client.remoteCallMode('building_quest', 'get_open_quests');
-    if (json.error) throw new Error(json.msg ?? 'Quest log failed');
-    return { quests: (json.quests ?? []).map((q: any) => parseQuest(q, this.itemName)), capacity: Number(json.capacity) || 0 };
+    if (json.error) throw new Error(plainText(json.msg) || 'Quest log failed');
+    return { quests: objs(json.quests).map((q) => parseQuest(q, this.itemName)), capacity: Number(json.capacity) || 0 };
   }
 
   /** Quest givers in the saloon (no map position). */
   async saloon(): Promise<{ key: string; name: string }[]> {
     const json = await this.client.remoteCallMode('building_quest', '');
-    if (json.error) throw new Error(json.msg ?? 'Saloon failed');
-    return (json.questEmployer ?? [])
-      .filter((e: any) => e && e.key && e.key !== 'wallpaper_telekom')
-      .map((e: any) => ({ key: String(e.key), name: plainText(e.name) }));
+    if (json.error) throw new Error(plainText(json.msg) || 'Saloon failed');
+    return objs(json.questEmployer)
+      .filter((e) => e.key && e.key !== 'wallpaper_telekom')
+      .map((e) => ({ key: String(e.key), name: plainText(e.name) }));
   }
 
   async employer(key: string, at?: { x: number; y: number } | null): Promise<QuestEmployer> {
     const json = await this.client.remoteCall('quest_employer', '', { employer: key, x: at?.x, y: at?.y });
-    if (json.error) throw new Error(typeof json.error === 'string' ? json.error : json.msg ?? 'Quest giver failed');
-    const e = json.employer ?? {};
+    if (json.error) throw new Error(typeof json.error === 'string' ? json.error : plainText(json.msg) || 'Quest giver failed');
+    const e = obj(json.employer);
     return {
       key: String(e.key ?? key),
       name: plainText(e.name ?? key),
       x: at?.x ?? null,
       y: at?.y ?? null,
-      open: (e.open ?? []).map((q: any) => parseQuest(q, this.itemName)),
+      open: objs(e.open).map((q) => parseQuest(q, this.itemName)),
     };
   }
 
   async accept(questId: number): Promise<{ finishable: boolean }> {
     const json = await this.client.remoteCall('quest', 'accept_quest', { quest_id: questId });
-    if (json.error) throw new Error(json.msg ?? 'Could not accept the quest');
+    if (json.error) throw new Error(plainText(json.msg) || 'Could not accept the quest');
     return { finishable: !!json.finishable };
   }
 
-  async finish(questId: number, rewardOption?: number): Promise<{ msg: string; health?: number; rewards: string[] }> {
+  async finish(questId: number, rewardOption?: number): Promise<{ msg: string; health?: number | undefined; rewards: string[] }> {
     const json = await this.client.remoteCall('quest', 'finish_quest', { quest_id: questId, reward_option_id: rewardOption });
-    if (json.error) throw new Error(json.msg ?? 'Could not finish the quest');
+    if (json.error) throw new Error(plainText(json.msg) || 'Could not finish the quest');
     const rewards: string[] = [];
-    for (const r of Array.isArray(json.allRewards) ? json.allRewards : Object.values(json.allRewards ?? {})) {
-      const t = rewardText(r as any, this.itemName).text;
+    for (const r of vals(json.allRewards)) {
+      const t = rewardText(obj(r), this.itemName).text;
       if (t) rewards.push(t);
     }
     return { msg: plainText(json.msg ?? ''), health: typeof json.health === 'number' ? json.health : undefined, rewards };
@@ -237,6 +238,6 @@ export class QuestApi {
 
   async cancel(questId: number): Promise<void> {
     const json = await this.client.remoteCall('quest', 'cancel_quest', { quest_id: questId });
-    if (json.error) throw new Error(json.msg ?? 'Could not cancel the quest');
+    if (json.error) throw new Error(plainText(json.msg) || 'Could not cancel the quest');
   }
 }

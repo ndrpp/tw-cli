@@ -24,7 +24,7 @@ const project = (steps: TimelineStep[], o: Partial<TimelineStart> = {}) => proje
 
 /** [xp, money, energy?, drops? {itemId: expected per run}] per duration (long 3600 s / middle 600 s / short 15 s). */
 type Run = [number, number, number?, Record<number, number>?];
-interface JobOpt { at?: Pt[]; long?: Run; middle?: Run; short?: Run; danger?: number; motivation?: number; doable?: boolean }
+interface JobOpt { at?: Pt[] | undefined; long?: Run; middle?: Run; short?: Run; danger?: number; motivation?: number; doable?: boolean }
 const DUR = { long: [3600, 12], middle: [600, 5], short: [15, 1] } as const;
 function job(id: number, o: JobOpt): any {
   const values: Record<string, unknown> = {};

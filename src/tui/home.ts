@@ -2,7 +2,7 @@
 // counterpart; it gathers the header, task queue, report list and chat the web shows in separate windows.
 // Layout: working · session · task queue (left) | minimap · reports (right) · chat (bottom, interactive).
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Text, measureElement, useInput } from 'ink';
+import { Box, Text, measureElement, useInput, type DOMElement } from 'ink';
 import type { ScreenProps } from './character.ts';
 import type { GameState } from '../game/state.ts';
 import { regenSeconds } from '../game/timeline.ts';
@@ -11,6 +11,7 @@ import { ICON, stepIcon, taskIcon } from './icons.ts';
 import { buildGrid, ZOOMS } from './map.ts';
 import { ChatPanel, chatRoomIds } from './chat.ts';
 import { QueuePane } from './queue.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 /** How long the "done" line shows after a task ends. */
@@ -26,7 +27,7 @@ export function HomeScreen({ state, width, height, onCapture, active = true }: S
   const [confirm, setConfirm] = useState(false);
   const [zoom, setZoom] = useState(128);
   // The queue panel gets what the working and session panels leave: measured after layout.
-  const queueBox = useRef<any>(null);
+  const queueBox = useRef<DOMElement>(null);
   const [queueRows, setQueueRows] = useState(3);
   useEffect(() => {
     if (!queueBox.current) return;
@@ -140,7 +141,7 @@ function WorkingPanel({ state, width, confirm }: { state: GameState; width: numb
       const luck = q.job.luckValue[1] > 0 ? `  luck ${money(q.job.luckValue[0])}–${money(q.job.luckValue[1])}` : '';
       rows.push(h(Text, { key: 'r', wrap: 'truncate' },
         h(Text, { color: 'green' }, `+${v.experience} xp  ${money(v.money)}`), luck,
-        q.job.danger !== null ? h(Text, { color: q.job.danger >= 50 ? 'red' : undefined }, `  danger ${q.job.danger}%`) : ''));
+        q.job.danger !== null ? h(Text, defined({ color: q.job.danger >= 50 ? 'red' : undefined }), `  danger ${q.job.danger}%`) : ''));
       const drops = (v.items?.length ? v.items.map((i) => ({ name: state.itemName(i.itemId), percent: i.percent as number | null })) : state.jobProducts(q.job))
         .map((p) => `${p.name}${p.percent !== null ? ` ${p.percent}%` : ''}`).join(' · ');
       if (drops) rows.push(h(Text, { key: 'd', color: 'magenta', wrap: 'truncate' }, `Drops: ${drops}`));
@@ -207,7 +208,7 @@ function Minimap({ state, width, height, zoom }: { state: GameState; width: numb
     h(Text, { bold: true, wrap: 'truncate' }, ` ${county?.name ?? 'Map'}`, h(Text, { dimColor: true, bold: false }, ` · ${zoom}px · +/- zoom · m map`)),
     ...grid.map((segs, r) =>
       h(Text, { key: r, wrap: 'truncate' },
-        ...segs.map((s, i) => h(Text, { key: i, color: s.color, dimColor: s.dim, bold: s.bold }, s.inverse && s.text === '+' ? ' ' : s.text)))),
+        ...segs.map((s, i) => h(Text, defined({ key: i, color: s.color, dimColor: s.dim, bold: s.bold }), s.inverse && s.text === '+' ? ' ' : s.text)))),
   );
 }
 

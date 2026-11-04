@@ -183,7 +183,7 @@ export class QuestModule {
   private async buy(q: Quest, pick: BuyPick, key: string): Promise<void> {
     const s = this.host.state;
     const src = pick.source;
-    const money = (r: { cash?: number; deposit?: number }) => {
+    const money = (r: { cash?: number | undefined; deposit?: number | undefined }) => {
       if (typeof r.cash === 'number') s.character.cash = r.cash;
       if (typeof r.deposit === 'number') s.character.deposit = r.deposit;
     };

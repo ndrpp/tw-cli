@@ -6,6 +6,7 @@ import type { GameState } from '../game/state.ts';
 import { queueSummary, walkLeft, workLeft } from '../game/tasks.ts';
 import { formatClock, formatDuration, money, scrollWindow, truncate } from './format.ts';
 import { taskIcon } from './icons.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -30,7 +31,7 @@ export function QueuePane({ state, selected, focused, width, confirm, maxRows }:
       const time = formatDuration(work).padStart(7);
       const right = walk > 0 ? `walk ${formatDuration(walk)} + ${time}` : time;
       const label = `${i + 1}. ${taskIcon(t.type)} ${t.title}`;
-      return h(Text, { key: t.queueId || i, inverse: sel, color: i === 0 ? 'green' : undefined, wrap: 'truncate' },
+      return h(Text, defined({ key: t.queueId || i, inverse: sel, color: i === 0 ? 'green' : undefined, wrap: 'truncate' }),
         `${truncate(label, Math.max(8, width - 8 - right.length))} ${right}`);
     }),
     overflow ? h(Text, { dimColor: true }, `  +${hidden} more`) : null,

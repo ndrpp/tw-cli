@@ -9,6 +9,7 @@
 import type { FormValue } from '../http/form.ts';
 import type { GameClient } from '../http/game-client.ts';
 import { plainText } from './quests.ts';
+import { obj, objs, type JsonObject } from '../util/json.ts';
 
 export interface DuelNpc { id: number; name: string; level: number; weaponId: number; readyIn: number }
 export interface DuelData { npcs: DuelNpc[]; difficulty: string; motivation: number; npcMotivation: number }
@@ -16,20 +17,21 @@ export interface DuelOpponent { playerId: number; name: string; duelLevel: numbe
 export interface NpcDuelResult {
   result: string;
   rounds: { own: number | null; other: number | null }[];
-  energy?: number; health?: number; money?: number; experience?: number; level?: number; died: boolean;
+  energy?: number | undefined; health?: number | undefined; money?: number | undefined; experience?: number | undefined; level?: number | undefined; died: boolean;
   data: DuelData;
 }
 
-const errText = (json: any, what: string) => plainText(json?.msg ?? '') || `${what} failed`;
+const errText = (json: JsonObject, what: string) => plainText(json.msg ?? '') || `${what} failed`;
 
-export function parseDuelData(json: Record<string, any>): DuelData {
-  const delay = Number(json.npcs?.arrival_delay) || 0;
+export function parseDuelData(json: JsonObject): DuelData {
+  const npcs = obj(json.npcs);
+  const delay = Number(npcs.arrival_delay) || 0;
   return {
-    npcs: (Array.isArray(json.npcs?.npcs) ? json.npcs.npcs : []).map((n: any) => ({
+    npcs: objs(npcs.npcs).map((n) => ({
       id: Number(n.duelnpc_id), name: plainText(n.npc_name), level: Number(n.npc_level) || 0, weaponId: Number(n.weapon_id) || 0,
       readyIn: Math.max(0, delay - (Number(n.arrival_delta) || 0)),
     })),
-    difficulty: String(json.npcs?.difficulty ?? ''),
+    difficulty: String(npcs.difficulty ?? ''),
     motivation: Number(json.motivation) || 0,
     npcMotivation: Number(json.motivation_npc) || 0,
   };
@@ -53,11 +55,11 @@ export class DuelApi {
   async fightNpc(npcId: number): Promise<NpcDuelResult> {
     const json = await this.client.remoteCall('duel', 'duel_npc', { duelnpc_id: npcId });
     if (json.error) throw new Error(errText(json, 'NPC duel'));
-    const d = json.data ?? {};
-    const hit = (p: any) => (p && p.damage ? Number(p.damage) : null);
+    const d = obj(json.data);
+    const hit = (p: unknown) => (obj(p).damage ? Number(obj(p).damage) : null);
     return {
       result: plainText(d.duelResult ?? ''),
-      rounds: (Array.isArray(d.rounds) ? d.rounds : []).map((r: any) => ({ own: hit(r.own), other: hit(r.other) })),
+      rounds: objs(d.rounds).map((r) => ({ own: hit(r.own), other: hit(r.other) })),
       energy: num(json.energy), health: num(json.health), money: num(json.money), experience: num(json.experience), level: num(json.level),
       died: !!json.attacker_died,
       data: parseDuelData(json),
@@ -68,9 +70,9 @@ export class DuelApi {
   async opponents(page = 0, distance = 7200): Promise<{ opponents: DuelOpponent[]; next: boolean }> {
     const json = await this.client.remoteCall('duel', 'search_op', { distance, order_by: 'ASC', page, sort: 'range', next: false });
     if (json.error) throw new Error(errText(json, 'Duel opponents'));
-    const ol = json.oplist ?? {};
+    const ol = obj(json.oplist);
     return {
-      opponents: (Array.isArray(ol.pclist) ? ol.pclist : []).map((p: any) => ({
+      opponents: objs(ol.pclist).map((p) => ({
         playerId: Number(p.player_id), name: plainText(p.player_name), duelLevel: Number(p.duellevel) || 0, town: plainText(p.town_name ?? ''),
         x: Number(p.character_x) || 0, y: Number(p.character_y) || 0, allianceId: Number(p.alliance_id) || 0,
       })),

@@ -10,6 +10,7 @@
 import type { GameClient } from '../http/game-client.ts';
 import type { Position } from './character.ts';
 import { TILE, WORLD_H, WORLD_W } from './world.ts';
+import { arr, isObj, objs, vals, type JsonObject } from '../util/json.ts';
 
 export interface SpecialJob extends Position { jobId: number; groupId: number; gold: boolean; silver: boolean }
 export interface QuestGiver extends Position { names: string[]; employers: { key: string; name: string }[] }
@@ -55,7 +56,7 @@ export class TileCache {
     }
   }
 
-  ingest(json: Record<string, any>, requested: [number, number][]): void {
+  ingest(json: JsonObject, requested: [number, number][]): void {
     const now = Date.now();
     // Forget old entries of the requested tiles before re-adding.
     const inTiles = new Set(requested.map(([x, y]) => `${x},${y}`));
@@ -67,30 +68,34 @@ export class TileCache {
 
     const layers = Array.isArray(json.dynamic) ? json.dynamic : json.dynamic ? [json.dynamic] : [];
     for (const layer of layers) {
-      for (const ys of Object.values<any>(layer ?? {})) {
-        for (const entries of Object.values<any>(ys ?? {})) {
-          for (const e of entries as any[]) {
-            const d = e?.[1];
-            if (!d || typeof d !== 'object') continue;
-            const key = `${d.x},${d.y}`;
+      for (const ys of vals(layer)) {
+        for (const list of vals(ys)) {
+          for (const e of vals(list)) {
+            const d = arr(e)[1];
+            if (!isObj(d)) continue;
+            const x = Number(d.x);
+            const y = Number(d.y);
+            const key = `${x},${y}`;
             if (d.job_id !== undefined && (d.gold || d.silver)) {
-              this.specialJobs.set(`${key}#${d.job_id}`, { x: d.x, y: d.y, jobId: d.job_id, groupId: d.group_id, gold: !!d.gold, silver: !!d.silver });
+              this.specialJobs.set(`${key}#${String(d.job_id)}`, { x, y, jobId: Number(d.job_id), groupId: Number(d.group_id), gold: !!d.gold, silver: !!d.silver });
             } else if (d.count !== undefined && d.town_id === undefined) {
-              this.crowds.set(key, { x: d.x, y: d.y, count: d.count });
+              this.crowds.set(key, { x, y, count: Number(d.count) });
             }
           }
         }
       }
     }
-    for (const ys of Object.values<any>(json.quests ?? {})) {
-      for (const entries of Object.values<any>(ys ?? {})) {
-        for (const e of entries as any[]) {
-          const d = e?.[1];
-          if (!d) continue;
-          const employers = (d.employer ?? [])
-            .filter((em: any) => em.visible !== false)
-            .map((em: any) => ({ key: String(em.key), name: String(em.name).replace(/&#039;/g, "'").replace(/&amp;/g, '&') }));
-          this.questGivers.set(`${d.x},${d.y}`, { x: d.x, y: d.y, names: employers.map((e: { name: string }) => e.name), employers });
+    for (const ys of vals(json.quests)) {
+      for (const list of vals(ys)) {
+        for (const e of vals(list)) {
+          const d = arr(e)[1];
+          if (!isObj(d)) continue;
+          const employers = objs(d.employer)
+            .filter((em) => em.visible !== false)
+            .map((em) => ({ key: String(em.key), name: String(em.name).replace(/&#039;/g, "'").replace(/&amp;/g, '&') }));
+          const x = Number(d.x);
+          const y = Number(d.y);
+          this.questGivers.set(`${x},${y}`, { x, y, names: employers.map((em) => em.name), employers });
         }
       }
     }

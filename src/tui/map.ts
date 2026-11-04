@@ -7,6 +7,7 @@ import type { Position } from '../game/character.ts';
 import { WORLD_H, WORLD_W, type Fort, type Town } from '../game/world.ts';
 import { distance } from '../game/jobs.ts';
 import { formatDuration, money, truncate } from './format.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -14,7 +15,7 @@ export const ZOOMS = [32, 64, 128, 256, 512, 1024];
 
 export interface MapView { x: number; y: number; zoom: number }
 
-export interface Seg { text: string; color?: string; dim?: boolean; bold?: boolean; inverse?: boolean }
+export interface Seg { text: string; color?: string | undefined; dim?: boolean | undefined; bold?: boolean | undefined; inverse?: boolean | undefined }
 
 interface Cell { ch: string; prio: number; color?: string; dim?: boolean; bold?: boolean }
 
@@ -245,7 +246,7 @@ export function MapScreen(p: MapScreenProps) {
     h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: panelFocused ? 'gray' : 'cyan', width: cols + 2, flexShrink: 0 },
       ...grid.map((segs, r) =>
         h(Text, { key: r, wrap: 'truncate' },
-          ...segs.map((s, i) => h(Text, { key: i, color: s.color, dimColor: s.dim, bold: s.bold, inverse: s.inverse }, s.text)))),
+          ...segs.map((s, i) => h(Text, defined({ key: i, color: s.color, dimColor: s.dim, bold: s.bold, inverse: s.inverse }), s.text)))),
     ),
     h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: panelFocused ? 'cyan' : 'gray', width: panelW, paddingX: 1, flexShrink: 0 },
       h(Text, { bold: true, wrap: 'truncate' }, p.searching ? `Find: ${p.search}▏` : `${county?.name ?? 'Map'} · zoom ${view.zoom}px`),
@@ -263,7 +264,7 @@ export function MapScreen(p: MapScreenProps) {
         }
         if (e.kind === 'fort') return h(Text, { key: idx, inverse: sel, wrap: 'truncate', color: 'red' }, truncate(`F ${e.fort.name}`, w));
         if (e.kind === 'quest') return h(Text, { key: idx, inverse: sel, wrap: 'truncate', color: 'magenta' }, truncate(`? ${e.name}`, w));
-        if (e.kind === 'text') return h(Text, { key: idx, inverse: sel, wrap: 'truncate', color: e.color }, truncate(e.text, w));
+        if (e.kind === 'text') return h(Text, defined({ key: idx, inverse: sel, wrap: 'truncate', color: e.color }), truncate(e.text, w));
         const j = e.option.job;
         const v = j.values.long ?? j.values.middle ?? j.values.short;
         const quest = state.mapHighlight?.jobIds.has(j.id);

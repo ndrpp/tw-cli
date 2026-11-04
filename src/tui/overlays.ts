@@ -4,6 +4,7 @@ import type { GameState } from '../game/state.ts';
 import { POI_STYLE, type Poi } from '../game/poi.ts';
 import { formatDuration, money, truncate } from './format.ts';
 import type { Hotel } from '../game/hotel.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -235,7 +236,7 @@ export function HotelOverlay({ state, hotel, selected, width, height }: { state:
     h(Text, { dimColor: true, wrap: 'truncate' }, `Distance ${hotel.waytime || '—'} · Duration 8 hours${hotel.attackable ? ` · can be attacked until ${hotel.attackable}` : ''}`),
     h(Text, { dimColor: true, wrap: 'truncate' }, `Now: energy ${c.energy}/${c.maxEnergy} · health ${c.health}/${c.maxHealth}`),
     h(Text, null, ' '),
-    ...hotel.rooms.map((r, i) => h(Text, { key: r.key, inverse: i === selected, color: r.available ? undefined : 'gray', wrap: 'truncate' },
+    ...hotel.rooms.map((r, i) => h(Text, defined({ key: r.key, inverse: i === selected, color: r.available ? undefined : 'gray', wrap: 'truncate' }),
       `${'★'.repeat(r.level).padEnd(5)} ${truncate(r.name, 22)} ${`+${r.energy} energy`.padStart(11)} ${`+${r.health} HP`.padStart(9)}  `,
       h(Text, { color: r.free ? 'green' : 'yellow' }, r.free ? 'free' : money(r.costs)),
       r.available ? '' : '  (not available)')),

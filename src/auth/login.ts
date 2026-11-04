@@ -10,6 +10,7 @@ import { INTERACTIVE_POLICY, type HostPolicy } from '../http/throttle.ts';
 import { parseBootstrap, type Bootstrap } from './bootstrap.ts';
 import type { FingerprintProfile } from '../fingerprint/profile.ts';
 import { recordFingerprint } from '../fingerprint/record.ts';
+import { obj, type JsonObject } from '../util/json.ts';
 
 export class AuthError extends Error {}
 
@@ -55,18 +56,18 @@ async function checkLogin(world: WorldConfig, creds: Credentials, jar: CookieJar
     ajax: true,
   }, policy);
   const text = await res.text();
-  let data: { player_id?: unknown; password?: unknown; playerWorlds?: Record<string, unknown>; error?: unknown; msg?: unknown; message?: unknown };
+  let data: JsonObject;
   try {
-    data = JSON.parse(text);
+    data = obj(JSON.parse(text));
   } catch {
     throw new AuthError(`Login check returned non-JSON (${text.slice(0, 80)}…)`);
   }
   const playerId = Number(data.player_id);
   if (!Number.isInteger(playerId) || playerId <= 0 || typeof data.password !== 'string' || !data.password) {
-    const reason = [data.error, data.msg, data.message].find((v) => typeof v === 'string' && v) as string | undefined;
+    const reason = [data.error, data.msg, data.message].find((v): v is string => typeof v === 'string' && v !== '');
     throw new AuthError(`Login rejected${reason ? `: ${reason}` : ' (wrong name or password?)'}`);
   }
-  const worlds = Object.keys(data.playerWorlds ?? {}).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  const worlds = Object.keys(obj(data.playerWorlds)).map(Number).filter((n) => Number.isInteger(n) && n > 0);
   return { playerId, token: data.password, worlds };
 }
 

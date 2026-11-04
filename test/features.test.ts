@@ -27,11 +27,11 @@ const { parseQuest, plainText, groupByChain } = await import('../src/game/quests
 const { parseHotel, defaultRoom } = await import('../src/game/hotel.ts');
 const { ChatPoller, encodeChatRequest, makeClientId } = await import('../src/realtime/chat.ts');
 const { App } = await import('../src/tui/app.ts');
-const { gearDelta } = await import('../src/tui/character.ts');
 
 const WORLD = 'https://en32.the-west.net';
 const FAST = { concurrency: 1, minIntervalMs: 0, jitterMs: 0, maxRetries: 0, baseBackoffMs: 0, maxBackoffMs: 0, breakerThreshold: 100, breakerCooldownMs: 0, timeoutMs: 5_000 };
-const json = (name: string) => JSON.parse(readFileSync(`${FIX}${name}.json`, 'utf8'));
+/** Captured server JSON (fixtures are loosely shaped, so tests read them as any). */
+const json = (name: string): any => JSON.parse(readFileSync(`${FIX}${name}.json`, 'utf8'));
 const BAG = json('bag_init.sample');
 const ITEMS = json('items.sample');
 const QUESTS = json('open_quests.sample');
@@ -156,8 +156,8 @@ test('quest route: needs from requirements, greedy plan per energy, unmet reason
   ];
   const needs = questNeeds(quests, (id) => (id === 700000 ? 1 : 0), (id) => `item${id}`, (id) => `job${id}`);
   const by = Object.fromEntries(needs.map((n) => [n.key, n]));
-  assert.equal(by['item:700'].amount, 6, '5 + 2 needed, 1 in the bag');
-  assert.deepEqual([by['job:92:runs'].amount, by['job:36:seconds'].amount], [4, 1800]);
+  assert.equal(by['item:700']?.amount, 6, '5 + 2 needed, 1 in the bag');
+  assert.deepEqual([by['job:92:runs']?.amount, by['job:36:seconds']?.amount], [4, 1800]);
   const job = (id: number, groupid: number, items: Record<string, number>, ok = true): any => ({
     id, groupid, name: `job${id}`, jobPoints: ok ? 10 : 0, workPoints: 1, laborPoints: ok ? 9 : -1, durations: {},
     values: {
@@ -261,7 +261,7 @@ test('chat long-poll: request format, Status/UserUpdate → character, invalid s
   const state = makeState();
   let n = 0;
   routes['/gameservice/chat/'] = (body) => {
-    const req = JSON.parse(decodeURIComponent(body));
+    const req: any = JSON.parse(decodeURIComponent(body));
     assert.equal(req.messageid, ++n);
     assert.deepEqual(req.batch.map((b: any) => b.op), ['nop']);
     assert.equal(req.clid.length, 22);
@@ -369,7 +369,7 @@ test('state: wear/unwear, skills save, quest accept/finish, sleep send the clien
   const save = calls.find((c) => c.url.includes('save_skill_changes'))!;
   const form = new URLSearchParams(save.body);
   assert.equal(form.get('modifier'), 'add');
-  assert.deepEqual(JSON.parse(form.get('data')!).skill_modifications, { trade: 1 });
+  assert.deepEqual((JSON.parse(form.get('data')!) as any).skill_modifications, { trade: 1 });
 
   await state.loadQuests();
   const mike = state.quests.find((q) => q.id === 280)!;
@@ -488,7 +488,7 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     await settle(200);
     const save = calls.find((c) => c.url.includes('save_skill_changes'));
     assert.ok(save, 'skills saved');
-    assert.deepEqual(JSON.parse(new URLSearchParams(save.body).get('data')!).skill_modifications, { trade: 1 });
+    assert.deepEqual((JSON.parse(new URLSearchParams(save.body).get('data')!) as any).skill_modifications, { trade: 1 });
 
     // Quests: finishable quest is listed first; Enter → confirm → finish_quest.
     await keys('\x1b');
@@ -606,7 +606,7 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     assert.match(plain(), /•Job report: Tending pigs/);
     assert.match(plain(), /measuring…/);
     await keys('g', 'j');
-    assert.match(plain(), /ends [\d:]+(\s?[AP]M)? · \+50 xp \$90/);
+    assert.match(plain(), /ends (\w{3} )?[\d:]+(\s?[AP]M)? · \+50 xp \$90/, 'a weekday when it ends after midnight');
     state.queue = [];
     assert.match(plain(), /enough LP only/);
     assert.doesNotMatch(plain(), /Saddler/);

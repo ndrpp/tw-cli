@@ -16,6 +16,7 @@
 // Report bodies (`page`) and posts are HTML / BBCode; shown as plain text.
 import type { GameClient } from '../http/game-client.ts';
 import { plainText } from './quests.ts';
+import { arr, obj, objs, type JsonObject } from '../util/json.ts';
 
 export const REPORT_FOLDERS = [
   { key: 'all', label: 'All' },
@@ -103,9 +104,7 @@ function formatItems(lines: string[]): string[] {
  * has empty placeholders the browser fills from its js (tw2widget.Item(...).setCount(n)).
  */
 export function reportItems(info: unknown, itemName: (id: number) => string): string[] {
-  const items = (info as { items?: unknown } | null)?.items;
-  if (!Array.isArray(items)) return [];
-  return items.filter((i) => Array.isArray(i) && Number(i[0])).map((i) => `${itemName(Number(i[0]))} x ${Number(i[2]) || 1}`);
+  return arr(obj(info).items).filter(Array.isArray).filter((i) => Number(i[0])).map((i) => `${itemName(Number(i[0]))} x ${Number(i[2]) || 1}`);
 }
 
 /** The report list's popupData shows found items as one <img alt="name"> each: "name x count", in order. */
@@ -227,18 +226,19 @@ export function reportLogLine(r: ReportRow): string {
   return `${job}${gains ? `: ${gains}` : ''}${found ? ` · found ${found}` : ''}`;
 }
 
-function fail(json: any, what: string): never {
-  throw new Error(plainText(json?.msg ?? json?.error ?? `${what} failed`));
+function fail(json: JsonObject, what: string): never {
+  throw new Error(plainText(json.msg ?? json.error ?? `${what} failed`));
 }
 
 /** show_report reply → job, items, seconds (see MailApi.jobReport). */
-export function parseJobReport(json: Record<string, any>): { jobId: number; items: [number, number][]; seconds: number | null } | null {
-  const info = json.reportInfo;
-  const jobId = Number(info?.job_id);
+export function parseJobReport(json: JsonObject): { jobId: number; items: [number, number][]; seconds: number | null } | null {
+  const info = obj(json.reportInfo);
+  const jobId = Number(info.job_id);
   if (String(json.reportType ?? '') !== 'job' || !jobId) return null;
-  const items: [number, number][] = (Array.isArray(info.items) ? info.items : [])
-    .filter((i: unknown) => Array.isArray(i) && Number(i[0]))
-    .map((i: unknown[]) => [Number(i[0]), Number(i[2]) || 1] as [number, number]);
+  const items = arr(info.items)
+    .filter(Array.isArray)
+    .filter((i) => Number(i[0]))
+    .map((i): [number, number] => [Number(i[0]), Number(i[2]) || 1]);
   const m = plainText(json.page).match(/(\d+)\s*(second|minute|hour)s?\b/i);
   const seconds = m ? Number(m[1]) * ({ second: 1, minute: 60, hour: 3600 } as Record<string, number>)[m[2]!.toLowerCase()]! : null;
   return { jobId, items, seconds };
@@ -260,7 +260,7 @@ export class MailApi {
     return {
       page: Number(json.page) || page,
       pages: Number(json.count) || 1,
-      reports: (Array.isArray(json.reports) ? json.reports : []).map((r: any) => ({
+      reports: objs(json.reports).map((r) => ({
         id: Number(r.report_id), title: plainText(r.title), hash: String(r.hash ?? ''), read: !!r.read,
         date: plainText(r.date_received), summary: withItems(popupText(r.popupData), popupItems(r.popupData)),
       })),
@@ -286,8 +286,8 @@ export class MailApi {
   }
 
   async deleteReport(id: number, folder: ReportFolder = 'all'): Promise<void> {
-    const json = await this.client.remoteCall('reports', 'delete_single_report', { report: id, type: folder, deleted: folder === 'deleted' });
-    if (Array.isArray(json) ? json[0] : json?.error) throw new Error('Report could not be removed');
+    const json = await this.client.remoteCallRaw('reports', 'delete_single_report', { report: id, type: folder, deleted: folder === 'deleted' });
+    if (Array.isArray(json) ? json[0] : obj(json).error) throw new Error('Report could not be removed');
   }
 
   async telegrams(page = 1): Promise<TelegramList> {
@@ -296,8 +296,8 @@ export class MailApi {
     return {
       page: Number(json.page) || page,
       pages: Number(json.count ?? json.pages) || 1,
-      telegrams: (Array.isArray(json.messages) ? json.messages : []).map((m: any) => {
-        const names: string[] = Array.isArray(m.partner_name) ? m.partner_name.map(String) : [];
+      telegrams: objs(json.messages).map((m) => {
+        const names = arr(m.partner_name).map(String);
         return {
           id: Number(m.message_id),
           subject: plainText(m.subject),
@@ -318,14 +318,14 @@ export class MailApi {
       subject: plainText(json.subject),
       page: Number(json.page) || 0,
       pages: Number(json.pages) || 1,
-      posts: (Array.isArray(json.posts) ? json.posts : []).map((p: any) => ({ from: p.name ? String(p.name) : 'System', date: plainText(p.post_date), text: bbText(p.text) })),
+      posts: objs(json.posts).map((p) => ({ from: p.name ? String(p.name) : 'System', date: plainText(p.post_date), text: bbText(p.text) })),
     };
   }
 
   /** Replies are [ok, message] arrays. */
   async reply(id: number, text: string): Promise<void> {
-    const r = await this.client.remoteCall('messages', 'reply', { message_id: id, text });
-    if (Array.isArray(r) ? !r[0] : r?.error) throw new Error(plainText(Array.isArray(r) ? r[1] : r.msg) || 'Reply failed');
+    const r = await this.client.remoteCallRaw('messages', 'reply', { message_id: id, text });
+    if (Array.isArray(r) ? !r[0] : obj(r).error) throw new Error(plainText(Array.isArray(r) ? r[1] : obj(r).msg) || 'Reply failed');
   }
 
   /** `to`: names separated by ; or , (MessagesWindow.Telegram.send checks: subject ≥ 1, text ≥ 3 characters). */
@@ -333,12 +333,12 @@ export class MailApi {
     if (!to.trim()) throw new Error('No recipient');
     if (!subject.trim()) throw new Error('The subject is empty');
     if (text.length < 3) throw new Error('The text has to be at least 3 characters long!');
-    const r = await this.client.remoteCall('messages', 'send', { to, subject, text, masstelegramm: 0 });
-    if (Array.isArray(r) ? !r[0] : r?.error) throw new Error(plainText(Array.isArray(r) ? r[1] : r.msg) || 'Sending failed');
+    const r = await this.client.remoteCallRaw('messages', 'send', { to, subject, text, masstelegramm: 0 });
+    if (Array.isArray(r) ? !r[0] : obj(r).error) throw new Error(plainText(Array.isArray(r) ? r[1] : obj(r).msg) || 'Sending failed');
   }
 
   async deleteTelegram(id: number): Promise<void> {
     const json = await this.client.remoteCall('messages', 'delete_messages', { messages: [id] });
-    if (json?.error) fail(json, 'messages/delete_messages');
+    if (json.error) fail(json, 'messages/delete_messages');
   }
 }

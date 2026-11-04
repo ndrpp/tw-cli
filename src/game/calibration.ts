@@ -7,6 +7,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { CONFIG_DIR } from '../auth/session-store.ts';
+import { entries, isObj, mergeDefaults, obj } from '../util/json.ts';
 
 export const CALIBRATION_FILE = () => join(CONFIG_DIR, 'calibration.json');
 
@@ -44,8 +45,12 @@ export class Calibration {
 
   static load(file: string): CalibrationData {
     try {
-      const raw = JSON.parse(readFileSync(file, 'utf8'));
-      return { ...structuredClone(EMPTY), ...raw, hp: { ...EMPTY.hp, ...raw.hp }, motivation: { ...EMPTY.motivation, ...raw.motivation }, rooms: { ...EMPTY.rooms, ...raw.rooms }, levelUps: { ...EMPTY.levelUps, ...raw.levelUps } };
+      const raw = obj(JSON.parse(readFileSync(file, 'utf8')));
+      const drops = entries(raw.drops).filter(([, d]) => isObj(d)).map(([key, d]) => {
+        const found = entries(obj(d).found).map(([id, n]): [string, number] => [id, Number(n) || 0]);
+        return [key, { runs: Number(obj(d).runs) || 0, found: Object.fromEntries(found) }] as const;
+      });
+      return { ...mergeDefaults(EMPTY, raw), drops: Object.fromEntries(drops) };
     } catch {
       return structuredClone(EMPTY);
     }

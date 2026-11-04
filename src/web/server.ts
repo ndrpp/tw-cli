@@ -13,6 +13,7 @@ import { FingerprintProfileError, readProfileRaw, validateProfile, type Fingerpr
 import { PROFILE_FILE } from '../auth/session-store.ts';
 import { DEFAULT_WORLD, ensureGame } from '../auth/session.ts';
 import { page } from './page.ts';
+import { obj } from '../util/json.ts';
 
 const FP_LIB = readFileSync(new URL('./assets/fingerprint2.js', import.meta.url), 'utf8');
 const MAX_BODY = 256 * 1024;
@@ -93,12 +94,12 @@ export function startWebServer(opts: WebOptions): Promise<{ url: string; token: 
 
       if (req.method === 'POST' && (url.pathname === '/api/fingerprint' || url.pathname === '/api/login')) {
         if (!(req.headers['content-type'] ?? '').startsWith('application/json')) return json(res, 415, { error: 'JSON only' });
-        const body = JSON.parse(await readBody(req));
+        const body = obj(JSON.parse(await readBody(req)));
 
         if (url.pathname === '/api/fingerprint') {
           let profile: FingerprintProfile;
           try {
-            profile = validateProfile({ ...body, version: 1 } as FingerprintProfile);
+            profile = validateProfile({ ...body, version: 1 });
           } catch (e) {
             return json(res, 400, { error: e instanceof FingerprintProfileError ? e.message : 'invalid profile' });
           }
@@ -117,7 +118,7 @@ export function startWebServer(opts: WebOptions): Promise<{ url: string; token: 
         if (!name || !password) return json(res, 400, { error: 'Name and password are required' });
         let profile: FingerprintProfile;
         try {
-          profile = validateProfile(readProfileRaw(profileFile) as FingerprintProfile);
+          profile = validateProfile(readProfileRaw(profileFile));
         } catch (e) {
           return json(res, 400, { error: `Save the fingerprint first (${e instanceof Error ? e.message : e})` });
         }

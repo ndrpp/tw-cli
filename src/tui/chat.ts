@@ -6,6 +6,7 @@ import { scrollWindow, truncate } from './format.ts';
 import { formKey, formValues, FormView, makeForm, wrapSegments, type FormState } from './form.ts';
 import { chatPresence, TOWN_ROLES, type ChatClient } from '../realtime/chat.ts';
 import { chatSegments, type Segment } from '../game/chatlinks.ts';
+import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 
@@ -67,7 +68,7 @@ export function ChatScreen({ state, width, height, onCapture, onExit, active = t
     ...roomIds.slice(start, end).map((id, i) => {
       const unread = live?.unreadRooms.has(id);
       const members = live?.rooms.get(id)?.members.size;
-      return h(Text, { key: id, inverse: start + i === idx, bold: unread, wrap: 'truncate' },
+      return h(Text, defined({ key: id, inverse: start + i === idx, bold: unread, wrap: 'truncate' }),
         `${unread ? '•' : ' '}${truncate(live!.roomTitle(id), leftW - 9)}${members ? ` ${members}` : ''}`);
     }),
     !live?.active ? h(Text, { color: 'yellow', wrap: 'wrap' }, 'Live updates are off. Press Esc, then L to connect.') : roomIds.length ? null : h(Text, { dimColor: true }, 'Connecting…'),
@@ -132,7 +133,7 @@ function TownRoster({ clients, members, width, height }: { clients: Map<string, 
       const role = TOWN_ROLES[c.townRights] ?? 'Guest';
       return h(Text, { key: c.id, wrap: 'truncate' },
         h(Text, { color }, dot), ' ', h(Text, { bold: c.townRights >= 2 }, truncate(c.name, nameW)), ' ',
-        h(Text, { color: c.townRights >= 2 ? 'yellow' : undefined, dimColor: c.townRights < 2 }, role.padEnd(roleW).slice(0, roleW)), ` L${c.level}`);
+        h(Text, defined({ color: c.townRights >= 2 ? 'yellow' : undefined, dimColor: c.townRights < 2 }), role.padEnd(roleW).slice(0, roleW)), ` L${c.level}`);
     }),
     rows.length > roomRows ? h(Text, { dimColor: true }, `+${rows.length - roomRows} more`) : null,
     rows.length === 0 ? h(Text, { dimColor: true }, 'No clients yet.') : null,
@@ -149,7 +150,7 @@ function lineSegments(state: ScreenProps['state'], head: string, text: string, o
 }
 
 function segLine(segs: Segment[], key: number, wrap?: 'truncate') {
-  return h(Text, { key, wrap }, ...(segs.length ? segs.map((s, i) => h(Text, { key: i, color: s.color }, s.text)) : [' ']));
+  return h(Text, { key, wrap }, ...(segs.length ? segs.map((s, i) => h(Text, defined({ key: i, color: s.color }), s.text)) : [' ']));
 }
 
 /** Rooms (town, saloon, …) then whispers, in the order both chat views show them. */

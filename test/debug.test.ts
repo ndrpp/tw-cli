@@ -35,7 +35,7 @@ test('debug log: hourly JSONL files, older than 24 h pruned; old sim data droppe
   const files = readdirSync(dir).sort();
   assert.ok(!files.includes(`${old}.jsonl`), 'older than a day: deleted');
   assert.ok(files.includes(`${recent}.jsonl`) && files.includes('notes.txt'));
-  const lines = readFileSync(log.file!, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const lines = readFileSync(log.file!, 'utf8').trim().split('\n').map((l): any => JSON.parse(l));
   assert.equal(lines.length, 60);
   assert.deepEqual(lines[0].data, { i: 0 }, 'the file keeps everything');
   assert.equal(typeof log.entries[0]!.data, 'string', 'memory keeps the newest 50 snapshots');

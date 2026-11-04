@@ -29,7 +29,8 @@ const { App } = await import('../src/tui/app.ts');
 
 const WORLD = 'https://en32.the-west.net';
 const FAST = { concurrency: 1, minIntervalMs: 0, jitterMs: 0, maxRetries: 0, baseBackoffMs: 0, maxBackoffMs: 0, breakerThreshold: 100, breakerCooldownMs: 0, timeoutMs: 5_000 };
-const json = (name: string) => JSON.parse(readFileSync(`${FIX}${name}.json`, 'utf8'));
+/** Captured server JSON (fixtures are loosely shaped, so tests read them as any). */
+const json = (name: string): any => JSON.parse(readFileSync(`${FIX}${name}.json`, 'utf8'));
 const BAG = json('bag_init.sample');
 const ITEMS = json('items.sample');
 const QUESTS = json('open_quests.sample');
@@ -472,7 +473,7 @@ test('duels: NPC list and fight, opponents, player duel is a task', async () => 
     data: { rounds: [{ own: { damage: 30 }, other: null }, { own: null, other: { damage: 12 } }], duelResult: '<b>You won!</b>' },
     npcs, energy: 38, health: 288, money: 70, experience: 1040, level: 30, motivation: 0.8, motivation_npc: 0.9, attacker_died: false,
   });
-  routes['/game.php?window=task&action=add'] = (body) => ({ tasks: { 0: { task: { type: 'duel', queueId: 5, date_start: 1, date_done: 2, data: { title: 'Bob', coords: { x: 300, y: 100 } } } } } });
+  routes['/game.php?window=task&action=add'] = () => ({ tasks: { 0: { task: { type: 'duel', queueId: 5, date_start: 1, date_done: 2, data: { title: 'Bob', coords: { x: 300, y: 100 } } } } } });
   await state.loadDuels();
   assert.deepEqual(state.duels!.npcs.map((n) => n.name), ['Dusty Joe', 'Slim']);
   assert.equal(state.duelOpponents[0]!.name, 'Bob');
@@ -491,7 +492,7 @@ test('chat: rooms and history from Status / Text / tells, sending is a second re
   const state = makeState();
   const sent: any[] = [];
   routes['/gameservice/chat/'] = (body) => {
-    const req = JSON.parse(decodeURIComponent(body));
+    const req: any = JSON.parse(decodeURIComponent(body));
     if (req.batch[0].op === 'send') {
       sent.push(req.batch[0]);
       return { timenow: Date.now(), batch: [{ id: 'Text', t: 5, payload: { cid: 'client_42', to: 'room_town_1421', message: req.batch[0].message } }] };
@@ -991,7 +992,7 @@ test('autopilot runner: queues what the energy covers, sleeps when out, wakes at
   await new Promise((r) => setTimeout(r, 20));
   (s.runner as any).lastCheck = 0;
   await s.runner.step();
-  assert.deepEqual(added.map((a) => a.type + a.jobId), ['job7', 'job7', 'job7', 'sleep'], 'then a sleep in the last slot: 4 energy left, no regen');
+  assert.deepEqual(added.map((a) => `${a.type}${a.jobId}`), ['job7', 'job7', 'job7', 'sleep'], 'then a sleep in the last slot: 4 energy left, no regen');
   assert.equal(s.queue.length, 4);
   assert.ok(s.log.some((l) => /Autopilot: queued/.test(l.msg)));
   // Debug log: the planner's input / output with the context, and the decision to queue.

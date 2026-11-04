@@ -73,5 +73,8 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
   ✚ item, ◷ wait, ★ level-up, ⚔ duel, ! quest, ✉ mail. One-cell text symbols only; emoji are two cells wide
   and misalign Ink columns. Used in the header, jobs queue, home working panel, autopilot plan and Q view.
 - Coloured wrapped text (chat lines): `wrapSegments()` in `form.ts` wraps `{text, color}` runs like `wrap()`.
+- Ink props may be left out but not set to `undefined` (`exactOptionalPropertyTypes`): wrap props with a
+  conditional value in `defined({ color: sel ? 'cyan' : undefined })`. Own components type such props
+  `x?: T | undefined` instead.
 - Tests render with a `PassThrough` stdout (`isTTY`, `columns`, `rows`) and strip ANSI; a stub state must be
   re-rendered by hand (`app.rerender`) since it does not emit `change`.
