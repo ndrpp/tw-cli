@@ -49,7 +49,9 @@ screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
   bag, consumables, gear, queue, budget, needs, failures. Logged with every replan; live under **Now**.
 - Per-tick decisions use `debug.once(key, …)`, which logs only when the title changes. Keep titles free of
   values that change every tick (live energy) and put those in `data`, or the log fills up once a second.
-- Planner input jobs list each duration's `items` as `[itemId, percent]`, so a logged plan can be replayed.
+- Planner input jobs list each duration's `items` as `[itemId, percent]` and the job's `groupid`, so a logged plan
+  can be replayed: locations from `job_groups` in the cached minimap (`cache/minimap-*.json`), `wayTime` =
+  distance × `travelSpeed` × character speed (check it against `context.homeTown.seconds`), the rest as logged.
 - Memory: 3000 entries; only the newest 50 `sim` entries keep their data (the files keep all of it).
 
 ## How it plans
@@ -70,6 +72,13 @@ screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
   runs cover the same time and compare: HP under `sleepBelow` → health item that lifts it over, else HP sleep
   (wake ≥ `wakeAbove`) · cash over `bank.above` → walk + deposit (own town within `ownTownWithin`, else nearest
   within `maxDetour`, else later) · your inserts at their time · best job.
+- **Bank walk is sticky**: the deposit is an on-the-spot action, so only the walk goes into the server queue. The
+  runner records that walk (`bankWalk` in `autopilot.json`, kept across restarts) and passes its town as
+  `bankTownId`. While the queue ends there, the deposit comes first whatever the cash projection says, so no job
+  is queued behind the walk. Without this, one replan whose projected cash dipped under `bank.above` put a job
+  after the walk, and the next one walked to town a second time (live, 2026-11-04: `telegraph → Slobozia →
+  Prospecting → Slobozia`, replayed from the debug log). The record is dropped after the deposit, or when the
+  walk is gone from the queue and you are not in that town.
 - **Job score**: per goal (quest progress × weight, XP incl. quest rewards, money incl. quest rewards, products
   = expected drops × sell price) gain per cost, divided by the goal's **exchange rate** and weighted by rank (1,
   0.25, 0.06, 0.015) or custom weights. Exchange rates = best gain per cost per goal from where the server queue

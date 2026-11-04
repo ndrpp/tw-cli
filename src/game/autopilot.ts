@@ -49,6 +49,11 @@ export interface PlanInput {
   homeTownId?: number;
   /** Named towns, for banking. */
   towns: { id: number; name: string; at: Position }[];
+  /**
+   * Town of a bank walk already queued: when the queue ends there, deposit first whatever the cash projection
+   * says, so no job is queued behind the walk and the trip is not made twice.
+   */
+  bankTownId?: number;
   /** Money the autopilot may still spend today. */
   budget: number;
   /** Step keys that keep failing: not planned. */
@@ -342,17 +347,20 @@ export function planAutopilot(input: PlanInput): Plan {
   };
 
   /** Walk to the bank town and deposit; null when no bank is within the allowed detour. */
-  const bankPlan = (anyDistance = false): PlannedTask[] | null => {
+  const bankPlan = (anyDistance = false, townId?: number): PlannedTask[] | null => {
     const s = tl.final;
     const named = input.towns.filter((t) => !skip.has(`bank:${t.id}`));
     if (!named.length) return null;
     const home = named.find((t) => t.id === input.homeTownId);
-    let town = home && wayTime(s.at, home.at) <= cfg.ownTownWithin ? home : undefined;
+    let town = named.find((t) => t.id === townId) ?? (home && wayTime(s.at, home.at) <= cfg.ownTownWithin ? home : undefined);
     if (!town) {
       town = named.reduce((a, b) => (wayTime(s.at, b.at) < wayTime(s.at, a.at) ? b : a));
       if (!anyDistance && wayTime(s.at, town.at) > cfg.bank.maxDetour) return null; // bank when the route passes a town
     }
-    const why = `cash $${Math.round(s.cash).toLocaleString('en-US')} is over $${cfg.bank.above.toLocaleString('en-US')}: banking it`;
+    const cash = `$${Math.round(s.cash).toLocaleString('en-US')}`;
+    const why = s.cash > cfg.bank.above
+      ? `cash ${cash} is over $${cfg.bank.above.toLocaleString('en-US')}: banking it`
+      : `the queued bank walk ends here: depositing ${cash}`;
     const deposit: PlannedTask = {
       module: 'bank', key: `bank:${town.id}`, why,
       step: { kind: 'action', title: `Deposit at ${town.name}`, cash: -s.cash },
@@ -392,8 +400,9 @@ export function planAutopilot(input: PlanInput): Plan {
         continue;
       }
     }
-    if (mods.bank && !banked && s.cash > cfg.bank.above) {
-      const b = bankPlan();
+    const bankDue = input.bankTownId !== undefined && s.cash > 0 && input.towns.some((t) => t.id === input.bankTownId && t.at.x === s.at.x && t.at.y === s.at.y);
+    if (mods.bank && !banked && (s.cash > cfg.bank.above || bankDue)) {
+      const b = bankPlan(false, bankDue ? input.bankTownId : undefined);
       banked = true; // once per plan; the next replan (after depositing) looks again
       if (b) {
         push(...b);

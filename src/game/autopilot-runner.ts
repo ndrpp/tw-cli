@@ -4,7 +4,7 @@
 // a fresh plan is clearly better. Failures back off 1 → 5 → 15 min; after 3 the step is left out of plans.
 import type { FormValue } from '../http/form.ts';
 import type { GameState } from './state.ts';
-import type { PlannedTask } from './autopilot-config.ts';
+import type { AutopilotFile, PlannedTask } from './autopilot-config.ts';
 import { duelOutlook, fingerprint } from './autopilot-config.ts';
 import { DuelApi } from './duels.ts';
 import { parseConsumable, planAutopilot, type Consumable, type HotelOption, type Plan, type PlanInput } from './autopilot.ts';
@@ -203,6 +203,7 @@ export class AutopilotRunner {
       consumables: this.consumables(),
       homeTownId: c.homeTown?.id,
       towns: s.world.towns.filter((t) => t.name).map((t) => ({ id: t.id, name: t.name!, at: { x: t.x, y: t.y } })),
+      bankTownId: this.bankWalk()?.townId,
       budget: this.budget(),
       skip: this.skipped(),
       motivation: s.calibration.motivation,
@@ -266,7 +267,7 @@ export class AutopilotRunner {
       ...rest,
       skip: [...(skip ?? [])],
       jobs: jobs.map((j) => ({
-        id: j.id, name: j.name, motivation: j.motivation, danger: j.danger, doable: j.jobPoints >= j.workPoints,
+        id: j.id, groupid: j.groupid, name: j.name, motivation: j.motivation, danger: j.danger, doable: j.jobPoints >= j.workPoints,
         excluded: input.rules.excludedJobs.includes(j.id) || undefined,
         locations: locations(j.groupid)?.length ?? 0,
         values: Object.fromEntries(Object.entries(j.values).map(([k, v]) => [k, v && { s: v.duration, e: v.energy, xp: v.experience, $: v.money, items: v.items?.map((i) => [i.itemId, i.percent]) }])),
@@ -542,6 +543,8 @@ export class AutopilotRunner {
         const t = batch[i];
         if (!t) return;
         if (t.key.startsWith('insert:')) this.dropInsert(t.key);
+        const deposit = tasks[tasks.indexOf(t) + 1]?.action;
+        if (t.step.kind === 'walk' && deposit?.type === 'deposit') s.updateAutopilot((f) => (f.bankWalk = { queueId: q.queueId, townId: deposit.townId }));
         if (t.step.kind === 'sleep') {
           if (t.wake) this.wakes.set(q.queueId, t.wake);
           s.sleepRates.set(q.queueId, { energyRate: t.step.energyRate, healthRate: t.step.healthRate });
@@ -562,6 +565,17 @@ export class AutopilotRunner {
     } catch (err) {
       this.fail(batch[0]!.key, `${batch[0]!.step.title}: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  /** The queued bank walk still owed a deposit: while it is queued or you stand in its town; forgotten otherwise. */
+  private bankWalk(): AutopilotFile['bankWalk'] {
+    const s = this.state;
+    const w = s.autopilot.bankWalk;
+    if (!w) return null;
+    if (s.queue.some((q) => q.queueId === w.queueId) || s.townHere?.id === w.townId) return w;
+    s.debug.add('autopilot', 'Bank walk gone without a deposit: forgotten', { bankWalk: w, position: s.character.position });
+    s.updateAutopilot((f) => (f.bankWalk = null));
+    return null;
   }
 
   /** An inserted step was carried out: its rule is done. */
@@ -591,6 +605,7 @@ export class AutopilotRunner {
     const townId = t.action.townId;
     if (s.townHere?.id !== townId) return this.fail(t.key, `${t.step.title}: not in that town yet`);
     const cash = s.character.cash;
+    if (s.autopilot.bankWalk) s.updateAutopilot((f) => (f.bankWalk = null));
     if (cash <= 0) return void this.replan('nothing to deposit');
     try {
       const r = await s.autopilotCall(() => deposit(s.client, townId, cash), `deposit $${cash}`);

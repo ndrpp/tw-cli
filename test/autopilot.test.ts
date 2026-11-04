@@ -268,6 +268,24 @@ test('planner: banks cash over the limit at home when close, not beyond the deto
   assert.equal(far.tasks[0]!.step.kind, 'job', 'Far is past the 30 min detour: bank later');
 });
 
+test('planner: a queued bank walk gets its deposit first even when the cash projection dips under the limit', async () => {
+  const { planAutopilot } = await import('../src/game/autopilot.ts');
+  const { parseAutopilotFile } = await import('../src/game/autopilot-config.ts');
+  const f = parseAutopilotFile(null);
+  const towns = [{ id: 9, name: 'Home', at: { x: 300, y: 0 } }];
+  const fixed: TimelineStep[] = [{ kind: 'walk', title: 'Home', at: { x: 300, y: 0 }, fixed: { start: 1000, end: 1000 + way({ x: 0, y: 0 }, { x: 300, y: 0 }) } }];
+  const plan = (bankTownId?: number) => planAutopilot({
+    start: start({ cash: 4000 }), fixed, jobs: [planJob(1, 1, { xp: 100, money: 10 })], locations: () => [{ x: 100, y: 0 }], wayTime: way,
+    config: f.config, rules: f.rules, needs: [], itemValue: () => 0, hotels: [], homeTownId: 9, towns, budget: 1000, maxJobs: 3, bankTownId,
+  });
+  // The live bug: $4,000 < $4,500, so a job went in behind the bank walk and a second walk to town followed it.
+  assert.equal(plan().tasks[0]!.step.kind, 'job');
+  const p = plan(9);
+  assert.deepEqual(p.tasks[0]!.action, { type: 'deposit', townId: 9 });
+  assert.match(p.tasks[0]!.why!, /queued bank walk/);
+  assert.equal(p.tasks.filter((t) => t.module === 'bank').length, 1, 'no second walk to town');
+});
+
 test('consumables: effects parsed from usebonus; energy item when it saves 30+ min, health item instead of a sleep', async () => {
   const { parseConsumable } = await import('../src/game/autopilot.ts');
   assert.deepEqual(parseConsumable(['Energy increase: 15%'], 'single'), { energy: 0.15, health: 0, motivation: 0 });

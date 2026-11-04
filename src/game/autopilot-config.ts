@@ -96,6 +96,8 @@ export interface AutopilotFile {
   spent: { day: string; amount: number };
   /** NPC duel results (yours and the autopilot's), newest last: what levels you beat and what they pay. */
   duels: DuelRecord[];
+  /** The bank walk the autopilot queued and has not deposited after yet: the deposit stays due on arrival. */
+  bankWalk: { queueId: number; townId: number } | null;
 }
 
 export interface DuelRecord { at: number; level: number; won: boolean; xp: number; energy: number }
@@ -129,7 +131,10 @@ export function parseAutopilotFile(json: unknown): AutopilotFile {
     : null;
   const spent = isObj(raw.spent) && typeof raw.spent.day === 'string' ? { day: raw.spent.day, amount: Number(raw.spent.amount) || 0 } : { day: '', amount: 0 };
   const duels = Array.isArray(raw.duels) ? raw.duels.filter((d: any) => isObj(d) && Number.isFinite(d.level)).slice(-200) as DuelRecord[] : [];
-  return { config, rules, plan, spent, duels };
+  const bankWalk = isObj(raw.bankWalk) && Number.isFinite(raw.bankWalk.queueId) && Number.isFinite(raw.bankWalk.townId)
+    ? { queueId: Number(raw.bankWalk.queueId), townId: Number(raw.bankWalk.townId) }
+    : null;
+  return { config, rules, plan, spent, duels, bankWalk };
 }
 
 export function loadAutopilot(file = AUTOPILOT_FILE()): AutopilotFile {
