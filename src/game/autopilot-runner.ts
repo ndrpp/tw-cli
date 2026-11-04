@@ -8,7 +8,7 @@ import type { PlannedTask } from './autopilot-config.ts';
 import { duelOutlook, fingerprint } from './autopilot-config.ts';
 import { DuelApi } from './duels.ts';
 import { parseConsumable, planAutopilot, type Consumable, type HotelOption, type Plan, type PlanInput } from './autopilot.ts';
-import { fetchHotel } from './hotel.ts';
+import { fetchHotel, roomRate } from './hotel.ts';
 import { QuestModule } from './autopilot-quests.ts';
 import { wayTime } from './jobs.ts';
 import { deposit, useItem } from './trade.ts';
@@ -16,9 +16,10 @@ import { deposit, useItem } from './trade.ts';
 const BACKOFF_S = [60, 300, 900];
 const HOTEL_TTL_MS = 10 * 60_000;
 const CHECK_MS = 2_000;
+const CANCEL_CHECK_MS = 30_000;
+/** work/index re-read: motivation (calibration and job values) changes as jobs are done. */
+const JOBS_REFRESH_MS = 30 * 60_000;
 
-/** Hotel rooms' energy/health as % of max per hour (unverified, docs/autopilot.md). */
-const roomRate = (v: number) => Math.max(0, v) / 100;
 
 export class AutopilotRunner {
   plan: Plan | null = null;
@@ -31,9 +32,16 @@ export class AutopilotRunner {
   private failures = new Map<string, { count: number; until: number }>();
   private wakes = new Map<number, { energy: number; health: number }>();
   private lastCancel = 0;
+  /** Last cancel check (it plans twice): at most every CANCEL_CHECK_MS, or right after a replan. */
+  private lastCancelCheck = 0;
+  private jobsAt = Date.now();
+  /** Sleeps the autopilot queued: energy and time when queued, to measure the room's real rate on wake-up. */
+  private sleeps = new Map<number, { energy: number; at: number; rate: number }>();
   private resumed = false;
   private duelsAt = 0;
   private acting = false;
+  /** Why the next fingerprint-driven replan happens, when it is not just "inputs changed". */
+  private replanReason: string | null = null;
 
   private quests: QuestModule;
 
@@ -110,10 +118,11 @@ export class AutopilotRunner {
             at: Date.now(),
             option: {
               townId: id, name: h.townName, at: { x: town.x, y: town.y },
-              rooms: h.rooms.filter((r) => r.available).map((r) => ({ key: r.key, name: r.name, cost: r.free ? 0 : r.costs, energyRate: roomRate(r.energy), healthRate: roomRate(r.health) })),
+              rooms: h.rooms.filter((r) => r.available).map((r) => ({ key: r.key, name: r.name, cost: r.free ? 0 : r.costs, energyRate: roomRate(r.energy) * s.calibration.roomScale, healthRate: roomRate(r.health) })),
             },
           });
           this.lastPrint = ''; // new hotel data: replan
+          this.replanReason = 'hotel data';
         }).catch(() => {});
       }
       const o = this.hotels.get(id)?.option;
@@ -141,8 +150,9 @@ export class AutopilotRunner {
     const s = this.state;
     const c = s.character;
     return {
-      queue: s.queue.map((q) => [q.queueId, q.end]),
-      c: [c.position, c.level, c.experience, c.cash, c.deposit, c.serverValues],
+      // Rounded: queue times come back with sub-ms jitter from the clock offset on every poll.
+      queue: s.queue.map((q) => [q.queueId, Math.round(q.end)]),
+      c: [c.position, c.level, c.experience, c.cash, c.deposit, Object.values(c.serverValues).map(Math.round)],
       quests: s.quests.map((q) => [q.id, q.requirements.map((r) => r.solved)]),
       needs: s.autopilotNeeds().map((n) => [n.key, n.amount]),
       jobs: s.jobs.map((j) => [j.id, j.motivation, j.jobPoints, j.values.long?.experience]),
@@ -155,8 +165,21 @@ export class AutopilotRunner {
     };
   }
 
-  private snapshot(fixedQueue = this.state.queue, energyBonus = 0, hotels = this.hotelOptions()): Plan {
-    return planAutopilot(this.planInput(fixedQueue, energyBonus, hotels));
+  /** A plan from these inputs; `rates` keeps a cancel check's alternatives in the current plan's units. */
+  private snapshot(fixedQueue = this.state.queue, energyBonus = 0, hotels = this.hotelOptions(), rates = this.plan?.rates): Plan {
+    return planAutopilot({ ...this.planInput(fixedQueue, energyBonus, hotels), rates });
+  }
+
+  /** Jobs with drop rates blended with what job reports showed (calibration.ts). */
+  private calibratedJobs(): GameState['jobs'] {
+    const cal = this.state.calibration;
+    if (!Object.keys(cal.data.drops).length) return this.state.jobs;
+    return this.state.jobs.map((j) => ({
+      ...j,
+      values: Object.fromEntries(Object.entries(j.values).map(([k, v]) => [k, v && {
+        ...v, items: v.items?.map((i) => ({ ...i, expected: cal.dropRate(j.id, k, i.itemId, i.expected) })),
+      }])),
+    }));
   }
 
   private planInput(fixedQueue = this.state.queue, energyBonus = 0, hotels = this.hotelOptions()): PlanInput {
@@ -166,9 +189,10 @@ export class AutopilotRunner {
       start: {
         now: s.clock.now(), at: c.position, energy: Math.min(c.maxEnergy, c.energy + energyBonus), maxEnergy: c.maxEnergy, health: c.health, maxHealth: c.maxHealth,
         energyRegen: c.energyRegen, healthRegen: c.healthRegen, level: c.level, experience: c.experience, maxLevel: c.maxLevel, cash: c.cash,
+        healthPerLevel: c.lpPerPoint,
       },
       fixed: fixedQueue.map((t) => s.queuedStep(t)),
-      jobs: s.jobs,
+      jobs: this.calibratedJobs(),
       locations: (g) => s.locations.get(g),
       wayTime: (a, b) => wayTime(a, b, s.travelSpeed, c.speed),
       config: this.cfg,
@@ -181,6 +205,8 @@ export class AutopilotRunner {
       towns: s.world.towns.filter((t) => t.name).map((t) => ({ id: t.id, name: t.name!, at: { x: t.x, y: t.y } })),
       budget: this.budget(),
       skip: this.skipped(),
+      motivation: s.calibration.motivation,
+      hpScale: s.calibration.hpScale,
     };
   }
 
@@ -204,7 +230,8 @@ export class AutopilotRunner {
       position: c.position, townHere: s.townHere?.name ?? null, queueEnd: s.queueEndPosition,
       quests: s.quests.map((q) => ({
         id: q.id, title: q.title, chain: q.group, finishable: q.finishable,
-        inScope: needs.some((n) => n.quests.includes(q.title)) || undefined,
+        inScope: needs.some((n) => n.quests.includes(q.soloTitle || q.title)) || undefined,
+        blocker: s.questBlocker(q) ?? undefined,
         giver: q.employerName, giverSeconds: q.employerAt ? way(q.employerAt) : null,
         requirements: q.requirements.map((r) => {
           const src = r.solved ? [] : s.requirementSources(r).sort((a, b) => (a.way ?? Infinity) - (b.way ?? Infinity));
@@ -226,6 +253,8 @@ export class AutopilotRunner {
       server: c.serverValues, regen: { energyPerHour: c.energyRegen, healthPerHour: c.healthRegen },
       level: c.level, experience: c.experience, cash: c.cash, deposit: c.deposit, budgetLeft: this.budget(),
       needs,
+      calibration: s.calibration.summary(),
+      rates: this.plan?.rates,
       failures: Object.fromEntries([...this.failures].map(([k, f]) => [k, { count: f.count, until: new Date(f.until).toISOString() }])),
     };
   }
@@ -240,7 +269,7 @@ export class AutopilotRunner {
         id: j.id, name: j.name, motivation: j.motivation, danger: j.danger, doable: j.jobPoints >= j.workPoints,
         excluded: input.rules.excludedJobs.includes(j.id) || undefined,
         locations: locations(j.groupid)?.length ?? 0,
-        values: Object.fromEntries(Object.entries(j.values).map(([k, v]) => [k, v && { s: v.duration, e: v.energy, xp: v.experience, $: v.money }])),
+        values: Object.fromEntries(Object.entries(j.values).map(([k, v]) => [k, v && { s: v.duration, e: v.energy, xp: v.experience, $: v.money, items: v.items?.map((i) => [i.itemId, i.percent]) }])),
       })),
     };
   }
@@ -288,7 +317,14 @@ export class AutopilotRunner {
     if (now - this.lastCheck >= CHECK_MS) {
       this.lastCheck = now;
       const print = fingerprint(this.inputs(this.hotelOptions()));
-      if (print !== this.lastPrint) this.replan(this.lastPrint ? 'inputs changed' : 'start');
+      if (print !== this.lastPrint) {
+        this.replan(this.replanReason ?? (this.plan ? 'inputs changed' : 'start'));
+        this.replanReason = null;
+      }
+      if (now - this.jobsAt >= JOBS_REFRESH_MS) {
+        this.jobsAt = now;
+        void s.loadJobs(true);
+      }
       if (this.cfg.running && !this.resumed) {
         this.resumed = true;
         s.info('Autopilot resumed.');
@@ -368,12 +404,34 @@ export class AutopilotRunner {
       s.queue = res.queue;
       if (res.energy !== undefined) c.setEnergy(res.energy);
       this.wakes.delete(head.queueId);
+      this.measureRoom(head, res.energy);
       s.info(`Autopilot: woke up (energy ${before}/${wake.energy}, HP ${c.health}/${Math.round(wake.health)}).`);
       void s.syncCharacter('after wake-up'); // checks the sleep kept its energy (unverified until seen live)
     } catch (err) {
       this.fail(`wake:${head.queueId}`, `wake-up failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     return true;
+  }
+
+  /**
+   * The room's real energy rate from a sleep the autopilot queued and cancelled: energy at the start (the value
+   * when queued plus base regen until the sleep began) against the server's energy after the cancel. Counted
+   * only when uncapped (below max) and after 15+ minutes of sleep.
+   */
+  private measureRoom(t: GameState['queue'][number], after: number | undefined): void {
+    const s = this.state;
+    const c = s.character;
+    const q = this.sleeps.get(t.queueId);
+    this.sleeps.delete(t.queueId);
+    if (!q || after === undefined || q.rate <= 0) return;
+    const now = s.clock.now();
+    const begin = Math.max(q.at, t.start);
+    const hours = (now - begin) / 3600;
+    const startEnergy = Math.min(c.maxEnergy, q.energy + (c.maxEnergy * c.energyRegen * Math.max(0, begin - q.at)) / 3600);
+    if (hours < 0.25 || after >= c.maxEnergy - 1) return void s.debug.add('autopilot', 'Room rate: not measured (short or capped sleep)', { hours, startEnergy, after });
+    const rate = (after - startEnergy) / (c.maxEnergy * hours);
+    s.calibration.addRoom(rate / q.rate);
+    s.debug.add('autopilot', `Room rate measured: ${(rate * 100).toFixed(1)} % / h vs ${(q.rate * 100).toFixed(1)} % read`, { hours, startEnergy, after, roomScale: s.calibration.roomScale });
   }
 
   /**
@@ -384,6 +442,8 @@ export class AutopilotRunner {
     const s = this.state;
     const cfg = this.cfg;
     if (s.queue.length === 0 || Date.now() - this.lastCancel < cfg.cancel.cooldown * 1000 || !this.plan) return false;
+    if (Date.now() - this.lastCancelCheck < CANCEL_CHECK_MS) return false;
+    this.lastCancelCheck = Date.now();
     const current = this.plan.value + this.queueValue(s.queue);
     const refund = (from: number) => s.queue.slice(from).reduce((a, t) => a + (t.type === 'job' ? this.jobEnergy(t.jobId) : 0), 0);
     const nowS = s.clock.now();
@@ -478,6 +538,8 @@ export class AutopilotRunner {
         if (t.key.startsWith('insert:')) this.dropInsert(t.key);
         if (t.step.kind === 'sleep') {
           if (t.wake) this.wakes.set(q.queueId, t.wake);
+          s.sleepRates.set(q.queueId, { energyRate: t.step.energyRate, healthRate: t.step.healthRate });
+          this.sleeps.set(q.queueId, { energy: s.character.energy, at: s.clock.now(), rate: t.step.energyRate / s.calibration.roomScale });
           this.spend(t.step.cost ?? 0);
         }
       });

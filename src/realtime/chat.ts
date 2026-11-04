@@ -27,6 +27,7 @@ import type { HostPolicy } from '../http/throttle.ts';
 
 export interface SelfUpdate {
   x?: number; y?: number; level?: number; experience?: number; money?: number; deposit?: number;
+  /** energyAt / healthAt: seconds relative to now when the value was measured (energy_date, usually ≤ 0). */
   energy?: number; energyAt?: number; health?: number; healthAt?: number; townId?: number;
 }
 

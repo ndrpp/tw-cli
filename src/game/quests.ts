@@ -46,6 +46,16 @@ export interface Quest {
   limited: string;
 }
 
+/**
+ * End of a time-limited quest from its `limited` text ("… until the 16.11.2026 at 12:00."), as epoch seconds
+ * (read as UTC: the game's timezone is unverified), or null.
+ */
+export function questEnds(limited: string): number | null {
+  const m = limited.match(/until(?: the)? (\d{1,2})\.(\d{1,2})\.(\d{4})(?: at (\d{1,2}):(\d{2}))?/i);
+  if (!m) return null;
+  return Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] ?? 23), Number(m[5] ?? 59)) / 1000;
+}
+
 export interface QuestEmployer { key: string; name: string; x: number | null; y: number | null; open: Quest[] }
 
 const NAMED_ENTITIES: Record<string, string> = {

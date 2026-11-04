@@ -6,6 +6,7 @@ import { render, useApp, useInput, useWindowSize } from 'ink';
 import { ensureGame } from '../auth/session.ts';
 import { AuthError, type OpenGame } from '../auth/login.ts';
 import { GameState } from '../game/state.ts';
+import { Calibration } from '../game/calibration.ts';
 import { App, LoadingFrame } from './app.ts';
 import { SetupScreen } from './setup.ts';
 import { formatDuration } from './format.ts';
@@ -27,6 +28,7 @@ const CONNECT_LABEL = 'Connecting to The West';
 function makeState(game: OpenGame, prev?: GameState | null, connectedSince?: number): GameState {
   const state = new GameState(game, () => ensureGame({ credentials: noPrompt }));
   state.debug.dir = join(CONFIG_DIR, 'debug'); // hourly files, kept 24 h
+  state.calibration = new Calibration(); // calibration.json: what the autopilot learned
   if (prev) state.carryOver(prev);
   void state.start(connectedSince ? { connect: { label: CONNECT_LABEL, startedAt: connectedSince, endedAt: Date.now() } } : {});
   return state;

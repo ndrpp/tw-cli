@@ -27,7 +27,8 @@ the relevant file in `docs/`.
 ## Layout
 - `src/game/`: game logic, no UI. `state.ts` (GameState: owns the client, keeps state in sync), one module per area
   (jobs, tasks, quests, hotel, trade, duels, …), the autopilot (`autopilot*.ts`, `timeline.ts`), `debug-log.ts` (`state.debug`: everything, with data;
-  hourly JSONL files kept 24 h in `<config dir>/debug/`, Debug screen `B`).
+  hourly JSONL files kept 24 h in `<config dir>/debug/`, Debug screen `B`), `calibration.ts` (what the
+  autopilot learns from reports, health, motivation and sleeps; `calibration.json`).
 - `src/tui/`: Ink (React) screens; `app.ts` is the shell (header, nav, ticker, global keys), `root.ts` connects.
 - `src/http/`, `src/auth/`, `src/fingerprint/`, `src/realtime/`: transport, login, fingerprint, chat long-poll.
 - `test/`: node:test. `features`/`social`/`setup` tests set `TW_CLI_HOME` to a temp dir; new tests that write

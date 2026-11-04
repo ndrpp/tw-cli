@@ -7,6 +7,9 @@ import type { GameClient } from '../http/game-client.ts';
 export interface HotelRoom { key: string; name: string; level: number; available: boolean; free: boolean; costs: number; energy: number; health: number }
 export interface Hotel { townId: number; townName: string; level: number; own: boolean; waytime: string; attackable: string | null; rooms: HotelRoom[] }
 
+/** A room's energy / health number as a fraction of max per hour (read as % per hour; checked by calibration.ts). */
+export const roomRate = (v: number) => Math.max(0, v) / 100;
+
 export function parseHotel(townId: number, json: Record<string, any>): Hotel {
   const rooms = Object.entries<any>(json.rooms ?? {}).map(([key, r]) => ({
     key,

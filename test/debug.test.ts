@@ -15,6 +15,11 @@ test('debug log: diff of snapshots (lists as added / removed), once() dedupes by
   log.once('k', 'autopilot', 'go');
   assert.deepEqual(log.entries.map((e) => e.title), ['waiting', 'go']);
   assert.equal(debugJson({ m: new Map([[1, 2]]), s: new Set([3]), i: Infinity }), '{"m":{"1":2},"s":[3],"i":"Infinity"}');
+  const at = { x: 1, y: 2 };
+  assert.equal(debugJson({ a: at, b: [at] }), '{"a":{"x":1,"y":2},"b":[{"x":1,"y":2}]}', 'a shared object is not a cycle');
+  const loop: any = { name: 'loop' };
+  loop.self = loop;
+  assert.equal(debugJson(loop), '{"name":"loop","self":"[cycle]"}');
 });
 
 test('debug log: hourly JSONL files, older than 24 h pruned; old sim data dropped from memory only', () => {

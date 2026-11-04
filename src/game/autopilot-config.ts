@@ -27,12 +27,16 @@ export interface AutopilotConfig {
   /** Hotel and bank: own town when it is this close (s of walking). */
   ownTownWithin: number;
   bank: { above: number; maxDetour: number };
-  consumables: { energy: boolean; health: boolean; motivation: boolean; buy: boolean; reserve: number };
-  quests: { repeatable: boolean; excludedChains: string[] };
+  consumables: { energy: boolean; health: boolean; motivation: boolean; reserve: number };
+  /** unfinishable: also work on quests with a requirement the autopilot cannot get (off: skip those quests). */
+  quests: { repeatable: boolean; unfinishable: boolean; excludedChains: string[] };
   duels: { forXp: boolean; levelMargin: number };
   cancel: { horizon: number; margin: number; cooldown: number };
-  /** Jobs the plan looks ahead (sleeps, bank stops and items come on top). */
-  planJobs: number;
+  /**
+   * Seconds each queued run costs for its queue slot: the TUI is not always open, and while it is closed only
+   * the queued tasks keep you busy, so short runs that fill slots leave you idle.
+   */
+  slotCost: number;
   spend: { daily: number };
 }
 
@@ -46,11 +50,11 @@ export const DEFAULT_CONFIG: AutopilotConfig = {
   hp: { sleepBelow: 0.5, wakeAbove: 0.7 },
   ownTownWithin: 3600,
   bank: { above: 4500, maxDetour: 1800 },
-  consumables: { energy: true, health: true, motivation: false, buy: false, reserve: 2 },
-  quests: { repeatable: false, excludedChains: [] },
+  consumables: { energy: true, health: true, motivation: false, reserve: 2 },
+  quests: { repeatable: false, unfinishable: false, excludedChains: [] },
   duels: { forXp: true, levelMargin: 0 },
   cancel: { horizon: 6 * 3600, margin: 0.1, cooldown: 900 },
-  planJobs: 10,
+  slotCost: 600,
   spend: { daily: 1000 },
 };
 

@@ -53,17 +53,28 @@ export interface PlanInput {
   budget: number;
   /** Step keys that keep failing: not planned. */
   skip?: Set<string>;
-  /** Overrides config.planJobs (tests). */
+  /** Cap on planned jobs (default MAX_JOBS; tests use fewer). The plan otherwise runs to the horizon. */
   maxJobs?: number;
+  /** Exchange rates per goal (best gain per cost); a cancel check passes the current plan's so values compare. */
+  rates?: Record<Goal, number>;
+  /** Calibrated motivation model (calibration.ts): lost per run, recovered per hour (fractions). */
+  motivation?: { perRun: number; perHour: number };
+  /** Calibrated multiplier for the danger → HP heuristic. */
+  hpScale?: number;
 }
+
+/** Safety cap on jobs in one plan; normally the horizon ends it first. */
+export const MAX_JOBS = 200;
 
 export interface Plan {
   tasks: PlannedTask[];
   timeline: Timeline;
   /** Why the first task (or nothing). */
   why: string;
-  /** Weighted value of the planned tasks inside the horizon. */
+  /** Weighted value of the planned tasks inside the horizon (in units of the exchange rates). */
   value: number;
+  /** The exchange rates the values are in: best gain per cost per goal at the plan's start. */
+  rates: Record<Goal, number>;
 }
 
 /** Expected HP lost on a run: a heuristic until danger damage is known (danger % of 10 % max HP per hour). */
@@ -79,6 +90,8 @@ interface Candidate {
   travel: number;
   energy: number;
   hpLoss: number;
+  /** The job's own XP for this run (motivation applied), without quest rewards. */
+  xp: number;
   gains: Record<string, number>;
   raw: Record<Goal, number>;
   cost: number;
@@ -86,23 +99,65 @@ interface Candidate {
 }
 
 const doable = (j: JobInfo) => j.jobPoints >= j.workPoints;
+const GOAL_KEYS: Goal[] = ['quests', 'xp', 'money', 'products'];
+
+/** Best gain per cost of each goal in a candidate list. */
+function bestRates(list: { raw: Record<Goal, number>; cost: number }[]): Record<Goal, number> {
+  const best: Record<Goal, number> = { quests: 0, xp: 0, money: 0, products: 0 };
+  for (const c of list) for (const g of GOAL_KEYS) best[g] = Math.max(best[g], c.raw[g] / c.cost);
+  return best;
+}
+
+/** The duration key whose run time is closest to `seconds` (queued jobs carry no key). */
+function closestDuration(job: JobInfo, seconds: number): DurationKey | undefined {
+  let found: DurationKey | undefined;
+  let gap = Infinity;
+  for (const k of DURATION_KEYS) {
+    const d = job.values[k];
+    if (d && Math.abs(d.duration - seconds) < gap) [found, gap] = [k, Math.abs(d.duration - seconds)];
+  }
+  return found;
+}
 
 export function planAutopilot(input: PlanInput): Plan {
   const { config: cfg, start, wayTime } = input;
   const mods = cfg.modules;
   const weights = goalWeights(cfg);
-  // Plans cfg.planJobs jobs ahead; the horizon only bounds the value compared when cancelling.
-  const planJobs = Math.max(1, input.maxJobs ?? cfg.planJobs);
+  // Plans to the horizon (so plans of short and long runs cover the same time and compare); MAX_JOBS caps it.
+  const planJobs = Math.max(1, input.maxJobs ?? MAX_JOBS);
   const maxTasks = planJobs * 3 + 4;
   const horizonEnd = start.now + Math.max(3600, cfg.cancel.horizon);
+  const motivation = input.motivation ?? { perRun: 0.02, perHour: 0 };
+  const hpScale = input.hpScale ?? 1;
+  const slotCost = Math.max(0, cfg.slotCost ?? 0); // a queue slot's worth: short runs leave you idle when the TUI is closed
   let jobsPlanned = 0;
   const opts = { wayTime };
   const walkWeight = (start.maxEnergy * start.energyRegen) / 3600 || 1 / 600;
+  // Per hour: a run takes its duration, but its energy must be regenerated too. Base regen runs while you
+  // work (max), a hotel room only while you sleep (added); whichever gets the energy back sooner counts.
+  const perEnergyBase = start.energyRegen > 0 ? 3600 / (start.maxEnergy * start.energyRegen) : Infinity;
+  const bestRoom = Math.max(0, ...input.hotels.flatMap((h) => h.rooms.filter((r) => r.cost <= input.budget).map((r) => r.energyRate)));
+  const perEnergyRoom = bestRoom > 0 ? 3600 / (start.maxEnergy * bestRoom) : Infinity;
+  const runSeconds = (duration: number, energy: number) => {
+    const t = Math.min(Math.max(duration, energy * perEnergyBase), duration + energy * perEnergyRoom);
+    return Number.isFinite(t) ? t : duration;
+  };
   const skip = input.skip ?? new Set<string>();
   const excluded = new Set(input.rules.excludedJobs);
   const remaining: Record<string, number> = Object.fromEntries(input.needs.map((n) => [n.key, n.amount]));
   const totals: Record<string, number> = Object.fromEntries(input.needs.map((n) => [n.key, n.amount]));
   const runs = new Map<number, number>();
+  // Jobs already queued drop items too: what they will bring is not needed again.
+  for (const st of input.fixed) {
+    if (st.kind !== 'job') continue;
+    const job = input.jobs.find((j) => j.id === st.jobId);
+    const dur = job && closestDuration(job, st.duration);
+    if (!job || !dur) continue;
+    runs.set(job.id, (runs.get(job.id) ?? 0) + 1);
+    for (const [k, g] of Object.entries(runGains(job, dur, input.needs))) if ((remaining[k] ?? 0) > 0) remaining[k] = Math.max(0, remaining[k]! - g);
+  }
+  const needInfo = new Map(input.needs.map((n) => [n.key, n]));
+  let rates: Record<Goal, number> | null = input.rates ?? null;
   let budget = input.budget;
   let banked = false;
   const stock = new Map((input.consumables ?? []).map((c) => [c.itemId, c.count]));
@@ -133,9 +188,15 @@ export function planAutopilot(input: PlanInput): Plan {
     tl = projectTimeline(start, [...input.fixed, ...tasks.map((x) => x.step)], opts);
   };
 
-  /** All job candidates from a state, scored by the priority. */
-  const candidates = (from: Position, health: number): Candidate[] => {
+  /**
+   * All job candidates from a state, scored by the priority against the exchange rates. `level` sets the
+   * level-up refund (a level-up refills energy: each XP point brings maxEnergy ÷ XP-per-level of it back);
+   * `hours` from now sets the projected motivation.
+   */
+  const candidates = (from: Position, health: number, level = start.level, hours = 0): Candidate[] => {
     const list: Candidate[] = [];
+    const xpPerLevel = levelStartXp(level + 1, start.maxLevel) - levelStartXp(level, start.maxLevel);
+    const refundPerXp = xpPerLevel > 0 ? start.maxEnergy / xpPerLevel : 0;
     for (const job of input.jobs) {
       if (!doable(job) || excluded.has(job.id)) continue;
       const locs = input.locations(job.groupid);
@@ -150,30 +211,46 @@ export function planAutopilot(input: PlanInput): Plan {
         const v = job.values[duration];
         if (!v) continue;
         if (skip.has(`job:${job.id}:${duration}`)) continue;
-        const hpLoss = expectedHpLoss(job.danger, v.duration, start.maxHealth);
+        const hpLoss = expectedHpLoss(job.danger, v.duration, start.maxHealth) * hpScale;
         // Never plan a run that could take HP under the sleep threshold (50–70 %: keep working, safely).
         if (mods.hpSleep && health - hpLoss < cfg.hp.sleepBelow * start.maxHealth) continue;
         const gains = runGains(job, duration, input.needs);
+        // Quest progress (weighted by deadline), plus the share of the quests' rewards this progress earns.
         let quests = 0;
+        let rewardXp = 0;
+        let rewardMoney = 0;
         for (const [k, g] of Object.entries(gains)) {
           const rem = remaining[k] ?? 0;
-          if (rem > 1e-9) quests += Math.min(rem, g) / (totals[k] || 1);
+          if (rem <= 1e-9) continue;
+          const got = Math.min(rem, g);
+          const n = needInfo.get(k);
+          quests += (got / (totals[k] || 1)) * (n?.weight ?? 1);
+          rewardXp += got * (n?.xpPerUnit ?? 0);
+          rewardMoney += got * (n?.moneyPerUnit ?? 0);
         }
-        const fade = Math.max(0.5, 1 - 0.02 * (runs.get(job.id) ?? 0)); // repeats lower motivation and pay
+        // Motivation falls per run and recovers per hour; pay scales with it (heuristic until calibrated).
+        const m0 = job.motivation > 0 ? job.motivation : 1;
+        const m = Math.min(1, m0 - motivation.perRun * (runs.get(job.id) ?? 0) + motivation.perHour * hours);
+        const fade = Math.max(0.3, m / m0);
+        const xp = v.experience * fade;
         const products = (v.items ?? []).reduce((a, i) => a + i.expected * input.itemValue(i.itemId), 0);
         const hpSeconds = hpLoss > 0 ? regenSeconds(0, hpLoss, start.maxHealth, start.healthRegen) : 0;
+        // Energy net of the level-up refund; at least a quarter (the refill only tops up to the max).
+        const energy = Math.max(0.25 * v.energy, v.energy - (xp + rewardXp) * refundPerXp);
+        const extra = (Number.isFinite(hpSeconds) ? hpSeconds : 0) + slotCost;
         const cost = cfg.per === 'energy'
-          ? v.energy + (travel + (Number.isFinite(hpSeconds) ? hpSeconds : 0)) * walkWeight
-          : v.duration + travel + (Number.isFinite(hpSeconds) ? hpSeconds : 0);
+          ? energy + (travel + extra) * walkWeight
+          : runSeconds(v.duration, energy) + travel + extra;
         list.push({
-          job, duration, at, travel, energy: v.energy, hpLoss, gains, cost: Math.max(cost, 1e-6), score: 0,
-          raw: { quests, xp: v.experience * fade, money: v.money * fade, products: products * fade },
+          job, duration, at, travel, energy: v.energy, hpLoss, xp, gains, cost: Math.max(cost, 1e-6), score: 0,
+          raw: { quests, xp: xp + rewardXp, money: v.money * fade + rewardMoney, products: products * fade },
         });
       }
     }
-    // Normalise each goal by its best rate so the weights compare like with like.
-    const best: Record<Goal, number> = { quests: 0, xp: 0, money: 0, products: 0 };
-    for (const c of list) for (const g of Object.keys(best) as Goal[]) best[g] = Math.max(best[g], c.raw[g] / c.cost);
+    // Each goal in units of its exchange rate (the best rate at the plan's start), so a crumb of quest
+    // progress stays a crumb and values of different plans compare. A goal with no rate yet: this list's best.
+    const best = bestRates(list);
+    for (const g of GOAL_KEYS) if (rates && rates[g] > 0) best[g] = rates[g];
     for (const c of list) {
       c.score = 0;
       for (const g of Object.keys(best) as Goal[]) if (best[g] > 0) c.score += (weights[g] * (c.raw[g] / c.cost)) / best[g];
@@ -186,9 +263,9 @@ export function planAutopilot(input: PlanInput): Plan {
     const gap = levelStartXp(level + 1, start.maxLevel) - experience;
     if (gap <= 0) return 0;
     let best: { xp: number; energy: number } | null = null;
-    for (const c of candidates(from, health)) {
-      if (c.energy <= 0 || c.raw.xp <= 0) continue;
-      if (!best || c.raw.xp / c.energy > best.xp / best.energy) best = { xp: c.raw.xp, energy: c.energy };
+    for (const c of candidates(from, health, level)) {
+      if (c.energy <= 0 || c.xp <= 0) continue;
+      if (!best || c.xp / c.energy > best.xp / best.energy) best = { xp: c.xp, energy: c.energy };
     }
     if (!best) return null;
     const need = Math.ceil(gap / best.xp) * best.energy;
@@ -269,10 +346,13 @@ export function planAutopilot(input: PlanInput): Plan {
     return [{ module: 'bank', key: `walk:${town.id}`, why, step: { kind: 'walk', title: `Walk to ${town.name} (bank)`, at: town.at }, post: walkPost(town.id, 'town') }, deposit];
   };
 
+  // Exchange rates: fixed for the whole plan, from where the server queue ends (unless passed in).
+  if (!rates) rates = bestRates(candidates(tl.final.at, tl.final.health, tl.final.level));
+
   // Your inserted sleeps / bank stops, in time order: each goes in once the plan reaches its time.
   const inserts = [...input.rules.inserts].sort((a, b) => a.at - b.at);
   let value = 0;
-  while (tasks.length < maxTasks && jobsPlanned < planJobs) {
+  while (tasks.length < maxTasks && jobsPlanned < planJobs && tl.end < horizonEnd) {
     const s = tl.final;
     if (inserts.length && inserts[0]!.at <= tl.end) {
       const ins = inserts.shift()!;
@@ -305,7 +385,7 @@ export function planAutopilot(input: PlanInput): Plan {
       }
     }
     if (!mods.jobs) break;
-    const c = candidates(s.at, s.health)[0];
+    const c = candidates(s.at, s.health, s.level, Math.max(0, tl.end - start.now) / 3600)[0];
     if (!c) break;
     if (useMod && cfg.consumables.motivation && c.job.motivation < 0.75) {
       const item = pickItem('motivation', 0.01);
@@ -345,12 +425,14 @@ export function planAutopilot(input: PlanInput): Plan {
       why: `best ${goal ?? 'value'} per ${cfg.per === 'energy' ? 'energy' : 'hour'}: ${c.job.name} (${c.duration})`,
     });
     const last = tl.steps[tl.steps.length - 1]!;
-    if (last.end <= horizonEnd) value += c.score * c.cost;
+    // Value inside the horizon; a run crossing it counts for its share.
+    const inside = last.end <= horizonEnd ? 1 : Math.max(0, (horizonEnd - last.start) / Math.max(1, last.end - last.start));
+    value += c.score * c.cost * inside;
     runs.set(c.job.id, (runs.get(c.job.id) ?? 0) + 1);
     jobsPlanned++;
     for (const [k, g] of Object.entries(c.gains)) if ((remaining[k] ?? 0) > 1e-9) remaining[k] = Math.max(0, remaining[k]! - g);
   }
   const first = tasks[0];
   const why = first?.why ?? (!mods.jobs ? 'Queue jobs is off.' : 'Nothing worth doing (no doable job, or everything is excluded).');
-  return { tasks, timeline: tl, why, value };
+  return { tasks, timeline: tl, why, value, rates };
 }

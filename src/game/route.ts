@@ -19,6 +19,11 @@ export interface RouteNeed {
   itemId?: number;
   jobId?: number;
   quests: string[];
+  /** Autopilot extras (state.autopilotNeeds): urgency (1 normal, up to 2 for a quest about to expire). */
+  weight?: number;
+  /** The quests' XP / money rewards per unit of this need (each quest's reward spread over what it still needs). */
+  xpPerUnit?: number;
+  moneyPerUnit?: number;
 }
 
 export interface RouteStop {

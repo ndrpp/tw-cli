@@ -6,8 +6,12 @@ browser client's code; **unverified** = assumed, check live and update this file
 ## Time, energy, health
 - Server time: `Game.init.sincepoch`, refined by `POST /ntp.php` (epoch ms). `ServerClock` in `clock.ts`.
 - Regen is continuous: `max · regenFactor · seconds / 3600` (`Character.tick4Character`), for energy
-  (`energyRegenFactor`) and health (`healthRegenFactor`). Server values arrive with a timestamp (`energy_date`);
-  `CharacterState` regenerates locally from the last server value. Verified.
+  (`energyRegenFactor`) and health (`healthRegenFactor`). Live `UserUpdate`s carry `energy_date` /
+  `health_date` as an **offset in seconds from now** (negative: measured that long ago), not a timestamp:
+  `Character.setEnergy(e, d)` sets `energyDate = Game.getServerTime() + d` (seen live: `-1176`). Character.init has
+  no date (now). `CharacterState` regenerates locally from the last server value. Verified (debug log, en32).
+- Queue `date_start` / `date_done` come back with sub-ms differences between polls (clock offset): round them
+  before comparing.
 - Max HP: `100 + (level − 1)·lpPerPoint + healthSkill·(lpPerPoint + lpPerPointBonus)` (`calcMaxHealth`). Verified.
 - **Jobs pay their energy when queued** (task/add reply may carry the new `energy`; if it does not, subtract
   locally). Cancelling a queued job refunds it. Verified for queued; running-job refund unverified.

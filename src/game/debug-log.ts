@@ -17,20 +17,26 @@ const SIM_WITH_DATA = 50;
 /** How long debug files are kept. */
 export const DEBUG_RETENTION_MS = 24 * 3600_000;
 
-/** JSON that survives Maps, Sets, cycles and Infinity. */
+/** Plain data for JSON: Maps → objects, Sets → arrays, Infinity / bigint → strings; only true cycles are cut. */
+function plain(x: unknown, ancestors: Set<object>): unknown {
+  if (typeof x === 'number') return Number.isFinite(x) ? x : String(x);
+  if (typeof x === 'bigint') return String(x);
+  if (!x || typeof x !== 'object') return x;
+  if (ancestors.has(x)) return '[cycle]';
+  ancestors.add(x);
+  try {
+    if (typeof (x as { toJSON?: unknown }).toJSON === 'function') return (x as { toJSON(): unknown }).toJSON();
+    if (x instanceof Map) return Object.fromEntries([...x].map(([k, v]) => [String(k), plain(v, ancestors)]));
+    if (x instanceof Set || Array.isArray(x)) return [...x].map((v) => plain(v, ancestors));
+    return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, plain(v, ancestors)]));
+  } finally {
+    ancestors.delete(x);
+  }
+}
+
+/** JSON that survives Maps, Sets, cycles and Infinity; an object seen twice (not a cycle) is written twice. */
 export function debugJson(v: unknown, indent?: number): string {
-  const seen = new WeakSet<object>();
-  return JSON.stringify(v, (_k, x) => {
-    if (x instanceof Map) return Object.fromEntries(x);
-    if (x instanceof Set) return [...x];
-    if (typeof x === 'number' && !Number.isFinite(x)) return String(x);
-    if (typeof x === 'bigint') return String(x);
-    if (x && typeof x === 'object') {
-      if (seen.has(x)) return '[cycle]';
-      seen.add(x);
-    }
-    return x;
-  }, indent) ?? 'undefined';
+  return JSON.stringify(plain(v, new Set()), null, indent) ?? 'undefined';
 }
 
 export class DebugLog {

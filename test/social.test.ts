@@ -750,6 +750,72 @@ test('wake: a timer gap far above the interval counts as sleep; the rebuilt stat
   assert.equal(next.autoRoute?.retryAt, 0, 'retries right away after waking');
 });
 
+test('autopilot needs: quests it cannot finish are skipped; rewards and deadlines ride on the needs', async () => {
+  fakeServer();
+  const s = makeState();
+  s.jobs = [{ id: 7, groupid: 1, name: 'Cutting tobacco', jobPoints: 10, workPoints: 1, laborPoints: 9, motivation: 1, danger: null, durations: {}, luckValue: [0, 0],
+    values: { long: { duration: 3600, energy: 12, money: 10, experience: 50, luck: 0, items: [] } } } as any];
+  s.world.jobGroups = new Map([[1, [{ x: 110, y: 100 }]]]);
+  const soon = new Date((s.clock.now() + 12 * 3600) * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const limited = `until the ${pad(soon.getUTCDate())}.${pad(soon.getUTCMonth() + 1)}.${soon.getUTCFullYear()} at ${pad(soon.getUTCHours())}:00`;
+  const quest = (id: number, title: string, requirements: any[], o: any = {}) => ({ id, title, soloTitle: title, groupId: 1, group: 'Chain', employer: 'e', employerName: 'E', employerAt: null,
+    accepted: true, acceptable: false, finishable: false, requirements, rewards: [], rewardOptions: [], description: '', hint: '', limited: '', ...o });
+  s.quests = [
+    quest(1, 'Cut it', [{ solved: false, info: 'Cutting tobacco (0/4)', jobId: 7, kind: 'job' }], { rewards: [{ item: null, text: '500 Experience points' }, { item: null, text: '40 Dollars' }], limited }),
+    quest(2, 'Go there', [{ solved: false, info: 'Cutting tobacco (0/2)', jobId: 7, kind: 'job' }, { solved: false, info: 'Go to The Mexican', kind: 'other' }]),
+  ] as any;
+  assert.equal(s.questBlocker(s.quests[0]!), null);
+  assert.match(s.questBlocker(s.quests[1]!)!, /Go to The Mexican: the autopilot cannot do this/);
+  const [need] = s.autopilotNeeds();
+  assert.equal(need!.amount, 4, 'only the quest it can finish (4 runs, not 6)');
+  assert.equal(need!.xpPerUnit, 125, '500 XP over 4 runs');
+  assert.equal(need!.moneyPerUnit, 10);
+  assert.ok(need!.weight! > 1.8 && need!.weight! <= 2, 'ends in 12 h: nearly double');
+  s.updateAutopilot((f) => (f.config.quests.unfinishable = true));
+  assert.equal(s.autopilotNeeds()[0]!.amount, 6, 'toggle on: both');
+});
+
+test('calibration hooks: HP lost after a dangerous job; queued sleeps keep their room rates in the projection', async () => {
+  fakeServer();
+  const s = makeState();
+  const now = s.clock.now();
+  s.jobs = [{ id: 9, groupid: 1, name: 'Hunting', jobPoints: 10, workPoints: 1, laborPoints: 9, motivation: 1, danger: 50, durations: {}, luckValue: [0, 0],
+    values: { long: { duration: 3600, energy: 12, money: 10, experience: 50, luck: 0, items: [] } } } as any];
+  s.character.healthRegen = 0;
+  s.character.setHealth(300);
+  s.queue = [{ queueId: 5, type: 'job', start: now - 3600, end: now - 1, coords: { x: 1, y: 1 }, title: 'Hunting', jobId: 9, raw: {} }];
+  s.tick();
+  s.applySelf({ health: 280, healthAt: 0 });
+  assert.equal(s.calibration.data.hp.runs, 1);
+  assert.equal(s.calibration.data.hp.observed, 20);
+  assert.ok(s.debug.entries.some((e) => /Calibration: Hunting cost 20 HP/.test(e.title)));
+  s.queue = [{ queueId: 6, type: 'sleep', start: now, end: now + 8 * 3600, coords: { x: 1, y: 1 }, title: 'Sleep', raw: {} }];
+  s.sleepRates.set(6, { energyRate: 0.5, healthRate: 0.4 });
+  const st = s.queuedStep(s.queue[0]!) as any;
+  assert.deepEqual([st.energyRate, st.healthRate], [0.5, 0.4], 'not base regen');
+});
+
+test('live update: energy_date / health_date are offsets from now; queue time jitter does not replan', async () => {
+  fakeServer();
+  const s = makeState();
+  const now = s.clock.now();
+  s.character.energyRegen = 0.03;
+  s.applySelf({ energy: 66, energyAt: -3600, health: 300, healthAt: -780 });
+  assert.equal(s.character.energy, 69, '66 measured an hour ago at 3/h, not regen since 1970');
+  assert.ok(Math.abs(s.character.serverValues.energyAt - (now - 3600)) < 2);
+  assert.ok(Math.abs(s.character.serverValues.healthAt - (now - 780)) < 2);
+
+  s.queue = [{ queueId: 1, type: 'job', start: now, end: now + 3600.300001, coords: { x: 0, y: 0 }, title: 'job', raw: {} }];
+  const r = s.runner as any;
+  const print = () => JSON.stringify(r.inputs([]));
+  const before = print();
+  s.queue[0]!.end = now + 3600.299904;
+  assert.equal(print(), before, 'sub-ms jitter from the clock offset');
+  s.queue[0]!.end = now + 3700;
+  assert.notEqual(print(), before);
+});
+
 test('autopilot runner: queues what the energy covers, sleeps when out, wakes at the target, deposits, backs off', async () => {
   fakeServer();
   const s = makeState();

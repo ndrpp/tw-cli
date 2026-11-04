@@ -206,6 +206,26 @@ test('planner: the top goal decides the job; per hour vs per energy', async () =
   assert.match(off.why, /Queue jobs is off/);
 });
 
+test('planner: per hour counts the time to regenerate a run\'s energy (no 15 s runs when energy is short)', async () => {
+  const durations = (pct: [number, number, number]) => ({
+    short: { duration: 15, energy: 1, money: 25, experience: 5, luck: 0, items: [{ itemId: 700000, expected: pct[0] / 100, percent: pct[0] }] },
+    middle: { duration: 600, energy: 5, money: 116, experience: 23, luck: 0, items: [{ itemId: 700000, expected: pct[1] / 100, percent: pct[1] }] },
+    long: { duration: 3600, energy: 12, money: 246, experience: 48, luck: 0, items: [{ itemId: 700000, expected: pct[2] / 100, percent: pct[2] }] },
+  });
+  const jobs = [{ ...planJob(3, 3, { xp: 0, money: 0 }), values: durations([6, 128, 767]) }];
+  const needs = [{ key: 'item:700', label: 'Tobacco', amount: 40, unit: 'items', itemId: 700000, quests: ['Q'] }];
+  const perHour = (c: any) => (c.per = 'time');
+  // 3 energy an hour (the log that found this): energy is the limit, the long run wins.
+  const slow = await planWith({ jobs, needs, config: perHour, start: { energyRegen: 0.03 } });
+  assert.equal(slow.tasks[0]!.key, 'job:3:long');
+  // A fast hotel room makes energy cheap again: still long (12 energy back in ~11 min of sleep).
+  const hotels = [{ townId: 9, name: 'Home', at: { x: 0, y: 0 }, rooms: [{ key: 'cubby', name: 'Cubby', cost: 0, energyRate: 0.64, healthRate: 0.2 }] }];
+  assert.equal((await planWith({ jobs, needs, hotels, config: perHour, start: { energyRegen: 0.03 } })).tasks[0]!.key, 'job:3:long');
+  // Energy regenerates faster than short runs spend it: per hour, the short run is best (standing at the job).
+  const fast = await planWith({ jobs, needs, config: (c) => { perHour(c); c.slotCost = 0; }, start: { energyRegen: 40, at: { x: 50, y: 0 } } });
+  assert.equal(fast.tasks[0]!.key, 'job:3:short');
+});
+
 test('planner: quest needs come first with Quests on top; dangerous jobs are skipped near the HP threshold', async () => {
   const jobs = [planJob(1, 1, { xp: 100, money: 10 }), planJob(3, 3, { xp: 1, money: 1, items: [{ itemId: 700000, expected: 1, percent: 100 }] })];
   const needs = [{ key: 'item:700', label: 'Ham', amount: 2, unit: 'items', itemId: 700000, quests: ['Q'] }];
@@ -273,7 +293,7 @@ test('consumables: effects parsed from usebonus; energy item when it saves 30+ m
   assert.equal(low.tasks[0]!.step.kind, 'sleep', '100 + 100 is still under 50 %: sleep');
 });
 
-test('planner: looks 10 jobs ahead by default, past the 6 h cancel horizon; inserted sleep goes in at its time', async () => {
+test('planner: plans to the 6 h horizon (jobs of any length cover the same time); inserted sleep goes in at its time', async () => {
   const { planAutopilot } = await import('../src/game/autopilot.ts');
   const { parseAutopilotFile } = await import('../src/game/autopilot-config.ts');
   const f = parseAutopilotFile(null);
@@ -283,8 +303,9 @@ test('planner: looks 10 jobs ahead by default, past the 6 h cancel horizon; inse
     config: f.config, rules, needs: [], itemValue: () => 0, hotels, towns: [], budget: 1000,
   });
   const p = planAutopilot(input());
-  assert.equal(p.tasks.filter((t) => t.step.kind === 'job').length, 10);
-  assert.ok(p.timeline.end - start().now > 6 * 3600, '10 one-hour jobs reach past the horizon');
+  assert.equal(p.tasks.filter((t) => t.step.kind === 'job').length, 6, 'six one-hour jobs reach the horizon');
+  assert.ok(p.timeline.end - start().now >= 6 * 3600);
+  assert.ok(p.rates.xp > 0, 'the plan carries its exchange rates');
   const at = start().now + 2 * 3600;
   const ins = planAutopilot(input({ ...f.rules, inserts: [{ at, kind: 'sleep' }] }));
   const i = ins.tasks.findIndex((t) => t.key === `insert:sleep:${at}`);
@@ -363,4 +384,49 @@ test('duel outlook: needs 2+ results near the level, mostly wins; any loss in 24
   assert.equal(duelOutlook([win(20), win(22)], 30, now), null, 'nothing known near level 30');
   assert.equal(duelOutlook([win(20), win(22), { ...win(10), won: false, at: now - 3600 }], 21, now), null, 'lost today: no NPC duels');
   assert.deepEqual(duelOutlook([win(20), win(22), { ...win(40), won: false, at: now - 100_000 }], 21, now), { xp: 40, energy: 10 }, 'an old loss far away does not count');
+});
+
+test('planner: a level-up refunds energy, so XP lowers a run\'s energy cost (refill tops up to max)', async () => {
+  // Level 10 → 11 takes 393 XP: 300 XP brings back ~76 energy, so the 12-energy run costs its floor of 3.
+  const jobs = [planJob(1, 1, { xp: 300, money: 100 }), planJob(2, 2, { xp: 0, money: 110 })];
+  const p = await planWith({ jobs, config: (c) => (c.priority = ['money', 'xp', 'quests', 'products']) });
+  assert.equal((p.tasks[0]!.step as any).jobId, 1, '$100 for ~3 net energy beats $110 for 12');
+});
+
+test('planner: exchange rates are fixed per plan: once a need is nearly met, its crumbs lose to the next goal', async () => {
+  const jobs = [planJob(3, 3, { xp: 1, money: 0, items: [{ itemId: 700000, expected: 1, percent: 100 }] }), planJob(1, 1, { xp: 100, money: 0 })];
+  const needs = [{ key: 'item:700', label: 'Ham', amount: 1.1, unit: 'items', itemId: 700000, quests: ['Q'] }];
+  const p = await planWith({ jobs, needs });
+  assert.deepEqual(p.tasks.slice(0, 2).map((t) => (t.step as any).jobId), [3, 1], 'the 0.1 left is worth less than the XP job');
+});
+
+test('planner: drops of jobs already queued count toward needs', async () => {
+  const jobs = [planJob(3, 3, { xp: 1, money: 0, items: [{ itemId: 700000, expected: 1, percent: 100 }] }), planJob(1, 1, { xp: 100, money: 0 })];
+  const needs = [{ key: 'item:700', label: 'Ham', amount: 1, unit: 'items' as const, itemId: 700000, quests: ['Q'] }];
+  const { planAutopilot } = await import('../src/game/autopilot.ts');
+  const { parseAutopilotFile } = await import('../src/game/autopilot-config.ts');
+  const f = parseAutopilotFile(null);
+  const queued: any = { kind: 'job', title: 'job3', jobId: 3, at: { x: 50, y: 0 }, duration: 3600, energy: 0, xp: 1, money: 0, fixed: { start: 1_000_000, end: 1_003_600 } };
+  const p = planAutopilot({
+    start: start(), fixed: [queued], jobs, locations: (g) => ({ 1: [{ x: 100, y: 0 }], 3: [{ x: 50, y: 0 }] } as any)[g], wayTime: way, config: f.config, rules: f.rules,
+    needs, itemValue: () => 0, hotels: [], towns: [], budget: 1000, maxJobs: 2,
+  });
+  assert.equal((p.tasks[0]!.step as any).jobId, 1, 'the queued run already brings the ham');
+});
+
+test('planner: a queue slot costs time (the TUI is not always open), so runs that fill slots fast lose', async () => {
+  const job = { ...planJob(1, 1, { xp: 0, money: 0 }), values: {
+    short: { duration: 15, energy: 1, money: 2, experience: 0, luck: 0, items: [] },
+    long: { duration: 3600, energy: 12, money: 300, experience: 0, luck: 0, items: [] },
+  } };
+  const money = (slot: number) => (c: any) => { c.priority = ['money', 'xp', 'quests', 'products']; c.per = 'time'; c.slotCost = slot; };
+  const fast = { energyRegen: 40, at: { x: 100, y: 0 } };
+  assert.equal((await planWith({ jobs: [job], config: money(0), start: fast })).tasks[0]!.key, 'job:1:short');
+  assert.equal((await planWith({ jobs: [job], config: money(600), start: fast })).tasks[0]!.key, 'job:1:long');
+});
+
+test('timeline: a level-up raises max HP by lpPerPoint', () => {
+  const tl = projectTimeline(start({ experience: levelStartXp(11) - 1, healthPerLevel: 15 }), [job({ xp: 10 })], { wayTime: way });
+  assert.equal(tl.final.level, 11);
+  assert.equal(tl.final.health, 515);
 });

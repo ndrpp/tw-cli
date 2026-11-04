@@ -20,8 +20,8 @@ import { ItemCatalog, ItemSetCatalog, loadItemCatalog, loadItemSets, statsOf } f
 import { setBonusLines, type ItemStats, type StatContext } from './itemstats.ts';
 import { Inventory, InventoryApi } from './inventory.ts';
 import { SkillApi, Skills, type SkillPlan } from './skills.ts';
-import { QuestApi, type Quest, type QuestEmployer, type QuestRequirement } from './quests.ts';
-import { fetchHotel, type Hotel, type HotelRoom } from './hotel.ts';
+import { QuestApi, questEnds, type Quest, type QuestEmployer, type QuestRequirement } from './quests.ts';
+import { fetchHotel, roomRate, type Hotel, type HotelRoom } from './hotel.ts';
 import { ChatPoller, type SelfUpdate } from '../realtime/chat.ts';
 import { cachedJson } from '../util/disk-cache.ts';
 import { planRoute, questNeeds, type RouteNeed, type RouteObjective, type RoutePlan } from './route.ts';
@@ -35,6 +35,8 @@ import { loadAutopilot, saveAutopilot, type AutopilotFile } from './autopilot-co
 import { projectTimeline, type Timeline, type TimelineStep } from './timeline.ts';
 import { AutopilotRunner } from './autopilot-runner.ts';
 import { DebugLog, diffSnapshots } from './debug-log.ts';
+import { Calibration } from './calibration.ts';
+import { expectedHpLoss } from './autopilot.ts';
 import { RateTracker } from './rates.ts';
 
 export interface LogEntry { at: Date; level: 'info' | 'error'; msg: string }
@@ -98,6 +100,16 @@ export class GameState extends EventEmitter {
   debug = new DebugLog();
   private debugSnap: Record<string, unknown> | null = null;
   private debugStarted = new Set<number>();
+  /** What the autopilot learns from reports, health and motivation (memory only unless the TUI sets a file). */
+  calibration = new Calibration(null);
+  /** Rates of sleeps on the queue (the queue entry has none): queueId → fraction of max per hour. */
+  sleepRates = new Map<number, { energyRate: number; healthRate: number }>();
+  /** Dangerous jobs finished whose HP loss has not been seen yet (next server health value). */
+  private hpPending: { title: string; predicted: number } | null = null;
+  /** Job motivation at the last work/index read, and runs finished since. */
+  private motivationSeen = new Map<number, { m: number; at: number; runs: number }>();
+  /** Job reports already counted (ids). */
+  private reportsSeen = new Set<number>();
   busy = false;
   items: ItemCatalog | null = null;
   itemSets: ItemSetCatalog | null = null;
@@ -240,7 +252,10 @@ export class GameState extends EventEmitter {
       const done = this.queue.shift()!;
       this.character.position = done.coords;
       this.info(`Finished: ${done.title}`);
-      if (done.type === 'job') this.rates.jobsDone++;
+      if (done.type === 'job') {
+        this.rates.jobsDone++;
+        this.jobFinished(done);
+      }
       this.rates.lastTask = { title: done.title, type: done.type, end: done.end };
       changed = true;
     }
@@ -248,6 +263,75 @@ export class GameState extends EventEmitter {
     this.rates.record(now, c.experience, c.cash + c.deposit);
     this.watchDebug();
     return changed;
+  }
+
+  /** A queued job ended: count the run for motivation and expect its HP loss in the next health value. */
+  private jobFinished(t: QueuedTask): void {
+    const q = this.queuedJob(t);
+    if (!q) return;
+    const seen = this.motivationSeen.get(q.job.id);
+    if (seen) seen.runs++;
+    if (q.job.danger) {
+      const predicted = expectedHpLoss(q.job.danger, q.values.duration, this.character.maxHealth);
+      this.hpPending = { title: t.title, predicted: (this.hpPending?.predicted ?? 0) + predicted };
+    }
+  }
+
+  /**
+   * A fresh server health value after a dangerous job: the drop below the regen estimate is the job's HP loss.
+   * More than 30 % of max HP at once is taken for an attack and not counted.
+   */
+  private observeHealth(before: number, after: number): void {
+    const p = this.hpPending;
+    if (!p) return;
+    this.hpPending = null;
+    const lost = Math.max(0, before - after);
+    if (lost > 0.3 * this.character.maxHealth) return void this.debug.add('state', `HP drop ${lost} after ${p.title} looks like an attack: not calibrated`, { before, after, predicted: p.predicted });
+    this.calibration.addHp(p.predicted, lost);
+    this.debug.add('state', `Calibration: ${p.title} cost ${lost} HP (predicted ${Math.round(p.predicted)})`, { lost, predicted: p.predicted, hpScale: this.calibration.hpScale });
+  }
+
+  /** A level-up seen: did it refill energy (the planner assumes so)? */
+  private observeLevelUp(): void {
+    const c = this.character;
+    const refilled = c.energy >= c.maxEnergy - 1;
+    this.calibration.addLevelUp(refilled);
+    this.debug.add('state', `Calibration: level-up ${refilled ? 'refilled' : 'did NOT refill'} energy (${c.energy}/${c.maxEnergy})`, this.calibration.data.levelUps);
+  }
+
+  /** work/index read: each job's motivation change since the last read, with the runs done between. */
+  private observeMotivation(): void {
+    const now = this.clock.now();
+    for (const j of this.jobs) {
+      const prev = this.motivationSeen.get(j.id);
+      if (prev) {
+        const hours = (now - prev.at) / 3600;
+        // At 100 % recovery is invisible (capped): only uncapped pairs teach anything.
+        if ((prev.runs > 0 || hours > 0.25) && prev.m < 0.999 && j.motivation < 0.999) this.calibration.addMotivation(prev.runs, hours, j.motivation - prev.m);
+      }
+      this.motivationSeen.set(j.id, { m: j.motivation, at: now, runs: 0 });
+    }
+    this.debug.add('state', 'Calibration: job motivation read', this.calibration.motivation);
+  }
+
+  /** New job reports (from a report list): drops per job and duration. One show_report request each. */
+  async calibrateFromReports(rows: ReportRow[]): Promise<void> {
+    for (const r of rows) {
+      if (this.reportsSeen.has(r.id) || !/^job report/i.test(r.title)) continue;
+      this.reportsSeen.add(r.id);
+      try {
+        const rep = await this.mail.jobReport(r.id, r.hash);
+        const job = rep && this.jobs.find((j) => j.id === rep.jobId);
+        if (!rep || !job || rep.seconds === null) continue;
+        let dur: DurationKey | undefined;
+        for (const k of DURATION_KEYS) if (job.values[k]?.duration === rep.seconds) dur = k;
+        if (!dur) continue;
+        this.calibration.addJobRun(job.id, dur, rep.items);
+        this.debug.add('state', `Calibration: ${job.name} (${dur}) report: ${rep.items.map(([id, n]) => `${this.itemName(id)} ×${n}`).join(', ') || 'no items'}`, { report: r.id, ...rep });
+      } catch (err) {
+        this.debug.add('request', `Job report ${r.id} for calibration failed`, { error: err instanceof Error ? err.message : String(err) });
+      }
+    }
   }
 
   /** Server-side values the client tracks, for the debug diff (no regen estimates: they change every tick). */
@@ -357,6 +441,10 @@ export class GameState extends EventEmitter {
     this.log.unshift(...prev.log.slice(-100));
     for (const e of this.debug.entries) prev.debug.add(e.cat, e.title, e.data);
     this.debug = prev.debug;
+    this.sleepRates = prev.sleepRates;
+    this.motivationSeen = prev.motivationSeen;
+    this.reportsSeen = prev.reportsSeen;
+    this.hpPending = prev.hpPending;
     if (prev.autoRoute) this.autoRoute = { ...prev.autoRoute, retryAt: 0 };
     this.autopilot = prev.autopilot;
     this.mapLayers = prev.mapLayers;
@@ -420,15 +508,23 @@ export class GameState extends EventEmitter {
   applySelf(u: SelfUpdate): void {
     const c = this.character;
     if (u.x !== undefined && u.y !== undefined && (u.x !== c.position.x || u.y !== c.position.y)) c.position = { x: u.x, y: u.y };
-    if (u.level !== undefined && u.level > c.level) {
+    const leveled = u.level !== undefined && u.level > c.level;
+    if (leveled) {
       this.info(`Level up: ${u.level}!`);
-      c.level = u.level;
+      c.level = u.level!;
     }
+    const hpBefore = c.health;
     if (u.experience !== undefined && u.experience > c.experience) c.experience = u.experience;
     if (u.money !== undefined) c.cash = u.money;
     if (u.deposit !== undefined) c.deposit = u.deposit;
-    if (u.energy !== undefined) c.setEnergy(u.energy, u.energyAt);
-    if (u.health !== undefined) c.setHealth(u.health, u.healthAt);
+    // energy_date / health_date are offsets from now in seconds (Character.setEnergy @tw2game: getServerTime() + date).
+    const now = this.clock.now();
+    if (u.energy !== undefined) c.setEnergy(u.energy, u.energyAt === undefined ? undefined : now + u.energyAt);
+    if (u.health !== undefined) {
+      c.setHealth(u.health, u.healthAt === undefined ? undefined : now + u.healthAt);
+      this.observeHealth(hpBefore, c.health);
+    }
+    if (leveled) this.observeLevelUp();
     this.changed();
   }
 
@@ -453,7 +549,8 @@ export class GameState extends EventEmitter {
       const c = this.character;
       const hpBefore = c.health;
       const cashBefore = c.cash;
-      if (fresh.level > c.level) this.info(`Level up: ${fresh.level}!`);
+      const leveled = fresh.level > c.level;
+      if (leveled) this.info(`Level up: ${fresh.level}!`);
       c.level = fresh.level;
       c.experience = fresh.experience;
       c.cash = fresh.cash;
@@ -468,6 +565,9 @@ export class GameState extends EventEmitter {
       c.energyRegen = fresh.energyRegen;
       c.setEnergy(data.energy);
       c.setHealth(data.health);
+      c.lpPerPoint = fresh.lpPerPoint;
+      this.observeHealth(hpBefore, c.health);
+      if (leveled) this.observeLevelUp();
       if (data.taskQueue) this.queue = parseQueue(data.taskQueue);
       this.lastSync = Date.now();
       // Regen estimate vs. the server: a real drop means something happened to us.
@@ -489,6 +589,7 @@ export class GameState extends EventEmitter {
     try {
       const list = await this.mail.reports(1, 'all');
       this.recentReports = list.reports;
+      void this.calibrateFromReports(list.reports);
       const r = list.reports.find((x) => !x.read);
       if (r) this.info(`New report: ${r.title}`);
       else this.info('New report.');
@@ -729,8 +830,11 @@ export class GameState extends EventEmitter {
   }
 
   /** TaskSleep(town_id, room); the server walks there first if needed. */
-  sleep(hotel: Hotel, room: HotelRoom): Promise<boolean> {
-    return this.addTask('Sleep', sleepPost(hotel.townId, room.key), `Sleeping in ${hotel.townName}: ${room.name}`);
+  async sleep(hotel: Hotel, room: HotelRoom): Promise<boolean> {
+    const ok = await this.addTask('Sleep', sleepPost(hotel.townId, room.key), `Sleeping in ${hotel.townName}: ${room.name}`);
+    const t = this.queue[this.queue.length - 1];
+    if (ok && t?.type === 'sleep') this.sleepRates.set(t.queueId, { energyRate: roomRate(room.energy) * this.calibration.roomScale, healthRate: roomRate(room.health) });
+    return ok;
   }
 
   async reload(): Promise<void> {
@@ -759,6 +863,7 @@ export class GameState extends EventEmitter {
         return m;
       }, { fresh: freshMap });
       this.jobs = jobs.sort((a, b) => a.name.localeCompare(b.name));
+      this.observeMotivation();
       this.world = WorldMap.fromMinimap(minimap);
       if (!quiet) this.info(`Loaded ${jobs.length} jobs.`);
     });
@@ -1010,15 +1115,65 @@ export class GameState extends EventEmitter {
     }
   }
 
-  /** What the Quests goal works on: open quests (or the route's quests), minus excluded ones and chains. */
-  autopilotNeeds(): RouteNeed[] {
+  /**
+   * The first open requirement of a quest the autopilot cannot get, or null when it can finish the quest:
+   * items need a doable job that drops them (or enough in the bag); job requirements a doable job; anything
+   * else ("Go to …", "Resolve …", duels, shop-only items) it cannot do yet.
+   */
+  questBlocker(q: Quest): string | null {
+    for (const r of q.requirements) {
+      if (r.solved) continue;
+      if (r.itemId !== undefined) {
+        if (this.inventory.countBase(r.itemId) >= (r.count ?? 1)) continue;
+        if (this.requirementSources(r).some((x) => x.job.jobPoints >= x.job.workPoints && x.at)) continue;
+        return `${r.info}: no doable job drops it`;
+      }
+      if (r.jobId !== undefined) {
+        const job = this.jobs.find((j) => j.id === r.jobId);
+        if (job && job.jobPoints >= job.workPoints) continue;
+        return `${r.info}: job not doable`;
+      }
+      return `${r.info}: the autopilot cannot do this`;
+    }
+    return null;
+  }
+
+  /** Quests the Quests goal works on: open quests (or the route's), minus excluded ones, chains and (unless allowed) ones it cannot finish. */
+  autopilotQuests(): Quest[] {
     const { rules, config } = this.autopilot;
-    const quests = this.routeQuests('all').filter((q) =>
+    return this.routeQuests('all').filter((q) =>
       (!rules.onlyQuests.length || rules.onlyQuests.includes(q.id)) &&
       !rules.excludedQuests.includes(q.id) &&
       !config.quests.excludedChains.includes(q.group) &&
-      (config.quests.repeatable || !/repeatable/i.test(q.group)));
-    return questNeeds(quests, (id) => this.inventory.countBase(id), (id) => this.itemName(id), (id) => this.catalog.get(id)?.name ?? `job ${id}`);
+      (config.quests.repeatable || !/repeatable/i.test(q.group)) &&
+      (config.quests.unfinishable || !this.questBlocker(q)));
+  }
+
+  /**
+   * What the Quests goal works on, with the autopilot's extras per need: urgency `weight` (up to 2× for a quest
+   * ending within 3 days) and the quests' XP / $ rewards spread over the units each quest still needs.
+   */
+  autopilotNeeds(): RouteNeed[] {
+    const quests = this.autopilotQuests();
+    const needs = questNeeds(quests, (id) => this.inventory.countBase(id), (id) => this.itemName(id), (id) => this.catalog.get(id)?.name ?? `job ${id}`);
+    const now = this.clock.now();
+    for (const q of quests) {
+      const mine = needs.filter((n) => n.quests.includes(q.soloTitle || q.title));
+      const units = mine.reduce((a, n) => a + (n.unit === 'seconds' ? n.amount / 3600 : n.amount), 0);
+      if (!mine.length || units <= 0) continue;
+      const xp = q.rewards.reduce((a, r) => a + (r.item === null && /experience/i.test(r.text) ? Number(r.text.match(/[\d.,]+/)?.[0]?.replace(/[.,]/g, '') ?? 0) : 0), 0);
+      const money = q.rewards.reduce((a, r) => a + (r.item === null && /dollar/i.test(r.text) ? Number(r.text.match(/[\d.,]+/)?.[0]?.replace(/[.,]/g, '') ?? 0) : 0), 0);
+      const ends = questEnds(q.limited);
+      const left = ends === null ? Infinity : (ends - now) / 3600;
+      const weight = 1 + Math.max(0, Math.min(1, 1 - left / 72));
+      for (const n of mine) {
+        const per = n.unit === 'seconds' ? 1 / 3600 : 1;
+        n.xpPerUnit = (n.xpPerUnit ?? 0) + (xp / units) * per;
+        n.moneyPerUnit = (n.moneyPerUnit ?? 0) + (money / units) * per;
+        n.weight = Math.max(n.weight ?? 1, weight);
+      }
+    }
+    return needs;
   }
 
   /** Changes the autopilot file and saves it. */
@@ -1054,7 +1209,10 @@ export class GameState extends EventEmitter {
       return { kind: 'job', title: t.title, jobId: t.jobId, at: t.coords, duration: secs, energy: 0, xp: q?.values.experience ?? 0, money: q?.values.money ?? 0, fixed };
     }
     // Sleep rates are not in the queue entry; base regen until the room's units are known (docs/autopilot.md).
-    if (t.type === 'sleep') return { kind: 'sleep', title: t.title, at: t.coords, energyRate: this.character.energyRegen, healthRate: this.character.healthRegen, fixed };
+    if (t.type === 'sleep') {
+      const r = this.sleepRates.get(t.queueId);
+      return { kind: 'sleep', title: t.title, at: t.coords, energyRate: r?.energyRate ?? this.character.energyRegen, healthRate: r?.healthRate ?? this.character.healthRegen, fixed };
+    }
     return { kind: 'walk', title: t.title, at: t.coords, fixed };
   }
 

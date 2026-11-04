@@ -55,6 +55,8 @@ export class CharacterState {
   healthRegen = 0;
   energyRegen = 0;
   taskLimit = { normal: 4, premium: 9 };
+  /** Max HP gained per level (Character.lpPerPoint). */
+  lpPerPoint = 0;
   skills: Record<string, number> = {};
   skillBonus: Record<string, number> = {};
   private baseEnergy = 0;
@@ -95,6 +97,7 @@ export class CharacterState {
     c.skills = data.skillData?.skills ?? {};
     c.skillBonus = data.skillData?.skillBonus ?? {};
     const lp = data.lpPerPoint ?? 0;
+    c.lpPerPoint = lp;
     const lpBonus = data.lpPerPointBonus ?? 0;
     const healthPoints = (c.skills.health ?? 0) + (c.skillBonus.health ?? 0);
     c.maxHealth = Math.trunc(100 + (c.level - 1) * lp + healthPoints * (lp + lpBonus));

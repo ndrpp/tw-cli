@@ -214,6 +214,19 @@ function fail(json: any, what: string): never {
   throw new Error(plainText(json?.msg ?? json?.error ?? `${what} failed`));
 }
 
+/** show_report reply → job, items, seconds (see MailApi.jobReport). */
+export function parseJobReport(json: Record<string, any>): { jobId: number; items: [number, number][]; seconds: number | null } | null {
+  const info = json.reportInfo;
+  const jobId = Number(info?.job_id);
+  if (String(json.reportType ?? '') !== 'job' || !jobId) return null;
+  const items: [number, number][] = (Array.isArray(info.items) ? info.items : [])
+    .filter((i: unknown) => Array.isArray(i) && Number(i[0]))
+    .map((i: unknown[]) => [Number(i[0]), Number(i[2]) || 1] as [number, number]);
+  const m = plainText(json.page).match(/(\d+)\s*(second|minute|hour)s?\b/i);
+  const seconds = m ? Number(m[1]) * ({ second: 1, minute: 60, hour: 3600 } as Record<string, number>)[m[2]!.toLowerCase()]! : null;
+  return { jobId, items, seconds };
+}
+
 export class MailApi {
   private client: GameClient;
 
@@ -242,6 +255,17 @@ export class MailApi {
     if (json.error) fail(json, 'reports/show_report');
     const type = String(json.reportType ?? '');
     return { id, title: plainText(json.title), date: plainText(json.date_received), type, text: formatReport(plainText(json.page, { compact: true }), type, reportItems(json.reportInfo, this.itemName)) };
+  }
+
+  /**
+   * A job report as data, for calibration: the job (reportInfo.job_id), found items ([itemId, count] from
+   * reportInfo.items) and the run length in seconds (the page's first "N second/minute/hour(s)"). Null when it
+   * is not a job report.
+   */
+  async jobReport(id: number, hash = ''): Promise<{ jobId: number; items: [number, number][]; seconds: number | null } | null> {
+    const json = await this.client.remoteCallMode('reports', 'show_report', { report_id: id, hash, animated: 0, simpleheader: 0 });
+    if (json.error) fail(json, 'reports/show_report');
+    return parseJobReport(json);
   }
 
   async deleteReport(id: number, folder: ReportFolder = 'all'): Promise<void> {

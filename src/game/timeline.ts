@@ -24,6 +24,8 @@ export interface TimelineStart {
   experience: number;
   maxLevel?: number;
   cash: number;
+  /** Max HP gained per level-up (lpPerPoint); default 0. */
+  healthPerLevel?: number;
 }
 
 interface StepBase {
@@ -119,22 +121,24 @@ export function projectTimeline(start: TimelineStart, steps: TimelineStep[], opt
   let experience = start.experience;
   let level = start.level;
   let cash = start.cash;
+  let maxHealth = start.maxHealth;
 
   const regen = (seconds: number, eRate = start.energyRegen, hRate = start.healthRegen) => {
     if (seconds <= 0) return;
     energy = Math.min(start.maxEnergy, energy + (start.maxEnergy * eRate * seconds) / 3600);
-    health = Math.min(start.maxHealth, health + (start.maxHealth * hRate * seconds) / 3600);
+    health = Math.min(maxHealth, health + (maxHealth * hRate * seconds) / 3600);
   };
   const gainXp = (xp: number): boolean => {
     experience += xp;
     let up = false;
     while (level < maxLevel && experience >= levelStartXp(level + 1, maxLevel)) {
       level++;
+      maxHealth += start.healthPerLevel ?? 0;
       up = true;
     }
     if (up) {
       energy = start.maxEnergy;
-      health = start.maxHealth;
+      health = maxHealth;
     }
     return up;
   };
@@ -186,7 +190,7 @@ export function projectTimeline(start: TimelineStart, steps: TimelineStep[], opt
           cash -= step.cost ?? 0;
           const full = Math.max(
             regenSeconds(energy, start.maxEnergy, start.maxEnergy, step.energyRate),
-            regenSeconds(health, start.maxHealth, start.maxHealth, step.healthRate),
+            regenSeconds(health, maxHealth, maxHealth, step.healthRate),
           );
           const secs = step.seconds ?? full;
           end = begin + (Number.isFinite(secs) ? secs : 0);
@@ -196,7 +200,7 @@ export function projectTimeline(start: TimelineStart, steps: TimelineStep[], opt
       }
       case 'action':
         energy = Math.min(start.maxEnergy, energy + (step.energy ?? 0));
-        health = Math.min(start.maxHealth, health + (step.health ?? 0));
+        health = Math.min(maxHealth, health + (step.health ?? 0));
         cash += step.cash ?? 0;
         levelUp = gainXp(step.xp ?? 0);
         break;
