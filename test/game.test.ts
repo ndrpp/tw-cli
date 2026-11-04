@@ -216,6 +216,9 @@ test('TUI renders status, jobs and queue, and keys drive actions', { skip: !HAVE
     await settle();
     assert.match(plain(), /shallax/);
     assert.match(plain(), /HP .*\/600/);
+    // The app starts on home; W opens the jobs screen.
+    stdin.write('W');
+    await settle();
     assert.match(plain(), /Tending pigs/);
     assert.match(plain(), /Bartering with Indians/);
 

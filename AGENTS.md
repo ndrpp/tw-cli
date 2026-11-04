@@ -21,7 +21,6 @@ the relevant file in `docs/`.
 ## Commands
 - `npm run tw`: full-screen TUI · `npm run tw -- <cmd>` for CLI commands (whoami, jobs, queue, login, …).
 - `npm test`: all tests (`node --test test/*.test.ts`). Some skip without a saved `game.php`.
-  Known failure: "TUI renders status, jobs and queue" (expects the jobs screen at start; the start screen is now Home).
 - `npm run typecheck`: `tsc -p .`. Run it and the tests after every change.
 
 ## Layout
