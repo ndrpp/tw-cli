@@ -18,7 +18,8 @@ import { DEFAULT_WORLD, ensureGame } from './auth/session.ts';
 import { PROFILE_FILE } from './auth/session-store.ts';
 import type { Credentials } from './auth/login.ts';
 import { GameState } from './game/state.ts';
-import { formatDuration } from './tui/format.ts';
+import { formatClock, formatDuration } from './tui/format.ts';
+import { queueSummary } from './game/tasks.ts';
 
 function ask(question: string, hidden = false): Promise<string> {
   return new Promise((resolve) => {
@@ -86,7 +87,12 @@ async function main(argv: string[]): Promise<number> {
       const state = await openState();
       const now = state.clock.now();
       if (!state.queue.length) console.log('Task queue is empty.');
-      state.queue.forEach((t, i) => console.log(`${i + 1}. [${t.type}] ${t.title} at ${t.coords.x},${t.coords.y}  ends in ${formatDuration(t.end - now)}`));
+      state.queue.forEach((t, i) => {
+        const walk = t.way ? `  walk ${formatDuration(t.way.end - Math.max(now, t.way.start))}` : '';
+        console.log(`${i + 1}. [${t.type}] ${t.title} at ${t.coords.x},${t.coords.y}${walk}  ends in ${formatDuration(t.end - now)}`);
+      });
+      const sum = queueSummary(state.queue, now);
+      if (sum) console.log(`All done ${formatClock(sum.doneAt, now)} (in ${formatDuration(sum.left)})${sum.walk > 0 ? `, ${formatDuration(sum.walk)} of it walking` : ''}`);
       return 0;
     }
     case 'fp': {

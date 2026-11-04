@@ -28,3 +28,12 @@ export function scrollWindow(selected: number, total: number, height: number): [
   const start = Math.min(Math.max(0, selected - Math.floor(height / 2)), total - height);
   return [start, start + height];
 }
+
+/** Wall-clock time of an epoch-seconds moment: "14:05", or "Tue 14:05" when it is not today. */
+export function formatClock(epochSeconds: number, nowSeconds = Date.now() / 1000): string {
+  const d = new Date(epochSeconds * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (d.toDateString() === new Date(nowSeconds * 1000).toDateString()) return hm;
+  return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${hm}`;
+}

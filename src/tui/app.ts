@@ -4,7 +4,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useWindowSize } from 'ink';
 import { JOB_SORTS, type GameState, type JobOption, type JobSort, type StartupStep } from '../game/state.ts';
 import { DURATION_KEYS, type DurationKey } from '../game/jobs.ts';
-import { bar, formatDuration, money, scrollWindow, truncate } from './format.ts';
+import { bar, formatClock, formatDuration, money, scrollWindow, truncate } from './format.ts';
+import { queueSummary, walkLeft, workLeft } from '../game/tasks.ts';
 import { clampView, entriesAt, findNearest, LayersOverlay, MAP_LAYERS, mapGridSize, MapScreen, ZOOMS, type MapView } from './map.ts';
 import { HelpOverlay, HotelOverlay, PoiOverlay, SCREEN_MODES, type Mode } from './overlays.ts';
 import { CharacterScreen } from './character.ts';
@@ -151,6 +152,7 @@ function JobDetail({ option, state }: { option: JobOption | undefined; state: Ga
 function QueuePane({ state, selected, focused, width, confirm, maxRows }: { state: GameState; selected: number; focused: boolean; width: number; confirm: boolean; maxRows: number }) {
   const now = state.clock.now();
   const total = state.queue.length ? state.timeline() : null;
+  const summary = queueSummary(state.queue, now);
   const rowsForTasks = Math.max(1, maxRows - (confirm ? 1 : 0) - (total ? 1 : 0));
   const overflow = state.queue.length > rowsForTasks;
   const [start, end] = scrollWindow(selected, state.queue.length, overflow ? rowsForTasks - 1 : rowsForTasks);
@@ -161,14 +163,18 @@ function QueuePane({ state, selected, focused, width, confirm, maxRows }: { stat
     ...state.queue.slice(start, end).map((t, j) => {
       const i = start + j;
       const sel = i === selected && focused;
-      const walking = t.way && t.way.end > now;
-      const left = i === 0 ? (walking ? `walk ${formatDuration(t.way!.end - now)}` : formatDuration(t.end - now)) : formatDuration(t.end - t.start);
+      // Running task counts down; later ones show their full length. Walk legs are shown apart.
+      const walk = i === 0 ? walkLeft(t, now) : t.way ? t.way.end - t.way.start : 0;
+      const work = i === 0 ? workLeft(t, now) : t.end - t.start;
+      const time = formatDuration(work).padStart(7);
+      const right = walk > 0 ? `walk ${formatDuration(walk)} + ${time}` : time;
       const label = `${i + 1}. ${t.type === 'job' ? '' : `[${t.type}] `}${t.title}`;
       return h(Text, { key: t.queueId || i, inverse: sel, color: i === 0 ? 'green' : undefined, wrap: 'truncate' },
-        `${truncate(label, Math.max(8, width - 17))} ${left.padStart(9)}`);
+        `${truncate(label, Math.max(8, width - 8 - right.length))} ${right}`);
     }),
     overflow ? h(Text, { dimColor: true }, `  +${hidden} more`) : null,
-    total ? h(Text, { dimColor: true, wrap: 'truncate' }, `ends ${new Date(total.end * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · +${total.gained.xp} xp ${money(total.gained.money)}`) : null,
+    total ? h(Text, { color: 'cyan', wrap: 'truncate' },
+      `ends ${formatClock(total.end, now)} · +${total.gained.xp} xp ${money(total.gained.money)} · ${formatDuration(total.end - now)} left${summary && summary.walk > 0 ? ` · walk ${formatDuration(summary.walk)}` : ''}`) : null,
     confirm ? h(Text, { color: 'red' }, 'Cancel this task? y / n') : null,
   );
 }

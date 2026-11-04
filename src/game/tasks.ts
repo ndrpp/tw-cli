@@ -135,3 +135,30 @@ export class TaskApi {
     return { queue: parseQueue(json.queue), errors, energy, money };
   }
 }
+
+/** Seconds of walking still ahead for a task (its wayData leg), from `now`. */
+export function walkLeft(t: QueuedTask, now: number): number {
+  if (!t.way) return 0;
+  return Math.max(0, t.way.end - Math.max(now, t.way.start));
+}
+
+/** Seconds of the task itself (excluding its walk) still ahead, from `now`. */
+export function workLeft(t: QueuedTask, now: number): number {
+  return Math.max(0, t.end - Math.max(now, t.start));
+}
+
+export interface QueueSummary {
+  /** Epoch s when the last task is done. */
+  doneAt: number;
+  /** Seconds until then. */
+  left: number;
+  /** Seconds of that which is walking (wayData legs plus walk tasks). */
+  walk: number;
+}
+
+export function queueSummary(queue: QueuedTask[], now: number): QueueSummary | null {
+  if (!queue.length) return null;
+  const doneAt = Math.max(...queue.map((t) => t.end));
+  const walk = queue.reduce((s, t) => s + walkLeft(t, now) + (t.type === 'walk' ? workLeft(t, now) : 0), 0);
+  return { doneAt, left: Math.max(0, doneAt - now), walk };
+}
