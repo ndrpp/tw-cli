@@ -68,7 +68,7 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
 - The 1 s ticker in `App` re-renders and drives `state.tick()`, queue polls, syncs and `state.runner.step()`.
 - `GameState` emits `change`; `useGameState` re-renders on it. Components read state directly (no copies).
 - Lists use `scrollWindow(selected, total, rows)`; text is `wrap: 'truncate'` with `truncate()` for columns.
-  Durations: `formatDuration` (`1:02:03`, ticking clocks) or `shortDuration` (`45m`, `2h10`, plans and estimates).
+  Durations: `formatDuration` (`1:02:03`, ticking clocks) or `shortDuration` (`15s`, `45m`, `2h10`, plans and estimates; under a minute in seconds, so a 15 s run is not "1m").
 - Icons: `src/tui/icons.ts` (`ICON`, `taskIcon(type)`, `stepIcon(step, action)`): ⚒ job, → walk, ☾ sleep, $ bank,
   ✚ item, ◷ wait, ★ level-up, ⚔ duel, ! quest, ✉ mail. One-cell text symbols only; emoji are two cells wide
   and misalign Ink columns. Used in the header, jobs queue, home working panel, autopilot plan and Q view.

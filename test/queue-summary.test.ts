@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseQueue, queueSummary, walkLeft, workLeft } from '../src/game/tasks.ts';
-import { formatClock } from '../src/tui/format.ts';
+import { formatClock, shortDuration } from '../src/tui/format.ts';
 
 test('queue summary: done time is the last task end; walk counts wayData legs and walk tasks still ahead', () => {
   const now = 1000;
@@ -24,4 +24,11 @@ test('formatClock: HH:MM today, weekday prefix otherwise', () => {
   const noon = new Date(2026, 10, 3, 12, 0).getTime() / 1000;
   assert.equal(formatClock(noon + 3600 + 300, noon), '13:05');
   assert.match(formatClock(noon + 86400, noon), /^[A-Z][a-z]{2} 12:00$/);
+});
+
+test('shortDuration: seconds under a minute (15 s runs are not "1m")', () => {
+  assert.equal(shortDuration(15), '15s');
+  assert.equal(shortDuration(600), '10m');
+  assert.equal(shortDuration(3600), '1h');
+  assert.equal(shortDuration(7800), '2h10');
 });
