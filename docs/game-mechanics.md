@@ -91,6 +91,12 @@ browser client's code; **unverified** = assumed, check live and update this file
 - Requirement `jsInfo.type`: `inventory_changed` (have item) · `wear_changed` (wear item) · `task-finish-job`
   (`count` = runs, or seconds for timed ones). `jsInfo: null` texts include `Item 'X' bought` and wait timers
   ("you must wait 24 hours"). Shapes for "visit a place" and duel requirements: **not seen yet**.
+- Other `jsInfo: null` texts seen live (en32, 2026-11-04): `Go to <place>` (The Mexican, Junction, Ghost town,
+  Waupee's Indian village, Steve Chuck), `Resolve: <quest> (<chain>)` / `Accept: <quest> (<chain>)` (another quest
+  of the chain, not in your log), `Lose against <NPC>`, and `This quest is only available between 06:00 and
+  11:00 o'clock.` (parsed as kind `window`; which clock is unverified, the server's presumably).
+- The minimap's `quest_locations` is `{id: [[x, y]]}`: coordinates without names, so "Go to X" cannot be placed
+  from it alone.
 - `finish_quest` replies may carry `eval` (browser JS): never executed.
 - Map quest givers probably require being at the giver to finish; town (saloon) quests from the town. Unverified.
 

@@ -889,6 +889,30 @@ test('autopilot needs: quests it cannot finish are skipped; rewards and deadline
   assert.equal(s.autopilotNeeds()[0]!.amount, 6, 'toggle on: both');
 });
 
+test('quest items no job drops: blocked until a shop in reach sells them, then a shopping trip; a time window only waits', async () => {
+  fakeServer();
+  const s = makeState();
+  const { ItemCatalog } = await import('../src/game/items.ts');
+  s.items = ItemCatalog.fromSlim([{ id: 1856, name: 'Jug of water', type: 'yield', price: 30 } as any]);
+  s.world.towns = [{ id: 3, x: 150, y: 100, name: 'Slobozia', members: 1, npc: false, points: 0 }];
+  const quest = (id: number, requirements: any[]) => ({ id, title: `Q${id}`, soloTitle: `Q${id}`, groupId: 1, group: 'Chain', employer: 'e', employerName: 'E', employerAt: null,
+    accepted: true, acceptable: false, finishable: false, requirements, rewards: [], rewardOptions: [], description: '', hint: '', limited: '' });
+  s.quests = [
+    quest(1, [{ solved: false, info: 'Jug of water 0/2', itemId: 1856000, count: 2, kind: 'item' }]),
+    quest(2, [{ solved: false, info: "This quest is only available between 06:00 and 11:00 o'clock.", kind: 'window', window: { from: '06:00', to: '11:00' } }]),
+  ] as any;
+  assert.match(s.questBlocker(s.quests[0]!)!, /Jug of water: no job drops it, and no shop in reach/);
+  assert.equal(s.questBlocker(s.quests[1]!), null, 'a window is not a blocker');
+  s.buyCatalog.setShops(3, [{ key: 'general', townId: 3, townName: 'Slobozia', level: 1, charge: 1, items: [1856000] }]);
+  assert.equal(s.questBlocker(s.quests[0]!), null);
+  assert.deepEqual(s.buyTrips().map((t) => [t.townId, t.cost, t.what]), [[3, 60, ['2× Jug of water (general store) for "Q1"']]]);
+  s.updateAutopilot((f) => (f.config.quests.buyLimit = 50));
+  assert.match(s.questBlocker(s.quests[0]!)!, /\$60 \(general store in Slobozia\), over the \$50 quest buy limit/);
+  s.updateAutopilot((f) => (f.config.quests.buy = false));
+  assert.match(s.questBlocker(s.quests[0]!)!, /Jug of water 0\/2: no doable job drops it/, 'buying off: as before');
+  assert.deepEqual(s.buyTrips(), []);
+});
+
 test('calibration hooks: HP lost after a dangerous job; queued sleeps keep their room rates in the projection', async () => {
   fakeServer();
   const s = makeState();

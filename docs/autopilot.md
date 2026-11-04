@@ -11,9 +11,11 @@ screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
 | `src/game/autopilot-config.ts` | Settings, rules, saved plan, spend tracker, duel record (`autopilot.json` in the config dir); `goalWeights`, `fingerprint`, `duelOutlook`. |
 | `src/game/autopilot.ts` | Pure planner `planAutopilot(input)`: HP → bank → inserts → jobs by priority, energy sleeps / consumables when short. `parseConsumable`, `expectedHpLoss`. |
 | `src/game/autopilot-runner.ts` | `AutopilotRunner` (`state.runner`): replans on input change, sends tasks, wakes from sleep, deposits, uses items, cancels for a better plan, NPC duels for XP, retries/backoff, spend cap. |
-| `src/game/autopilot-quests.ts` | `QuestModule`: finish (reward by priority), wear + restore gear, buy in town shops, accept saloon quests. `chooseReward`. |
+| `src/game/autopilot-quests.ts` | `QuestModule`: finish (reward by priority), wear + restore gear, buy quest items, pick up market goods, accept saloon quests, re-read quests waiting for a time window. `chooseReward`. |
+| `src/game/quest-buy.ts` | Buying quest items no job drops: `chooseBuys` (pure: source per item within the limits), `BuyCatalog` (shops, mobile trader, market offers the runner read; `state.buyCatalog`). |
 | `src/game/debug-log.ts`, `src/tui/debug.ts` | Debug log (`state.debug`) and its screen (`g x`); see "Debugging". |
 | `src/tui/autopilot.ts` | Screen: priority, module toggles and values on the left, plan pane (`PlanPane`, rows from `planRows`) on the right; `Q` full queue view. |
+| `test/quest-buy.test.ts` | Buying quest items: ~120 hand-reasoned cases (parsing, source choice, catalog, planner trips, state, buying against a fake server). |
 | `test/autopilot.test.ts`, `test/social.test.ts` (runner) | Timeline, config, planner, consumables, inserts, screen, queue view, rewards, duels; runner against a fake server. |
 
 ## Using it
@@ -43,10 +45,11 @@ screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
   duration, result or error stack), `autopilot` (runner decisions: idle/acting, wake-up checks, cancel checks
   with both alternatives' values, what it queues and why the batch stopped, duels, failures), `sim` (every
   replan: `reason`, `context`, planner `input` without functions, `output` tasks + timeline), `quest` (finish /
-  reward choice, wear, shop, saloon, accept, skips).
+  reward choice, wear, buys and pickups, buy-source reads, time-window re-reads, saloon, accept, skips).
 - `runner.context()` is what the autopilot sees: energy, HP, home and nearest town with travel seconds, where
   you are, open quests with each requirement (have / need, nearest source job and seconds from the queue end),
-  bag, consumables, gear, queue, budget, needs, failures. Logged with every replan; live under **Now**.
+  bag, consumables, gear, queue, budget, needs, failures; per quest `buy` (items to buy, picked source, problem),
+  `buyTrips`, `pickups` and `shopsRead`. Logged with every replan; live under **Now**.
 - Per-tick decisions use `debug.once(key, …)`, which logs only when the title changes. Keep titles free of
   values that change every tick (live energy) and put those in `data`, or the log fills up once a second.
 - Planner input jobs list each duration's `items` as `[itemId, percent]` and the job's `groupid`, so a logged plan
@@ -61,9 +64,10 @@ screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
   10 min, energy rate × calibrated room scale), named towns, bag consumables above the reserve, budget left
   today, failing step keys, calibrated motivation and HP scale.
 - **Quests in scope** (`state.autopilotQuests()`): open quests (or the route's), minus excluded quests / chains,
-  repeatables unless on, and quests it cannot finish (`questBlocker`: an item no doable job drops and you do not
-  have, a job you cannot do, or "Go to / Resolve / Accept / Lose against …") unless "also quests it cannot
-  finish" is on. Each need carries `weight` (1, up to 2 for a quest ending within 72 h; `questEnds` reads the
+  repeatables unless on, and quests it cannot finish (`questBlocker`: an item no doable job drops, you do not
+  have and it cannot buy, a job you cannot do, or "Go to / Resolve / Accept / Lose against …") unless "also
+  quests it cannot finish" is on. A time window ("only available between 06:00 and 11:00") is not a blocker:
+  the items get collected and the quest is finished inside the window. Each need carries `weight` (1, up to 2 for a quest ending within 72 h; `questEnds` reads the
   `limited` date as UTC, unverified) and `xpPerUnit` / `moneyPerUnit` (the quests' rewards spread over the units
   they still need), added to the XP and Money goals.
 - **Replans** when the fingerprint of those inputs changes (checked every 2 s; queue times and server values
@@ -71,7 +75,8 @@ screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
 - **Loop** until the timeline reaches `cancel.horizon` (6 h; `MAX_JOBS` = 200 caps it), so plans of short and long
   runs cover the same time and compare: HP under `sleepBelow` → health item that lifts it over, else HP sleep
   (wake ≥ `wakeAbove`) · cash over `bank.above` → walk + deposit (own town within `ownTownWithin`, else nearest
-  within `maxDetour`, else later) · your inserts at their time · best job.
+  within `maxDetour`, else checked again after each step, so it banks when the route comes near a town) · your
+  inserts at their time · quest shopping trip (below) · best job.
 - **Bank walk is sticky**: the deposit is an on-the-spot action, so only the walk goes into the server queue. The
   runner records that walk (`bankWalk` in `autopilot.json`, kept across restarts) and passes its town as
   `bankTownId`. While the queue ends there, the deposit comes first whatever the cash projection says, so no job
@@ -79,6 +84,28 @@ screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
   after the walk, and the next one walked to town a second time (live, 2026-11-04: `telegraph → Slobozia →
   Prospecting → Slobozia`, replayed from the debug log). The record is dropped after the deposit, or when the
   walk is gone from the queue and you are not in that town.
+- **Quest items no job drops are bought** (Quests module, "buy items no job drops" on). `state.questPurchase(q)`
+  lists what the quest still needs (item / wear / "Item 'X' bought" requirements no doable job covers, minus the
+  bag; "bought" always needs a purchase). For several quests (`questPurchases`, used by trips and buying) bag items
+  go to the first quest that needs them, solved requirements included (their items go when it is handed in), so
+  two quests wanting 2 jugs each buy 4 in one stop. `chooseBuys` picks per item the cheapest option counting the
+  walk (price + seconds × `quests.walkValue`, $15 / min; equal: less walk): a shop or the mobile trader (no walk)
+  within `quests.buyLimit` ($3,000) for the quest, or a lot of market offers within `quests.marketLimit` ($5,000,
+  a separate allowance). A market lot is the cheapest set covering the count (knapsack), overall or within one
+  town (one pickup walk can beat a cheaper lot spread over two towns), walked once per town. Left out: sources
+  beyond `quests.buyTrip` (the market's too: it is picked up there), $0 prices (unknown, not free), and mobile
+  offers limited to fewer than needed. The first item it cannot get makes the quest's blocker (`Jug of water: no job drops it, and no shop in reach …`,
+  `… over the $3,000 quest buy limit`) and nothing is bought for it; neither is anything for a quest blocked by a
+  non-item requirement (the revolver of "The loser" waits for its duel). The daily cap applies on top.
+- **Where it looks** (runner, `scanBuySources`, one read every 3 s at most, in the background like hotel data,
+  only while some quest wants an item): the mobile trader (again after 30 min or when it rotates), the three shops
+  of the 10 nearest named towns within `quests.buyTrip` of the queue end (each town every 6 h), and the market by
+  item name (every 30 min). Each answer bumps `buyCatalog.version`, a planner input, so it replans.
+- **Shopping trips**: shop picks of the quests in scope, one `BuyTrip` per town (what, for which quest, cost),
+  plus market pickups. The planner walks to the nearest one within `quests.buyTrip` (1 h) and the budget, once per
+  plan, and adds the on-the-spot `buy` action (cash − cost in the timeline). A trip further away is tried again
+  after each later step. Trips earn no plan value, so cancel-for-better never cancels jobs to go shopping; the
+  trip goes in when the queue runs out.
 - **Job score**: per goal (quest progress × weight, XP incl. quest rewards, money incl. quest rewards, products
   = expected drops × sell price) gain per cost, divided by the goal's **exchange rate** and weighted by rank (1,
   0.25, 0.06, 0.015) or custom weights. Exchange rates = best gain per cost per goal from where the server queue
@@ -90,17 +117,37 @@ screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
   quarter of the energy (the refill tops up to the max). Slot cost (`slotCost`, 10 min): each run takes a queue
   slot and the TUI is not always open, so runs that fill slots fast leave you idle.
 - **Motivation**: pay (XP, $, products) scales with projected motivation, `m − perRun × runs + perHour × hours`
-  (calibrated; 2 % per run, no recovery until then). Jobs whose expected HP loss (heuristic × calibrated scale)
-  would cross `sleepBelow` are skipped. A level-up raises max HP by `lpPerPoint` in the timeline.
+  (calibrated; 2 % per run, no recovery until then). Runs whose expected HP loss (heuristic × calibrated scale)
+  would take HP under `sleepBelow` are skipped, HP sleeps on or off; runs that cost no HP are always allowed
+  (under the line with no hotel, safe jobs go on while HP regenerates; this used to plan nothing). A level-up
+  raises max HP by `lpPerPoint` in the timeline.
 - **Energy short**: motivation item if motivation < 75 %; energy item if getting the energy otherwise takes
   ≥ 30 min; else sleep when it reaches the wake target sooner than waiting; else the timeline waits.
-- **Wake target** (toggles): enough energy to reach the next level with the best XP/energy job (the level-up
-  refill does the rest) · 4× the next job · HP safe · full. The runner cancels the sleep once live energy and HP
+- **Wake target** (toggles): when the run after the sleep levels up by itself, just its energy ("enough for X,
+  which levels up"); else enough energy to reach the next level with the best XP/energy job (the level-up
+  refill does the rest; when current energy already covers that, this used to give no reason and slept to
+  full) · 4× the next job · HP safe · full. The sleep's length counts the base regen on the walk to the hotel.
+  The runner cancels the sleep once live energy and HP
   reach it.
-- **Cancelling**: checked at most every 30 s. Queued tasks are cancelled when planning without them (keep the
-  running one, or cancel all) is ≥ `cancel.margin` better over `cancel.horizon`, at most once per
-  `cancel.cooldown`. Queued jobs are valued at the plan's average value per XP + $ (estimate). Manual town
-  construction tasks (`type: 'build'`) are never cancelled.
+- **Cancelling**: checked at most every 30 s, at most one cancel per `cancel.cooldown`. Every cut point is
+  tried (keep the first k tasks, the running one always, replan the rest with the cancelled jobs' energy back)
+  against the whole queue. Cancel when a cut is > `cancel.margin` better over `cancel.horizon`, or when it is
+  worth at most `sameWithin` (2 %) less and walks ≥ `walkSaved` (10 min) less. The second rule exists because
+  you are usually energy-bound: wasted walking costs almost no value, so a pointless trip (town → job outside →
+  town again) never cleared the margin (live: 32.80 vs 32.67, kept). Ties go to the later cut (cancel less).
+  A queue worth 0 is cancelled for any plan worth more. The rule is `chooseCancel` (pure, in `autopilot.ts`).
+  Queued jobs are scored like planned ones (`plan.queuedValue`: state before each run, quest needs before it
+  counts); `plan.walk` is walking inside the horizon, server queue included (fixed steps walk the gap between
+  their server times). Replayed on the logged double trip: keep telegraph + walk scores 32.43 vs 31.11 and
+  walks 19 min less → Prospecting and the second walk are cancelled. Manual town construction tasks
+  (`type: 'build'`) are never cancelled.
+
+## Scenarios (`test/scenarios.test.ts`)
+About 100 small situations (timeline, job choice, energy, wake targets, HP, bank, quests, motivation, inserts,
+the server queue, cancelling), each with the result a good player would want, reasoned out by hand in its
+comment. Never fill an expectation in from what the planner returns: when one fails, decide whether the
+planner or the expectation is wrong. Add a scenario for every planner bug found live. Buying quest items has its own set in `test/quest-buy.test.ts`
+(same rule; its cases B8, B18, B19, B24, B25, S16, S19–S21 each fixed a flaw found while reasoning them out).
 
 ## Calibration (`calibration.ts`, `calibration.json` in the config dir; TUI only)
 Each estimate blends the game's number (or the old heuristic) with what was observed, the prior counting as 5
@@ -118,12 +165,19 @@ samples. Logged to the debug log (`Calibration: …`); `runner.context().calibra
 ## Carrying out (runner: one thing per tick, only while running and not dry run)
 wake-up cancel → cancel-for-better → quest step → NPC duel for XP → send planned tasks (as many as the queue and
 current energy allow; a sleep ends a batch) or, with an empty queue, the next on-the-spot action (deposit in the
-town you stand in, use an item).
+town you stand in, use an item, buy quest items).
+- Quest step buying, one purchase per tick: market goods waiting in the town you stand in are picked up first
+  (once; a failure leaves it to you); then, for quests buying unblocks, mobile-trader offers (dollar price) and
+  market offers are bought from anywhere, shop items when you stand in their town. A market buy is a bid at the
+  buy-now price (from the bank when cash is short); the offer is recorded in `pickups` (`autopilot.json`, kept
+  across restarts) and becomes a trip to its town. Item failures back off under `item:<base id>`.
 - Failures: retry after 1 → 5 → 15 min; after 3 the step key is left out of plans. Session errors pause.
   Exception: a job refused for "N more energy points" is not a failure. Our energy estimate was ahead of the
   server's, so local energy is set to `job energy − N` and the plan is redone.
 - Cancel-for-better counts each cancelled job's energy refund at its queued duration's cost, not the long job's.
-- Spend cap: hotel rooms and quest purchases count toward `spend.daily` (UTC day); quest items ≤ $500 per quest.
+- Spend cap: hotel rooms and quest purchases count toward `spend.daily` (UTC day). Quest items: shops + mobile
+  trader ≤ `quests.buyLimit` per quest, market ≤ `quests.marketLimit` per quest (counted on what is still to buy).
+  The $1,000 daily default blocks anything dearer (a $2,800 horse); raise it on the screen for those.
 
 ## Modules: status
 | Module | Status |
@@ -134,8 +188,9 @@ town you stand in, use an item).
 | Consumables (energy, health, motivation) | built; uses what is in the bag (it never buys them) |
 | Bank | built |
 | Expanded queue + rules | built (planned jobs can only be excluded, not reordered; inserts can move) |
-| Quests: finish, rewards, wear + restore, shop buy in the current town, accept from saloons | built |
-| Quests: market instant-buy, detours to map quest givers, visit-place and duel requirements | **not built** (logged once and skipped) |
+| Quests: finish, rewards, wear + restore, accept from saloons | built |
+| Quests: buy items no job drops (shops in reach, mobile trader, market + pickup trip), time windows | built (remote shop reads of other towns and market buys from afar unverified) |
+| Quests: "Resolve / Accept: X" (accept the quest it waits on), "Go to X" (map giver coordinates), "Lose against X" | **not built** (logged once and skipped); next, after a live look at saloon / map givers |
 | NPC duels for XP | built; fights only levels the duel record knows (fight NPCs yourself in `g d` to fill it) |
 
 ## Decisions (grill session)
@@ -143,7 +198,9 @@ TUI only (core has no UI deps) · may cancel anything, running tasks included, w
 margin · manual actions are replanned around unless paused · resume on launch · ranked priority, optional custom
 weights · own-town hotel/bank within 1 h, else by cost · bank detour ≤ 30 min else the next town · cancel margin
 10 % over 6 h, 15 min cooldown · quests: all but excluded chains, time-limited yes, repeatables off · daily cap
-$1,000 · consumables valued at shop price · retries 1/5/15 min, 3 strikes · HP < 50 % sleep or item, up at ≥ 70 %
+$1,000 · quest items no job drops are bought: shops (any town in reach) and the mobile trader ≤ $3,000 per quest,
+the market only under $5,000 (its trip to collect counted), trips ≤ 1 h, a minute of walking worth $15 when
+comparing sources · consumables valued at shop price · retries 1/5/15 min, 3 strikes · HP < 50 % sleep or item, up at ≥ 70 %
 at a hotel, 50–70 % keep working safely · NPC duels only (never players): HP ≥ 70 %, level ≤ duel level + margin,
 one loss stops them for the day, for XP when it beats the best job · plan to the 6 h horizon (was 10 jobs) · skip quests it cannot finish · level-up energy refund always on ·
 queue slots cost 10 min (the TUI is not open 24/7) · calibrate drops, HP, motivation, rooms from your own game.
@@ -155,3 +212,7 @@ queue slots cost 10 min (the TUI is not open 24/7) · calibrate drops, HP, motiv
 - Motivation scales XP / money / drops linearly; drop % > 100 means that many items on average.
 - Finishing map-giver quests needs you at the giver (the module walks there after a failed finish).
 - NPC duel loss detection (`attacker_died`, or "lost"/"defeat" in the result text).
+- Shops of a town you are not in can be read (`building_<shop>&town_id=N`; seen for the home town only).
+- A market instant buy works from anywhere and the goods wait in the offer's town (`fetch` there).
+- A time-window requirement turns solved inside the window (the quest module re-reads the log every 10 min).
+- Mobile trader offers carry full item ids (base × 1000, like the bag) and can be bought `limited_count` times.

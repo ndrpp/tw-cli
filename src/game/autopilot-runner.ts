@@ -7,11 +7,13 @@ import type { GameState } from './state.ts';
 import type { AutopilotFile, PlannedTask } from './autopilot-config.ts';
 import { duelOutlook, fingerprint } from './autopilot-config.ts';
 import { DuelApi } from './duels.ts';
-import { parseConsumable, planAutopilot, type Consumable, type HotelOption, type Plan, type PlanInput } from './autopilot.ts';
+import { chooseCancel, parseConsumable, planAutopilot, type Consumable, type HotelOption, type Plan, type PlanInput } from './autopilot.ts';
 import { fetchHotel, roomRate } from './hotel.ts';
 import { QuestModule } from './autopilot-quests.ts';
 import { wayTime } from './jobs.ts';
-import { deposit, useItem } from './trade.ts';
+import { baseId } from './items.ts';
+import { deposit, fetchMobileTrader, fetchShop, MarketApi, SHOPS, useItem, type Shop } from './trade.ts';
+import { MARKET_TTL_MS, SHOP_TTL_MS, where } from './quest-buy.ts';
 
 const BACKOFF_S = [60, 300, 900];
 const HOTEL_TTL_MS = 10 * 60_000;
@@ -19,6 +21,9 @@ const CHECK_MS = 2_000;
 const CANCEL_CHECK_MS = 30_000;
 /** work/index re-read: motivation (calibration and job values) changes as jobs are done. */
 const JOBS_REFRESH_MS = 30 * 60_000;
+/** Quest shopping: at most this many towns' shops are read (nearest first), one request at a time this far apart. */
+const SHOP_TOWNS = 10;
+const BUY_SCAN_GAP_MS = 3_000;
 
 
 export class AutopilotRunner {
@@ -42,6 +47,8 @@ export class AutopilotRunner {
   private acting = false;
   /** Why the next fingerprint-driven replan happens, when it is not just "inputs changed". */
   private replanReason: string | null = null;
+  private scanning = false;
+  private scanAt = 0;
 
   private quests: QuestModule;
 
@@ -162,6 +169,7 @@ export class AutopilotRunner {
       items: this.consumables().map((c) => [c.itemId, c.count]),
       skip: [...this.skipped()],
       budget: this.budget(),
+      buy: [s.buyCatalog.version, s.autopilot.pickups.length],
     };
   }
 
@@ -204,6 +212,7 @@ export class AutopilotRunner {
       homeTownId: c.homeTown?.id,
       towns: s.world.towns.filter((t) => t.name).map((t) => ({ id: t.id, name: t.name!, at: { x: t.x, y: t.y } })),
       bankTownId: this.bankWalk()?.townId,
+      buyTrips: s.buyTrips(),
       budget: this.budget(),
       skip: this.skipped(),
       motivation: s.calibration.motivation,
@@ -233,6 +242,10 @@ export class AutopilotRunner {
         id: q.id, title: q.title, chain: q.group, finishable: q.finishable,
         inScope: needs.some((n) => n.quests.includes(q.soloTitle || q.title)) || undefined,
         blocker: s.questBlocker(q) ?? undefined,
+        buy: (() => {
+          const p = s.questPurchase(q);
+          return p.needs.length ? { needs: p.needs, picks: p.picks.map((x) => ({ item: x.name, count: x.count, cost: x.cost, from: where(x.source) })), problem: p.problem ?? undefined } : undefined;
+        })(),
         giver: q.employerName, giverSeconds: q.employerAt ? way(q.employerAt) : null,
         requirements: q.requirements.map((r) => {
           const src = r.solved ? [] : s.requirementSources(r).sort((a, b) => (a.way ?? Infinity) - (b.way ?? Infinity));
@@ -254,6 +267,9 @@ export class AutopilotRunner {
       server: c.serverValues, regen: { energyPerHour: c.energyRegen, healthPerHour: c.healthRegen },
       level: c.level, experience: c.experience, cash: c.cash, deposit: c.deposit, budgetLeft: this.budget(),
       needs,
+      buyTrips: s.buyTrips(),
+      pickups: s.autopilot.pickups,
+      shopsRead: [...s.buyCatalog.shops].map(([id, c]) => ({ town: s.world.towns.find((t) => t.id === id)?.name ?? id, at: new Date(c.at).toISOString(), shops: c.shops.map((x) => `${x.key} (${x.items.length})`) })),
       calibration: s.calibration.summary(),
       rates: this.plan?.rates,
       failures: Object.fromEntries([...this.failures].map(([k, f]) => [k, { count: f.count, until: new Date(f.until).toISOString() }])),
@@ -322,6 +338,7 @@ export class AutopilotRunner {
         this.replan(this.replanReason ?? (this.plan ? 'inputs changed' : 'start'));
         this.replanReason = null;
       }
+      this.scanBuySources();
       if (now - this.jobsAt >= JOBS_REFRESH_MS) {
         this.jobsAt = now;
         void s.loadJobs(true);
@@ -436,8 +453,10 @@ export class AutopilotRunner {
   }
 
   /**
-   * Cancels queued tasks when planning without them is better by the margin over the horizon, counting the
-   * running task's lost progress (its energy is not refunded). At most one cancel per cooldown.
+   * Cancels the queue from some position on when replanning from there is better by the margin over the
+   * horizon, or about as good (within `sameWithin`) with `walkSaved` less walking (a walk to town, a job outside
+   * it, a walk back). Every cut point is tried; the running task is kept (its energy is not refunded). At most
+   * one cancel per cooldown.
    */
   private async maybeCancelForBetter(): Promise<boolean> {
     const s = this.state;
@@ -447,34 +466,36 @@ export class AutopilotRunner {
     if (s.queue.some((t) => t.type === 'build')) return false;
     if (Date.now() - this.lastCancelCheck < CANCEL_CHECK_MS) return false;
     this.lastCancelCheck = Date.now();
-    const current = this.plan.value + this.queueValue(s.queue);
     const refund = (from: number) => s.queue.slice(from).reduce((a, t) => a + (t.type === 'job' ? this.jobEnergy(t) : 0), 0);
-    const nowS = s.clock.now();
-    const running = s.queue[0]!.start <= nowS;
-    // Keep the running task, cancel the rest; or cancel everything.
-    const keep = running ? [s.queue[0]!] : [];
-    const altKeep = this.snapshot(keep, refund(keep.length));
-    const altKeepValue = altKeep.value + this.queueValue(keep);
-    const altAll = running ? this.snapshot([], refund(1)) : null;
-    const best = altAll && altAll.value > altKeepValue ? { value: altAll.value, from: 0 } : { value: altKeepValue, from: keep.length };
-    const cmp = {
-      current, keepRunning: altKeepValue, cancelAll: altAll?.value ?? null, best, margin: cfg.cancel.margin,
-      threshold: current * (1 + cfg.cancel.margin), queue: s.queue.map((t) => t.title),
-      altKeepNext: altKeep.tasks.slice(0, 5).map((t) => t.step.title), altAllNext: altAll?.tasks.slice(0, 5).map((t) => t.step.title),
+    const option = (from: number) => {
+      const p = this.snapshot(s.queue.slice(0, from), refund(from));
+      return { from, value: p.value + p.queuedValue, walk: Math.round(p.walk), next: p.tasks.slice(0, 5).map((t) => t.step.title) };
     };
-    if (best.from >= s.queue.length || best.value <= current * (1 + cfg.cancel.margin) || current <= 0) {
+    const cur = option(s.queue.length);
+    const running = s.queue[0]!.start <= s.clock.now();
+    const cuts = Array.from({ length: s.queue.length - (running ? 1 : 0) }, (_, i) => option(i + (running ? 1 : 0)));
+    const pick = chooseCancel(cur, cuts, cfg.cancel);
+    const cmp = {
+      current: cur, cuts, margin: cfg.cancel.margin, sameWithin: cfg.cancel.sameWithin, walkSaved: cfg.cancel.walkSaved,
+      threshold: cur.value * (1 + cfg.cancel.margin), queue: s.queue.map((t) => t.title), pick: pick ?? null,
+    };
+    if (!pick) {
       s.debug.once('cancel', 'autopilot', `Cancel check: keep the queue (${s.queue.map((t) => t.title).join(', ')})`, cmp);
       return false;
     }
-    const positions = s.queue.map((_, i) => i).slice(best.from).reverse();
-    s.debug.add('autopilot', `Cancel check: cancelling ${positions.length} task(s) for a better plan`, { ...cmp, positions });
+    const positions = s.queue.map((_, i) => i).slice(pick.from).reverse();
+    const titles = s.queue.slice(pick.from).map((t) => t.title).join(', ');
+    const reason = pick.why === 'better'
+      ? `a fresh plan is ${Math.round((pick.value / cur.value - 1) * 100)}% better over ${Math.round(cfg.cancel.horizon / 3600)} h`
+      : `about the same value (${((pick.value / cur.value - 1) * 100).toFixed(1)}%), ${Math.round((cur.walk - pick.walk) / 60)} min less walking`;
+    s.debug.add('autopilot', `Cancel check: cancelling ${titles} (${pick.why === 'better' ? 'better plan' : 'less walking'})`, { ...cmp, positions });
     try {
-      const res = await s.autopilotCall(() => s.tasks.cancel(s.queue, positions), 'cancel for a better plan');
+      const res = await s.autopilotCall(() => s.tasks.cancel(s.queue, positions), `cancel ${titles}`);
       s.queue = res.queue;
       if (res.energy !== undefined) s.character.setEnergy(res.energy);
       this.lastCancel = Date.now();
-      s.info(`Autopilot: cancelled ${positions.length} queued task(s): a fresh plan is ${Math.round((best.value / current - 1) * 100)}% better over ${Math.round(cfg.cancel.horizon / 3600)} h.`);
-      this.replan('cancelled for a better plan');
+      s.info(`Autopilot: cancelled ${titles}: ${reason}.`);
+      this.replan(pick.why === 'better' ? 'cancelled for a better plan' : 'cancelled for less walking');
     } catch (err) {
       this.fail('cancel', `cancel failed: ${err instanceof Error ? err.message : String(err)}`);
       this.lastCancel = Date.now();
@@ -489,20 +510,6 @@ export class AutopilotRunner {
     const secs = t.end - (t.way?.end ?? t.start);
     const vs = Object.values(j.values).filter((v) => !!v);
     return vs.reduce((a, b) => (Math.abs(b.duration - secs) < Math.abs(a.duration - secs) ? b : a), vs[0]!)?.energy ?? 0;
-  }
-
-  /**
-   * Value of server-queued jobs, so plans with and without them compare: the planned jobs' average value per
-   * XP + $ applied to the queued ones (an estimate; queued jobs carry no priority score of their own).
-   */
-  private queueValue(queue: GameState['queue']): number {
-    if (!this.plan?.tasks.length) return 0;
-    const perXp = this.plan.tasks.filter((t) => t.step.kind === 'job' && t.value).map((t) => (t.value ?? 0) / Math.max(1, (t.step as any).xp + (t.step as any).money));
-    const rate = perXp.length ? perXp.reduce((a, b) => a + b, 0) / perXp.length : 0;
-    return queue.reduce((a, t) => {
-      const st = this.state.queuedStep(t);
-      return a + (st.kind === 'job' ? rate * (st.xp + st.money) : 0);
-    }, 0);
   }
 
   /** Sends the next planned tasks the queue has room for; runs an on-the-spot action when its turn comes. */
@@ -567,6 +574,76 @@ export class AutopilotRunner {
     }
   }
 
+  /**
+   * Fills the buy catalog for quest items no job drops (Quests module, buying on): the mobile trader, the shops
+   * of the nearest towns within the buy trip, market offers. One read at a time, in the background like hotel
+   * data (also while paused or in dry run: reads only); each answer is a planner input, so it replans.
+   */
+  private scanBuySources(): void {
+    const s = this.state;
+    const cfg = this.cfg;
+    if (!cfg.modules.quests || !cfg.quests.buy || this.scanning || Date.now() - this.scanAt < BUY_SCAN_GAP_MS || !s.items) return;
+    // Items of quests that buying could unblock (a "Go to …" quest is not worth a read).
+    const wanted = new Map<number, string>();
+    for (const q of s.autopilotQuests(true)) {
+      const p = s.questPurchase(q);
+      if (!p.blocker) for (const n of p.needs) wanted.set(baseId(n.itemId), n.name);
+    }
+    if (!wanted.size) return;
+    const cat = s.buyCatalog;
+    let job: { what: string; run: () => Promise<void> } | null = null;
+    if (cat.mobileStale()) {
+      job = { what: 'mobile trader', run: async () => cat.setMobile(await fetchMobileTrader(s.client)) };
+    }
+    if (!job) {
+      const from = s.queueEndPosition;
+      const far = (t: { x: number; y: number }) => wayTime(from, t, s.travelSpeed, s.character.speed);
+      const town = s.world.towns
+        .filter((t) => t.name && far(t) <= cfg.quests.buyTrip)
+        .sort((a, b) => far(a) - far(b))
+        .slice(0, SHOP_TOWNS)
+        .find((t) => Date.now() - (cat.shops.get(t.id)?.at ?? 0) > SHOP_TTL_MS);
+      if (town) job = {
+        what: `shops in ${town.name}`,
+        run: async () => {
+          const shops: Shop[] = [];
+          // Read from anywhere (the trade screen does it for the home town; other towns unverified).
+          for (const def of SHOPS) shops.push(...await fetchShop(s.client, def.key, town.id).then((x) => [x], () => []));
+          cat.setShops(town.id, shops);
+        },
+      };
+    }
+    if (!job && cfg.quests.market) {
+      const item = [...wanted].find(([id]) => Date.now() - (cat.market.get(id)?.at ?? 0) > MARKET_TTL_MS);
+      if (item) job = {
+        what: `market: ${item[1]}`,
+        run: () => new MarketApi(s.client).search(item[1]).then(
+          (r) => cat.setMarket(item[0] * 1000, r.offers),
+          (err) => {
+            cat.setMarket(item[0] * 1000, []);
+            throw err;
+          },
+        ),
+      };
+    }
+    if (!job) return;
+    const j = job;
+    this.scanning = true;
+    const t0 = Date.now();
+    void j.run().then(
+      () => s.debug.add('quest', `Buy sources: read ${j.what} (${Date.now() - t0} ms)`, { wanted: [...wanted.values()] }),
+      (err) => {
+        s.debug.add('quest', `Buy sources: reading ${j.what} failed`, { error: err instanceof Error ? err.message : String(err) });
+        // Do not retry at once: mark it read (empty) until the TTL passes.
+        if (j.what === 'mobile trader') cat.setMobile({ items: [], changesAt: null });
+      },
+    ).finally(() => {
+      this.scanning = false;
+      this.scanAt = Date.now();
+      this.replanReason = `buy sources (${j.what})`;
+    });
+  }
+
   /** The queued bank walk still owed a deposit: while it is queued or you stand in its town; forgotten otherwise. */
   private bankWalk(): AutopilotFile['bankWalk'] {
     const s = this.state;
@@ -599,6 +676,13 @@ export class AutopilotRunner {
       } catch (err) {
         this.fail(t.key, `${t.step.title}: ${err instanceof Error ? err.message : String(err)}`);
       }
+      return;
+    }
+    if (t.action?.type === 'buy') {
+      if (s.townHere?.id !== t.action.townId) return this.fail(t.key, `${t.step.title}: not in that town yet`);
+      // Usually done already: the quest step buys in the town you stand in before the plan gets here.
+      if (!(await this.quests.buyHere())) s.debug.add('autopilot', `${t.step.title}: nothing left to buy here`, { task: t });
+      this.replan('bought quest items');
       return;
     }
     if (t.action?.type !== 'deposit') return;

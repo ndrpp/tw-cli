@@ -27,6 +27,9 @@ export function parseConsumable(usebonus: string[], usetype: string): Consumable
   return e.energy || e.health || e.motivation ? e : null;
 }
 
+/** A town to walk to for quest items: shop purchases (`cost`) and market pickups; `what` says what and for which quest. */
+export interface BuyTrip { townId: number; name: string; at: Position; cost: number; what: string[] }
+
 /** An item in the bag the autopilot may use: `count` is what is left above the reserve; `value` its shop price. */
 export interface Consumable { itemId: number; name: string; count: number; value: number; effect: ConsumableEffect }
 
@@ -54,6 +57,8 @@ export interface PlanInput {
    * says, so no job is queued behind the walk and the trip is not made twice.
    */
   bankTownId?: number;
+  /** Quest shopping / market pickups (Quests module): planned when the town is within `quests.buyTrip`. */
+  buyTrips?: BuyTrip[];
   /** Money the autopilot may still spend today. */
   budget: number;
   /** Step keys that keep failing: not planned. */
@@ -78,8 +83,29 @@ export interface Plan {
   why: string;
   /** Weighted value of the planned tasks inside the horizon (in units of the exchange rates). */
   value: number;
+  /** The server-queued jobs' value, scored like planned ones (state before each run, its quest needs still open). */
+  queuedValue: number;
+  /** Seconds of walking inside the horizon, server queue included. */
+  walk: number;
   /** The exchange rates the values are in: best gain per cost per goal at the plan's start. */
   rates: Record<Goal, number>;
+}
+
+/** A cancel-check alternative: keep the first `from` queued tasks, replan the rest. */
+export interface CancelOption { from: number; value: number; walk: number }
+
+/**
+ * Which cut to cancel at, if any: one better than the queue by `margin`, else one worth at most `sameWithin`
+ * less that walks `walkSaved` s less. Highest value wins; on a tie the later cut (cancel less).
+ */
+export function chooseCancel<T extends CancelOption>(cur: CancelOption, cuts: T[], c: AutopilotConfig['cancel']): (T & { why: 'better' | 'walk' }) | null {
+  const top = (list: T[]) => list.reduce<T | undefined>((a, b) => (!a || b.value >= a.value - 1e-9 ? b : a), undefined);
+  const best = top(cuts);
+  // A queue worth nothing: anything worth something is better.
+  if (cur.value <= 0) return best && best.value > 0 ? { ...best, why: 'better' } : null;
+  if (best && best.value > cur.value * (1 + c.margin)) return { ...best, why: 'better' };
+  const lessWalk = top(cuts.filter((o) => o.value >= cur.value * (1 - c.sameWithin) && cur.walk - o.walk >= c.walkSaved));
+  return lessWalk ? { ...lessWalk, why: 'walk' } : null;
 }
 
 /** Expected HP lost on a run: a heuristic until danger damage is known (danger % of 10 % max HP per hour). */
@@ -156,6 +182,8 @@ export function planAutopilot(input: PlanInput): Plan {
   const remaining: Record<string, number> = Object.fromEntries(input.needs.map((n) => [n.key, n.amount]));
   const totals: Record<string, number> = Object.fromEntries(input.needs.map((n) => [n.key, n.amount]));
   const runs = new Map<number, number>();
+  // Before the queued runs count: for scoring them.
+  const beforeQueue = { remaining: { ...remaining }, runs: new Map<number, number>() };
   // Jobs already queued drop items too: what they will bring is not needed again.
   for (const st of input.fixed) {
     if (st.kind !== 'job') continue;
@@ -202,7 +230,7 @@ export function planAutopilot(input: PlanInput): Plan {
    * level-up refund (a level-up refills energy: each XP point brings maxEnergy ÷ XP-per-level of it back);
    * `hours` from now sets the projected motivation.
    */
-  const candidates = (from: Position, health: number, level = start.level, hours = 0): Candidate[] => {
+  const candidates = (from: Position, health: number, level = start.level, hours = 0, done = { remaining, runs }): Candidate[] => {
     const list: Candidate[] = [];
     const xpPerLevel = levelStartXp(level + 1, start.maxLevel) - levelStartXp(level, start.maxLevel);
     const refundPerXp = xpPerLevel > 0 ? start.maxEnergy / xpPerLevel : 0;
@@ -221,15 +249,16 @@ export function planAutopilot(input: PlanInput): Plan {
         if (!v) continue;
         if (skip.has(`job:${job.id}:${duration}`)) continue;
         const hpLoss = expectedHpLoss(job.danger, v.duration, start.maxHealth) * hpScale;
-        // Never plan a run that could take HP under the sleep threshold (50–70 %: keep working, safely).
-        if (mods.hpSleep && health - hpLoss < cfg.hp.sleepBelow * start.maxHealth) continue;
+        // Never plan a run that could take HP under the sleep threshold, HP sleeps on or off. A run that costs
+        // no HP is always fine: under the threshold with no hotel, safe jobs go on while HP regenerates.
+        if (hpLoss > 0 && health - hpLoss < cfg.hp.sleepBelow * start.maxHealth) continue;
         const gains = runGains(job, duration, input.needs);
         // Quest progress (weighted by deadline), plus the share of the quests' rewards this progress earns.
         let quests = 0;
         let rewardXp = 0;
         let rewardMoney = 0;
         for (const [k, g] of Object.entries(gains)) {
-          const rem = remaining[k] ?? 0;
+          const rem = done.remaining[k] ?? 0;
           if (rem <= 1e-9) continue;
           const got = Math.min(rem, g);
           const n = needInfo.get(k);
@@ -239,7 +268,7 @@ export function planAutopilot(input: PlanInput): Plan {
         }
         // Motivation falls per run and recovers per hour; pay scales with it (heuristic until calibrated).
         const m0 = job.motivation > 0 ? job.motivation : 1;
-        const m = Math.min(1, m0 - motivation.perRun * (runs.get(job.id) ?? 0) + motivation.perHour * hours);
+        const m = Math.min(1, m0 - motivation.perRun * (done.runs.get(job.id) ?? 0) + motivation.perHour * hours);
         const fade = Math.max(0.3, m / m0);
         const xp = v.experience * fade;
         const products = (v.items ?? []).reduce((a, i) => a + i.expected * input.itemValue(i.itemId), 0);
@@ -294,13 +323,18 @@ export function planAutopilot(input: PlanInput): Plan {
   };
 
   /** A sleep that reaches the wake targets soonest (own town first when close), with when it is done and the walk there. */
-  const sleepPlan = (reason: 'hp' | 'energy', minEnergy: number): { task: PlannedTask; ready: number; travel: number; energy: number } | null => {
+  const sleepPlan = (reason: 'hp' | 'energy', minEnergy: number, next?: { title: string; xp: number }): { task: PlannedTask; ready: number; travel: number; energy: number } | null => {
     const s = tl.final;
     const wake = cfg.wake;
     let energy = s.energy;
     const reasons: string[] = [];
-    const lvl = wake.levelUp ? levelUpEnergy(s.at, s.health, s.experience, s.level) : null;
-    if (lvl !== null && lvl > energy) {
+    // The run after the sleep levels up by itself: its energy is enough, the level-up refills the rest.
+    const nextLevels = wake.levelUp && !!next && s.level < (start.maxLevel ?? Infinity) && s.experience + next.xp >= levelStartXp(s.level + 1, start.maxLevel);
+    const lvl = wake.levelUp && !nextLevels ? levelUpEnergy(s.at, s.health, s.experience, s.level) : null;
+    if (nextLevels) {
+      energy = Math.max(energy, minEnergy);
+      reasons.push(`enough for ${next!.title}, which levels up`);
+    } else if (lvl !== null && lvl > energy) {
       energy = lvl;
       reasons.push('enough to level up');
     }
@@ -319,12 +353,15 @@ export function planAutopilot(input: PlanInput): Plan {
     for (const h of input.hotels) {
       const travel = wayTime(s.at, h.at);
       const own = h.townId === input.homeTownId && travel <= cfg.ownTownWithin;
+      // What base regen brings on the walk there: the sleep only makes up the rest.
+      const arriveEnergy = Math.min(start.maxEnergy, s.energy + (start.maxEnergy * start.energyRegen * travel) / 3600);
+      const arriveHealth = Math.min(start.maxHealth, s.health + (start.maxHealth * start.healthRegen * travel) / 3600);
       for (const r of h.rooms) {
         if (r.cost > budget || r.energyRate <= 0) continue;
         if (skip.has(`sleep:${h.townId}:${r.key}`)) continue;
         const secs = Math.max(
-          regenSeconds(s.energy, energy, start.maxEnergy, r.energyRate),
-          regenSeconds(s.health, health, start.maxHealth, r.healthRate),
+          regenSeconds(arriveEnergy, energy, start.maxEnergy, r.energyRate),
+          regenSeconds(arriveHealth, health, start.maxHealth, r.healthRate),
         );
         if (!Number.isFinite(secs)) continue;
         const ready = travel + secs;
@@ -370,8 +407,49 @@ export function planAutopilot(input: PlanInput): Plan {
     return [{ module: 'bank', key: `walk:${town.id}`, why, step: { kind: 'walk', title: `Walk to ${town.name} (bank)`, at: town.at }, post: walkPost(town.id, 'town') }, deposit];
   };
 
+  /** The nearest shopping trip within the buy trip and the budget: walk there, then buy / pick up. */
+  const trips = [...(input.buyTrips ?? [])];
+  const tripPlan = (): PlannedTask[] | null => {
+    const s = tl.final;
+    let best = -1;
+    let bestWay = Infinity;
+    for (const [i, t] of trips.entries()) {
+      const w = wayTime(s.at, t.at);
+      if (t.cost > budget || w > cfg.quests.buyTrip || skip.has(`buy:${t.townId}`) || w >= bestWay) continue;
+      [best, bestWay] = [i, w];
+    }
+    if (best < 0) return null;
+    const t = trips.splice(best, 1)[0]!;
+    budget -= t.cost;
+    const why = `quest items: ${t.what.join('; ')}`;
+    const buy: PlannedTask = {
+      module: 'quests', key: `buy:${t.townId}`, why,
+      step: { kind: 'action', title: `Buy at ${t.name}${t.cost ? ` ($${Math.round(t.cost).toLocaleString('en-US')})` : ''}`, cash: -t.cost },
+      action: { type: 'buy', townId: t.townId },
+    };
+    if (s.at.x === t.at.x && s.at.y === t.at.y) return [buy];
+    return [{ module: 'quests', key: `walk:${t.townId}`, why, step: { kind: 'walk', title: `Walk to ${t.name} (quest items)`, at: t.at }, post: walkPost(t.townId, 'town') }, buy];
+  };
+
   // Exchange rates: fixed for the whole plan, from where the server queue ends (unless passed in).
   if (!rates) rates = bestRates(candidates(tl.final.at, tl.final.health, tl.final.level));
+
+  // Queued jobs, scored like planned ones in queue order, so a queue and an alternative without it compare.
+  let queuedValue = 0;
+  input.fixed.forEach((st, i) => {
+    if (st.kind !== 'job') return;
+    const job = input.jobs.find((j) => j.id === st.jobId);
+    const dur = job && closestDuration(job, st.duration);
+    const self = tl.steps[i];
+    if (!job || !dur || !self) return;
+    const prev = tl.steps[i - 1];
+    const c = candidates(prev?.at ?? start.at, prev?.health ?? start.health, prev?.level ?? start.level, Math.max(0, self.depart - start.now) / 3600, beforeQueue)
+      .find((x) => x.job.id === job.id && x.duration === dur);
+    const inside = self.end <= horizonEnd ? 1 : Math.max(0, (horizonEnd - self.start) / Math.max(1, self.end - self.start));
+    if (c) queuedValue += c.score * c.cost * inside;
+    beforeQueue.runs.set(job.id, (beforeQueue.runs.get(job.id) ?? 0) + 1);
+    for (const [k, g] of Object.entries(runGains(job, dur, input.needs))) if ((beforeQueue.remaining[k] ?? 0) > 0) beforeQueue.remaining[k] = Math.max(0, beforeQueue.remaining[k]! - g);
+  });
 
   // Your inserted sleeps / bank stops, in time order: each goes in once the plan reaches its time.
   const inserts = [...input.rules.inserts].sort((a, b) => a.at - b.at);
@@ -402,10 +480,19 @@ export function planAutopilot(input: PlanInput): Plan {
     }
     const bankDue = input.bankTownId !== undefined && s.cash > 0 && input.towns.some((t) => t.id === input.bankTownId && t.at.x === s.at.x && t.at.y === s.at.y);
     if (mods.bank && !banked && (s.cash > cfg.bank.above || bankDue)) {
+      // Once per plan (the next replan, after depositing, looks again); no town in reach yet: try after each step.
       const b = bankPlan(false, bankDue ? input.bankTownId : undefined);
-      banked = true; // once per plan; the next replan (after depositing) looks again
       if (b) {
+        banked = true;
         push(...b);
+        continue;
+      }
+    }
+    if (mods.quests && trips.length) {
+      // Each trip once per plan; one out of reach now is tried again after the next step.
+      const t = tripPlan();
+      if (t) {
+        push(...t);
         continue;
       }
     }
@@ -420,7 +507,7 @@ export function planAutopilot(input: PlanInput): Plan {
       }
     }
     if (s.energy < c.energy) {
-      const sl = mods.energySleep ? sleepPlan('energy', c.energy) : null;
+      const sl = mods.energySleep ? sleepPlan('energy', c.energy, { title: c.job.name, xp: c.xp }) : null;
       const wait = regenSeconds(s.energy, c.energy, start.maxEnergy, start.energyRegen);
       // A hotel within the own-town distance beats an item; else an item when it saves at least 30 minutes.
       const hotelNear = !!sl && sl.travel <= cfg.ownTownWithin;
@@ -432,7 +519,7 @@ export function planAutopilot(input: PlanInput): Plan {
       }
     }
     if (s.energy < c.energy && mods.energySleep) {
-      const sl = sleepPlan('energy', c.energy);
+      const sl = sleepPlan('energy', c.energy, { title: c.job.name, xp: c.xp });
       const wait = regenSeconds(s.energy, sl?.energy ?? c.energy, start.maxEnergy, start.energyRegen);
       if (sl && sl.ready < wait) {
         budget -= (sl.task.step as { cost?: number }).cost ?? 0;
@@ -463,5 +550,6 @@ export function planAutopilot(input: PlanInput): Plan {
   }
   const first = tasks[0];
   const why = first?.why ?? (!mods.jobs ? 'Queue jobs is off.' : 'Nothing worth doing (no doable job, or everything is excluded).');
-  return { tasks, timeline: tl, why, value, rates };
+  const walk = tl.steps.reduce((a, st) => a + Math.max(0, Math.min(st.depart + st.travel, horizonEnd) - st.depart), 0);
+  return { tasks, timeline: tl, why, value, queuedValue, walk, rates };
 }

@@ -183,7 +183,7 @@ const planJob = (id: number, groupid: number, o: { xp: number; money: number; en
   values: { long: { duration: 3600, energy: o.energy ?? 12, money: o.money, experience: o.xp, luck: 0, items: o.items ?? [] } },
 });
 
-async function planWith(o: { start?: Partial<TimelineStart>; config?: (c: any) => void; jobs?: any[]; hotels?: any[]; needs?: any[]; towns?: any[]; consumables?: any[] } = {}) {
+async function planWith(o: { start?: Partial<TimelineStart>; config?: (c: any) => void; jobs?: any[]; hotels?: any[]; needs?: any[]; towns?: any[]; consumables?: any[]; buyTrips?: any[] } = {}) {
   const { planAutopilot } = await import('../src/game/autopilot.ts');
   const { parseAutopilotFile } = await import('../src/game/autopilot-config.ts');
   const f = parseAutopilotFile(null);
@@ -192,7 +192,7 @@ async function planWith(o: { start?: Partial<TimelineStart>; config?: (c: any) =
   const locs: Record<number, any[]> = { 1: [{ x: 100, y: 0 }], 2: [{ x: 200, y: 0 }], 3: [{ x: 50, y: 0 }] };
   return planAutopilot({
     start: start(o.start), fixed: [], jobs, locations: (g) => locs[g], wayTime: way, config: f.config, rules: f.rules,
-    needs: o.needs ?? [], itemValue: () => 5, hotels: o.hotels ?? [], consumables: o.consumables ?? [], homeTownId: 9, towns: o.towns ?? [], budget: 1000, maxJobs: 6,
+    needs: o.needs ?? [], itemValue: () => 5, hotels: o.hotels ?? [], consumables: o.consumables ?? [], homeTownId: 9, towns: o.towns ?? [], buyTrips: o.buyTrips, budget: 1000, maxJobs: 6,
   });
 }
 
@@ -258,6 +258,19 @@ test('planner: out of energy → sleeps until enough to level up when that beats
   assert.equal(noSleep.tasks[0]!.step.kind, 'job', 'waits for regen instead');
 });
 
+test('planner: sleeps only for the next run when that run levels up (not until full)', async () => {
+  const hotels = [{ townId: 9, name: 'Home', at: { x: 0, y: 0 }, rooms: [{ key: 'cubby', name: 'Cubby', cost: 0, energyRate: 0.5, healthRate: 0.2 }] }];
+  // Money first: the 10-energy job runs next; a 1-energy XP job could level up on the 2 energy left, which used
+  // to leave no wake reason, so the sleep went to full.
+  const jobs = [planJob(1, 1, { xp: 100, money: 500, energy: 10 }), planJob(2, 2, { xp: 60, money: 0, energy: 1 })];
+  const p = await planWith({ jobs, hotels, start: { energy: 2, experience: levelStartXp(11) - 50 }, config: (c) => (c.priority = ['money', 'xp', 'quests', 'products']) });
+  const sl = p.tasks[0]!;
+  assert.equal(sl.step.kind, 'sleep');
+  assert.equal(sl.wake!.energy, 10);
+  assert.match(sl.why!, /enough for job1, which levels up/);
+  assert.equal((p.tasks[1]!.step as any).jobId, 1);
+});
+
 test('planner: banks cash over the limit at home when close, not beyond the detour', async () => {
   const towns = [{ id: 9, name: 'Home', at: { x: 300, y: 0 } }, { id: 8, name: 'Far', at: { x: 9000, y: 0 } }];
   const p = await planWith({ towns, start: { cash: 5000 } });
@@ -266,6 +279,28 @@ test('planner: banks cash over the limit at home when close, not beyond the deto
   assert.equal(p.timeline.steps[1]!.cash, 0);
   const far = await planWith({ towns: [towns[1]], start: { cash: 5000 } });
   assert.equal(far.tasks[0]!.step.kind, 'job', 'Far is past the 30 min detour: bank later');
+});
+
+test('planner: queued jobs are scored like planned ones; walking inside the horizon is counted', async () => {
+  const { planAutopilot } = await import('../src/game/autopilot.ts');
+  const { parseAutopilotFile } = await import('../src/game/autopilot-config.ts');
+  const f = parseAutopilotFile(null);
+  const jobs = [planJob(1, 1, { xp: 100, money: 10 })];
+  const plan = (fixed: TimelineStep[], rates?: any) => planAutopilot({
+    start: start({ energy: 100 }), fixed, jobs, locations: () => [{ x: 100, y: 0 }], wayTime: way, config: f.config, rules: f.rules,
+    needs: [], itemValue: () => 0, hotels: [], towns: [], budget: 1000, maxJobs: 3, rates,
+  });
+  const fresh = plan([]);
+  assert.equal(fresh.queuedValue, 0);
+  const run: TimelineStep = { kind: 'job', title: 'job1', jobId: 1, at: { x: 100, y: 0 }, duration: 3600, energy: 0, xp: 100, money: 10, fixed: { start: 1_000_100, end: 1_003_700 } };
+  const queued = plan([run], fresh.rates);
+  assert.ok(Math.abs(queued.queuedValue - fresh.tasks[0]!.value!) < 1e-6, 'the queued run is worth what planning it is worth');
+  // Town at 300: walk there, a job at 100, walk back (the live double trip) walks 400 s more than staying.
+  const town: TimelineStep = { kind: 'walk', title: 'Town', at: { x: 300, y: 0 }, fixed: { start: 1_000_300, end: 1_000_300 } };
+  const back: TimelineStep = { kind: 'walk', title: 'Town', at: { x: 300, y: 0 }, fixed: { start: 1_004_300, end: 1_004_300 } };
+  const trip = plan([town, { ...run, fixed: { start: 1_000_500, end: 1_004_100 } }, back], fresh.rates);
+  const stay = plan([town], fresh.rates);
+  assert.ok(trip.walk - stay.walk >= 400, `${trip.walk} vs ${stay.walk}`);
 });
 
 test('planner: a queued bank walk gets its deposit first even when the cash projection dips under the limit', async () => {
@@ -479,4 +514,75 @@ test('timeline: a level-up raises max HP by lpPerPoint', () => {
   const tl = projectTimeline(start({ experience: levelStartXp(11) - 1, healthPerLevel: 15 }), [job({ xp: 10 })], { wayTime: way });
   assert.equal(tl.final.level, 11);
   assert.equal(tl.final.health, 515);
+});
+
+// ---- quest items bought ------------------------------------------------------------------------
+
+test('quest requirements: a time window is its own kind (it only waits)', async () => {
+  const { parseQuest } = await import('../src/game/quests.ts');
+  const q = parseQuest({ id: 1, title: 'Afternoon in the saloon', requirements: [
+    { solved: false, info: "This quest is only available between 06:00 and 11:00 o'clock.", jsInfo: null },
+    { solved: false, info: "Item 'White horse' bought", jsInfo: null },
+  ] });
+  assert.deepEqual(q.requirements.map((r) => r.kind), ['window', 'bought']);
+  assert.deepEqual(q.requirements[0]!.window, { from: '06:00', to: '11:00' });
+});
+
+test('quest buys: no walk first, then the nearest shop, within the quest limit; else the market within its own', async () => {
+  const { chooseBuys } = await import('../src/game/quest-buy.ts');
+  const shop = (townId: number, x: number, price: number): any => ({ kind: 'shop', shop: 'general', townId, townName: `T${townId}`, at: { x, y: 0 }, price });
+  const market = (id: number, price: number, count = 1): any => ({ kind: 'market', offer: { id, count }, townId: 5, townName: 'M', at: { x: 50, y: 0 }, price });
+  const mobile: any = { kind: 'mobile', item: { itemId: 1000 }, price: 40 };
+  const travel = (at: { x: number }) => at.x;
+  const limits = { buyLimit: 3000, marketLimit: 5000, market: true, walkValue: 0.25, maxWalk: Infinity };
+  const need = (count = 2) => [{ itemId: 1000, name: 'Jug of water', count }];
+
+  let r = chooseBuys(need(), () => [shop(1, 900, 30), shop(2, 100, 35), mobile], limits, travel);
+  assert.equal(r.problem, null);
+  assert.equal(r.picks[0]!.source.kind, 'mobile', 'no walk beats a cheaper shop');
+  r = chooseBuys(need(), () => [shop(1, 900, 30), shop(2, 100, 35)], limits, travel);
+  assert.deepEqual([(r.picks[0]!.source as any).townId, r.picks[0]!.cost], [2, 70], 'the nearest shop, price × count');
+
+  // The horse: $2,800 in a shop fits the $3,000 limit; two of them do not, and the market takes over.
+  r = chooseBuys(need(2), () => [shop(1, 100, 2800), market(7, 2500), market(8, 2400)], limits, travel);
+  assert.equal(r.problem, null);
+  assert.deepEqual(r.picks.map((p) => p.source.kind), ['market', 'market']);
+  assert.equal(r.picks.reduce((a, p) => a + p.cost, 0), 4900);
+  r = chooseBuys(need(1), () => [market(7, 5200)], limits, travel);
+  assert.match(r.problem!, /over the \$5,000 market limit/);
+  r = chooseBuys(need(1), () => [market(7, 100)], { ...limits, market: false }, travel);
+  assert.match(r.problem!, /no shop in reach or the mobile trader sells it/);
+  r = chooseBuys(need(1), () => [shop(1, 100, 3500)], { ...limits, market: false }, travel);
+  assert.match(r.problem!, /\$3,500 \(general store in T1\), over the \$3,000 quest buy limit/);
+});
+
+test('buy catalog: shop price × charge, mobile trader in dollars, market offers mapped to their town', async () => {
+  const { BuyCatalog } = await import('../src/game/quest-buy.ts');
+  const c = new BuyCatalog();
+  c.setShops(3, [{ key: 'tailor', townId: 3, townName: 'Slobozia', level: 1, charge: 1.5, items: [300000] } as any]);
+  c.setMobile({ items: [{ itemId: 300000, tab: 'trader', prices: [{ currency: 'nuggets', amount: 5, base: 5 }], discount: 0, limitedAt: null, limitedCount: null, teaser: '' }], changesAt: null });
+  c.setMarket(300000, [
+    { id: 9, itemId: 300000, count: 1, buyNow: 25, direction: 'SELL', town: { name: 'Far', x: 7, y: 7 } } as any,
+    { id: 10, itemId: 300000, count: 1, buyNow: null, direction: 'SELL', town: { name: 'Far', x: 7, y: 7 } } as any,
+  ]);
+  const src = c.sources(300000, () => 10, (id) => (id === 3 ? { name: 'Slobozia', at: { x: 1, y: 1 } } : undefined), (at) => (at.x === 7 ? 4 : undefined));
+  assert.deepEqual(src.map((x) => [x.kind, x.price]), [['shop', 15], ['market', 25]], 'nugget-only offers and bid-only offers are left out');
+  assert.equal((src[1] as any).townId, 4);
+  c.dropOffer(9);
+  assert.equal(c.sources(300000, () => 10, () => undefined, () => 4).length, 0);
+});
+
+test('planner: a quest shopping trip in reach is walked first (cost from the budget); one too far waits', async () => {
+  const trip = { townId: 3, name: 'Slobozia', at: { x: 300, y: 0 }, cost: 60, what: ['2× Jug of water (general store) for "Party preparation"'] };
+  const on = (c: any) => (c.modules.quests = true);
+  const p = await planWith({ config: on, buyTrips: [trip] });
+  assert.deepEqual(p.tasks.slice(0, 2).map((t) => t.step.kind), ['walk', 'action']);
+  assert.deepEqual(p.tasks[1]!.action, { type: 'buy', townId: 3 });
+  assert.match(p.tasks[1]!.why!, /quest items: 2× Jug of water/);
+  assert.equal(p.timeline.steps[1]!.cash, -60);
+  assert.equal(p.tasks.filter((t) => t.action?.type === 'buy').length, 1, 'once per plan');
+  const far = await planWith({ config: (c) => (on(c), (c.quests.buyTrip = 200)), buyTrips: [trip] });
+  assert.equal(far.tasks[0]!.step.kind, 'job');
+  const off = await planWith({ buyTrips: [trip] });
+  assert.ok(!off.tasks.some((t) => t.action?.type === 'buy'), 'Quests module off: no trips');
 });

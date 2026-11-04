@@ -15,12 +15,15 @@ import type { GameClient } from '../http/game-client.ts';
 /** jsInfo: inventory_changed / wear_changed {id: item, count}; task-finish-job {id: job, count: seconds}. */
 /**
  * kind: item (have it: inventory_changed) · wear (wear it: wear_changed) · job (task-finish-job) · bought ("Item 'X'
- * bought", no jsInfo; `buy` is the name) · other (anything else: wait timers, visits, duels, …).
+ * bought", no jsInfo; `buy` is the name) · window ("This quest is only available between 06:00 and 11:00
+ * o'clock.": finish inside those server hours) · other (anything else: wait timers, visits, duels, …).
  */
 export interface QuestRequirement {
   solved: boolean; info: string; itemId?: number; jobId?: number; count?: number;
-  kind?: 'item' | 'wear' | 'job' | 'bought' | 'other';
+  kind?: 'item' | 'wear' | 'job' | 'bought' | 'window' | 'other';
   buy?: string;
+  /** window: server hours, "HH:MM". */
+  window?: { from: string; to: string };
 }
 export interface QuestReward { item: number | null; text: string }
 
@@ -128,6 +131,11 @@ function parseRequirement(r: Record<string, any>): QuestRequirement {
   if (bought) {
     req.kind = 'bought';
     req.buy = bought[1];
+  }
+  const window = req.kind === 'other' ? req.info.match(/only available between (\d{1,2}:\d{2}) and (\d{1,2}:\d{2})/i) : null;
+  if (window) {
+    req.kind = 'window';
+    req.window = { from: window[1]!, to: window[2]! };
   }
   return req;
 }

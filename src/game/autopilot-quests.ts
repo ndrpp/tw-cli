@@ -1,15 +1,20 @@
 // Autopilot quest module: on-the-spot quest steps the runner does between tasks, one per tick: finish
-// quests (reward by priority), wear items a quest asks for (and put the old gear back afterwards), buy
-// quest items in the town's shops, and accept quests from the saloon of towns it is in. Job items and job
-// runs are not here: the planner's Quests goal covers them. Requirements it cannot do are logged once.
+// quests (reward by priority), wear items a quest asks for (and put the old gear back afterwards), buy quest
+// items (mobile trader and market offers from anywhere, shops in the town you are in; quest-buy.ts picks the
+// source), pick up market goods, and accept quests from the saloon of towns it is in. Job items and job runs
+// are not here: the planner's Quests goal covers them, and its shop trips walk to the town. Requirements it
+// cannot do are logged once.
 import type { GameState } from './state.ts';
 import type { Quest } from './quests.ts';
 import { goalWeights, type AutopilotConfig } from './autopilot-config.ts';
-import { SHOPS, fetchShop, shopBuy, type Shop } from './trade.ts';
+import type { MarketPickup } from './autopilot-config.ts';
+import { baseId } from './items.ts';
+import { where, type BuyPick } from './quest-buy.ts';
+import { buyMobileTrader, MarketApi, shopBuy } from './trade.ts';
 import { walkPost } from './tasks.ts';
 
-/** Per-quest limit for items bought for it. */
-export const QUEST_BUY_LIMIT = 500;
+/** A quest that only waits for its time window: the quest log is re-read this often so it finishes inside it. */
+const WINDOW_CHECK_MS = 10 * 60_000;
 
 /** Picks a reward option by the priority: XP / money / items; an item you could wear now that beats yours always wins. */
 export function chooseReward(options: { id: number; text: string }[], config: AutopilotConfig, isUpgrade: (text: string) => boolean = () => false): number | undefined {
@@ -39,9 +44,8 @@ export class QuestModule {
   private host: QuestHost;
   /** Quest id → the item that was worn in that slot before. */
   private swapped = new Map<number, { slot: string; prev: number | null }>();
-  private spentOn = new Map<number, number>();
   private saloonChecked = new Map<number, number>();
-  private shops = new Map<string, { at: number; shop: Shop }>();
+  private windowAt = 0;
   private logged = new Set<string>();
 
   constructor(host: QuestHost) {
@@ -104,15 +108,22 @@ export class QuestModule {
             else void s.loadQuests(true);
             return true;
           }
-          if (await this.buy(q, r.itemId, skip)) return true;
-        } else if (r.kind === 'bought' && r.buy) {
-          const id = s.items.findByName(r.buy);
-          if (id !== undefined && (await this.buy(q, id, skip))) return true;
-          this.once(`bought:${q.id}`, `Autopilot: ${q.title} needs "${r.buy}" bought; no shop in this town sells it.`);
         } else if (r.kind === 'other') {
           this.once(`other:${r.info}`, `Autopilot: skipping a requirement it cannot do yet: "${r.info}" (${q.title}).`);
         }
       }
+    }
+
+    if (await this.buyStep(quests, skip)) return true;
+
+    // Everything done but the time window: re-read the quest log now and then (the server should mark the
+    // window solved inside it; unverified), so the finish above happens in time.
+    const waiting = quests.filter((q) => !q.finishable && q.requirements.some((r) => !r.solved) && q.requirements.every((r) => r.solved || r.kind === 'window'));
+    if (waiting.length && Date.now() - this.windowAt > WINDOW_CHECK_MS) {
+      this.windowAt = Date.now();
+      s.debug.add('quest', `Waiting for a time window: re-reading the quest log (${waiting.map((q) => q.title).join(', ')})`, { windows: waiting.map((q) => ({ quest: q.id, window: q.requirements.find((r) => r.kind === 'window')?.window })) });
+      await s.loadQuests(true);
+      return true;
     }
 
     // Quest done (finished or wear requirement solved): put the old gear back unless the quest item is better.
@@ -132,46 +143,93 @@ export class QuestModule {
     return this.acceptInTown(skip);
   }
 
-  /** Buys an item for a quest in the shops of the town you are in (cap + per-quest limit). */
-  private async buy(q: Quest, itemId: number, skip: Set<string>): Promise<boolean> {
+  /** The planned shop stop (you are in the town): buy and pick up what is due here; true when it did something. */
+  async buyHere(): Promise<boolean> {
+    return this.buyStep(this.quests(), this.host.skipped());
+  }
+
+  /**
+   * One purchase or pickup: market goods waiting in the town you are in; then, for quests it can finish once
+   * the items are bought, what needs no walk (mobile trader, market offers) or sells in this town's shops.
+   */
+  private async buyStep(quests: Quest[], skip: Set<string>): Promise<boolean> {
     const s = this.host.state;
-    const town = s.townHere;
-    const key = `buy:${itemId}`;
-    if (!town || skip.has(key) || !this.host.config.modules.quests) return false;
-    for (const def of SHOPS) {
-      const ck = `${def.key}:${town.id}`;
-      let c = this.shops.get(ck);
-      if (!c || Date.now() - c.at > 30 * 60_000) {
-        try {
-          c = { at: Date.now(), shop: await s.autopilotCall(() => fetchShop(s.client, def.key, town.id), `shop ${def.key} ${town.name}`) };
-          this.shops.set(ck, c);
-        } catch {
-          continue;
-        }
-      }
-      if (!c.shop.items.some((i) => Math.floor(i / 1000) === Math.floor(itemId / 1000))) continue;
-      const price = Math.round((s.items?.get(itemId)?.price ?? 0) * (c.shop.charge || 1));
-      const spent = this.spentOn.get(q.id) ?? 0;
-      s.debug.add('quest', `Shop ${def.key} in ${town.name} sells ${s.itemName(itemId)} for ${q.title}`, { price, spentOnQuest: spent, questLimit: QUEST_BUY_LIMIT, budget: this.host.budget() });
-      if (price > this.host.budget() || spent + price > QUEST_BUY_LIMIT) {
-        this.once(`afford:${q.id}:${itemId}`, `Autopilot: ${s.itemName(itemId)} ($${price}) for ${q.title} is over the spend limits.`);
-        return false;
-      }
-      try {
-        const r = await s.autopilotCall(() => shopBuy(s.client, def.key, town.id, itemId, s.inventory.lastInvId), `buy ${s.itemName(itemId)}`);
-        s.inventory.applyChanges(r.changes);
-        if (typeof r.cash === 'number') s.character.cash = r.cash;
-        if (typeof r.deposit === 'number') s.character.deposit = r.deposit;
-        this.host.spend(price);
-        this.spentOn.set(q.id, spent + price);
-        s.info(`Autopilot: bought ${s.itemName(itemId)} for ${q.title} ($${price}).`);
-        void s.loadQuests(true);
-      } catch (err) {
-        this.host.fail(key, `buying ${s.itemName(itemId)}: ${err instanceof Error ? err.message : String(err)}`);
-      }
+    const here = s.townHere;
+    const pickup = here && s.autopilot.pickups.find((p) => p.townId === here.id);
+    if (pickup) {
+      await this.pickUp(pickup);
       return true;
     }
+    if (!this.host.config.quests.buy) return false;
+    const all = s.questPurchases(quests);
+    for (const q of quests) {
+      const p = all.get(q.id)!;
+      if (p.blocker || p.problem) continue;
+      for (const pick of p.picks) {
+        if (pick.source.kind === 'shop' && pick.source.townId !== here?.id) continue;
+        const key = `item:${baseId(pick.itemId)}`;
+        if (skip.has(key)) continue;
+        if (pick.cost > this.host.budget()) {
+          this.once(`budget:${q.id}:${baseId(pick.itemId)}`, `Autopilot: ${pick.name} ($${pick.cost}) for ${q.title} is over what is left of today's spend cap ($${this.host.budget()}).`);
+          continue;
+        }
+        await this.buy(q, pick, key);
+        return true;
+      }
+    }
     return false;
+  }
+
+  private async buy(q: Quest, pick: BuyPick, key: string): Promise<void> {
+    const s = this.host.state;
+    const src = pick.source;
+    const money = (r: { cash?: number; deposit?: number }) => {
+      if (typeof r.cash === 'number') s.character.cash = r.cash;
+      if (typeof r.deposit === 'number') s.character.deposit = r.deposit;
+    };
+    s.debug.add('quest', `Buy ${pick.count}× ${pick.name} for ${q.title} (${where(src)})`, { quest: q.id, pick, budget: this.host.budget(), cash: s.character.cash, deposit: s.character.deposit });
+    try {
+      if (src.kind === 'shop') {
+        for (let i = 0; i < pick.count; i++) {
+          const r = await s.autopilotCall(() => shopBuy(s.client, src.shop, src.townId, pick.itemId, s.inventory.lastInvId), `buy ${pick.name} (${where(src)})`);
+          s.inventory.applyChanges(r.changes);
+          money(r);
+        }
+      } else if (src.kind === 'mobile') {
+        for (let i = 0; i < pick.count; i++) money(await s.autopilotCall(() => buyMobileTrader(s.client, src.item, 'dollar'), `buy ${pick.name} (mobile trader)`));
+        s.buyCatalog.mobile = null; // stock and limited counts changed: read it again
+        await s.refreshInventory();
+      } else {
+        // Instant buy at the offer's price, from the bank when cash is short (bidtype 1); goods wait in its town.
+        const fromBank = s.character.cash < src.price;
+        const r = await s.autopilotCall(() => new MarketApi(s.client).bid(src.offer, src.price, fromBank), `buy ${pick.name} (${where(src)})`);
+        s.buyCatalog.dropOffer(src.offer.id);
+        if (!r.instant) throw new Error('the offer did not sell at its buy-now price (bid placed instead)');
+        money(r);
+        s.updateAutopilot((f) => f.pickups.push({ offerId: src.offer.id, itemId: pick.itemId, count: pick.count, townId: src.townId, townName: src.townName, at: src.at, quest: q.soloTitle || q.title }));
+      }
+      this.host.spend(pick.cost);
+      s.info(`Autopilot: bought ${pick.count > 1 ? `${pick.count}× ` : ''}${pick.name} for ${q.title} ($${pick.cost}, ${where(src)})${src.kind === 'market' ? `; picking it up in ${src.townName}` : ''}.`);
+      void s.loadQuests(true);
+    } catch (err) {
+      this.host.fail(key, `buying ${pick.name} (${where(src)}): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** Picks up market goods bought for a quest; once only: a failure leaves it to you (trade screen, market). */
+  private async pickUp(p: MarketPickup): Promise<void> {
+    const s = this.host.state;
+    const name = s.itemName(p.itemId);
+    s.debug.add('quest', `Pick up ${name} at the market in ${p.townName}`, { pickup: p });
+    s.updateAutopilot((f) => (f.pickups = f.pickups.filter((x) => x.offerId !== p.offerId)));
+    try {
+      await s.autopilotCall(() => new MarketApi(s.client).fetch(p.offerId), `market: pick up ${name}`);
+      s.info(`Autopilot: picked up ${name} at the market in ${p.townName} (for ${p.quest}).`);
+      await s.refreshInventory();
+      void s.loadQuests(true);
+    } catch (err) {
+      s.error(`Autopilot: could not pick up ${name} in ${p.townName}: ${err instanceof Error ? err.message : String(err)}. Pick it up on the market tab of the trade screen.`);
+    }
   }
 
   /** In a town: once an hour, accept what its saloon offers (filters, room in the quest log). */

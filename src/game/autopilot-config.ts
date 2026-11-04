@@ -28,10 +28,20 @@ export interface AutopilotConfig {
   ownTownWithin: number;
   bank: { above: number; maxDetour: number };
   consumables: { energy: boolean; health: boolean; motivation: boolean; reserve: number };
-  /** unfinishable: also work on quests with a requirement the autopilot cannot get (off: skip those quests). */
-  quests: { repeatable: boolean; unfinishable: boolean; excludedChains: string[] };
+  /**
+   * unfinishable: also work on quests with a requirement the autopilot cannot get (off: skip those quests).
+   * buy: buy quest items no job drops (town shops, mobile trader; `market`: instant-buy offers too). Limits per
+   * quest: `buyLimit` for shop + mobile trader, `marketLimit` for the market. `buyTrip`: furthest walk (s) to a
+   * shop or market town; towns that far are the ones whose shops are scanned. `walkValue`: $ a minute of walking
+   * is worth when comparing sources (a shop 10 min further must be 10 × that cheaper).
+   */
+  quests: {
+    repeatable: boolean; unfinishable: boolean; excludedChains: string[];
+    buy: boolean; market: boolean; buyLimit: number; marketLimit: number; buyTrip: number; walkValue: number;
+  };
   duels: { forXp: boolean; levelMargin: number };
-  cancel: { horizon: number; margin: number; cooldown: number };
+  /** walkSaved / sameWithin: also cancel for a plan that walks walkSaved s less and is worth at most sameWithin less. */
+  cancel: { horizon: number; margin: number; cooldown: number; walkSaved: number; sameWithin: number };
   /**
    * Seconds each queued run costs for its queue slot: the TUI is not always open, and while it is closed only
    * the queued tasks keep you busy, so short runs that fill slots leave you idle.
@@ -51,9 +61,9 @@ export const DEFAULT_CONFIG: AutopilotConfig = {
   ownTownWithin: 3600,
   bank: { above: 4500, maxDetour: 1800 },
   consumables: { energy: true, health: true, motivation: false, reserve: 2 },
-  quests: { repeatable: false, unfinishable: false, excludedChains: [] },
+  quests: { repeatable: false, unfinishable: false, excludedChains: [], buy: true, market: true, buyLimit: 3000, marketLimit: 5000, buyTrip: 3600, walkValue: 15 },
   duels: { forXp: true, levelMargin: 0 },
-  cancel: { horizon: 6 * 3600, margin: 0.1, cooldown: 900 },
+  cancel: { horizon: 6 * 3600, margin: 0.1, cooldown: 900, walkSaved: 600, sameWithin: 0.02 },
   slotCost: 600,
   spend: { daily: 1000 },
 };
@@ -69,7 +79,7 @@ export interface PlannedTask {
   /** Sleep: cancel it once energy and health reach these. */
   wake?: { energy: number; health: number };
   /** Done on the spot when the queue before it has finished (no task). */
-  action?: { type: 'deposit'; townId: number } | { type: 'use'; itemId: number };
+  action?: { type: 'deposit'; townId: number } | { type: 'use'; itemId: number } | { type: 'buy'; townId: number };
   /** Weighted value by the priority (plans are compared by the sum). */
   value?: number;
 }
@@ -98,7 +108,11 @@ export interface AutopilotFile {
   duels: DuelRecord[];
   /** The bank walk the autopilot queued and has not deposited after yet: the deposit stays due on arrival. */
   bankWalk: { queueId: number; townId: number } | null;
+  /** Market offers the autopilot bought for quests and has not picked up yet (in the offer's town). */
+  pickups: MarketPickup[];
 }
+
+export interface MarketPickup { offerId: number; itemId: number; count: number; townId: number; townName: string; at: { x: number; y: number }; quest: string }
 
 export interface DuelRecord { at: number; level: number; won: boolean; xp: number; energy: number }
 
@@ -134,7 +148,10 @@ export function parseAutopilotFile(json: unknown): AutopilotFile {
   const bankWalk = isObj(raw.bankWalk) && Number.isFinite(raw.bankWalk.queueId) && Number.isFinite(raw.bankWalk.townId)
     ? { queueId: Number(raw.bankWalk.queueId), townId: Number(raw.bankWalk.townId) }
     : null;
-  return { config, rules, plan, spent, duels, bankWalk };
+  const pickups = Array.isArray(raw.pickups)
+    ? raw.pickups.filter((p: any) => isObj(p) && Number.isFinite(p.offerId) && Number.isFinite(p.townId) && isObj(p.at)) as MarketPickup[]
+    : [];
+  return { config, rules, plan, spent, duels, bankWalk, pickups };
 }
 
 export function loadAutopilot(file = AUTOPILOT_FILE()): AutopilotFile {

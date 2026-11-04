@@ -16,7 +16,7 @@ import {
 import { jobPost, parseQueue, sleepPost, TaskApi, walkPost, type QueuedTask } from './tasks.ts';
 import { WorldMap, type Fort, type Town } from './world.ts';
 import { TileCache } from './tiles.ts';
-import { ItemCatalog, ItemSetCatalog, loadItemCatalog, loadItemSets, statsOf } from './items.ts';
+import { baseId, ItemCatalog, ItemSetCatalog, loadItemCatalog, loadItemSets, statsOf } from './items.ts';
 import { setBonusLines, type ItemStats, type StatContext } from './itemstats.ts';
 import { Inventory, InventoryApi, type EquipSets } from './inventory.ts';
 import { SkillApi, Skills, type SkillPlan } from './skills.ts';
@@ -37,7 +37,8 @@ import { projectTimeline, type Timeline, type TimelineStep } from './timeline.ts
 import { AutopilotRunner } from './autopilot-runner.ts';
 import { DebugLog, diffSnapshots } from './debug-log.ts';
 import { Calibration } from './calibration.ts';
-import { expectedHpLoss } from './autopilot.ts';
+import { expectedHpLoss, type BuyTrip } from './autopilot.ts';
+import { BuyCatalog, chooseBuys, where, type BuyNeed, type BuyPick } from './quest-buy.ts';
 import { RateTracker } from './rates.ts';
 
 export interface LogEntry { at: Date; level: 'info' | 'error'; msg: string }
@@ -144,6 +145,8 @@ export class GameState extends EventEmitter {
   shop: Shop | null = null;
   /** Rotating offers of the mobile trader (the trade screen's "Mobile trader" tab). */
   mobileTrader: MobileTrader | null = null;
+  /** Where the autopilot can buy quest items (shops in reach, mobile trader, market), filled by the runner. */
+  buyCatalog = new BuyCatalog();
   /** Town hall of the home town and the construction detail of its selected building. */
   townHall: TownHall | null = null;
   construction: Construction | null = null;
@@ -1159,36 +1162,126 @@ export class GameState extends EventEmitter {
 
   /**
    * The first open requirement of a quest the autopilot cannot get, or null when it can finish the quest:
-   * items need a doable job that drops them (or enough in the bag); job requirements a doable job; anything
-   * else ("Go to …", "Resolve …", duels, shop-only items) it cannot do yet.
+   * items need a doable job that drops them, enough in the bag, or (buying on) a place to buy them within the
+   * limits; job requirements a doable job; a time window only waits. Anything else ("Go to …", "Resolve …",
+   * duels) it cannot do yet.
    */
   questBlocker(q: Quest): string | null {
+    const p = this.questPurchase(q);
+    return p.blocker ?? p.problem;
+  }
+
+  /**
+   * What a quest still needs bought (items no doable job drops and the bag lacks), where from (`picks`), and why
+   * not: `blocker` is a requirement that buying cannot help with, `problem` an item it cannot buy. `used`: bag
+   * items earlier quests count on (questPurchases); this quest's are added to it.
+   */
+  questPurchase(q: Quest, used = new Map<number, number>()): { needs: BuyNeed[]; picks: BuyPick[]; blocker: string | null; problem: string | null } {
+    const cfg = this.autopilot.config.quests;
+    const have = (itemId: number) => Math.max(0, this.inventory.countBase(itemId) - (used.get(baseId(itemId)) ?? 0));
+    // Bag items this quest counts on, per item (a "have it" and a "wear it" requirement share one).
+    const mine = new Map<number, number>();
     for (const r of q.requirements) {
-      if (r.solved) continue;
+      if (r.itemId !== undefined && r.kind !== 'bought') mine.set(baseId(r.itemId), Math.max(mine.get(baseId(r.itemId)) ?? 0, Math.min(have(r.itemId), r.count ?? 1)));
+    }
+    const needs = new Map<number, BuyNeed>();
+    const want = (itemId: number, count: number, name: string) => {
+      const prev = needs.get(baseId(itemId));
+      if (count > have(itemId) && (!prev || prev.count < count - have(itemId))) needs.set(baseId(itemId), { itemId, name, count: count - have(itemId) });
+    };
+    const result = this.purchaseOf(q, have, want, needs, cfg);
+    for (const [id, n] of mine) used.set(id, (used.get(id) ?? 0) + n);
+    return result;
+  }
+
+  /** questPurchase for several quests in order: bag items go to the first quest that needs them, the rest buy more. */
+  questPurchases(quests: Quest[]): Map<number, ReturnType<GameState['questPurchase']>> {
+    const used = new Map<number, number>();
+    return new Map(quests.map((q) => [q.id, this.questPurchase(q, used)]));
+  }
+
+  private purchaseOf(
+    q: Quest, have: (itemId: number) => number, want: (itemId: number, count: number, name: string) => void, needs: Map<number, BuyNeed>,
+    cfg: AutopilotFile['config']['quests'],
+  ): { needs: BuyNeed[]; picks: BuyPick[]; blocker: string | null; problem: string | null } {
+    for (const r of q.requirements) {
+      if (r.solved || r.kind === 'window') continue;
       if (r.itemId !== undefined) {
-        if (this.inventory.countBase(r.itemId) >= (r.count ?? 1)) continue;
+        if (have(r.itemId) >= (r.count ?? 1)) continue;
         if (this.requirementSources(r).some((x) => x.job.jobPoints >= x.job.workPoints && x.at)) continue;
-        return `${r.info}: no doable job drops it`;
+        if (!cfg.buy) return { needs: [], picks: [], blocker: `${r.info}: no doable job drops it`, problem: null };
+        want(r.itemId, r.count ?? 1, this.itemName(r.itemId));
+        continue;
+      }
+      if (r.kind === 'bought' && r.buy && cfg.buy) {
+        const id = this.items?.findByName(r.buy);
+        if (id === undefined) return { needs: [], picks: [], blocker: `${r.info}: unknown item`, problem: null };
+        // Bought means bought: one in the bag does not count.
+        needs.set(baseId(id), { itemId: id, name: r.buy, count: 1 });
+        continue;
       }
       if (r.jobId !== undefined) {
         const job = this.jobs.find((j) => j.id === r.jobId);
         if (job && job.jobPoints >= job.workPoints) continue;
-        return `${r.info}: job not doable`;
+        return { needs: [], picks: [], blocker: `${r.info}: job not doable`, problem: null };
       }
-      return `${r.info}: the autopilot cannot do this`;
+      return { needs: [], picks: [], blocker: `${r.info}: the autopilot cannot do this`, problem: null };
     }
-    return null;
+    if (!needs.size) return { needs: [], picks: [], blocker: null, problem: null };
+    const list = [...needs.values()];
+    const from = this.queueEndPosition;
+    const towns = new Map(this.world.towns.filter((t) => t.name).map((t) => [t.id, t]));
+    const { picks, problem } = chooseBuys(
+      list,
+      (id) => this.buyCatalog.sources(
+        id,
+        (x) => this.items?.get(x)?.price ?? 0,
+        (tid) => {
+          const t = towns.get(tid);
+          return t ? { name: t.name!, at: { x: t.x, y: t.y } } : undefined;
+        },
+        (at) => this.townAt(at)?.id,
+      ),
+      { buyLimit: cfg.buyLimit, marketLimit: cfg.marketLimit, market: cfg.market, walkValue: cfg.walkValue / 60, maxWalk: cfg.buyTrip },
+      (at) => wayTime(from, at, this.travelSpeed, this.character.speed),
+    );
+    return { needs: list, picks, blocker: null, problem };
   }
 
-  /** Quests the Quests goal works on: open quests (or the route's), minus excluded ones, chains and (unless allowed) ones it cannot finish. */
-  autopilotQuests(): Quest[] {
+  /** Quests the autopilot may work on: open quests (or the route's), minus excluded ones and chains; `all`: also ones it cannot finish. */
+  autopilotQuests(all = this.autopilot.config.quests.unfinishable): Quest[] {
     const { rules, config } = this.autopilot;
     return this.routeQuests('all').filter((q) =>
       (!rules.onlyQuests.length || rules.onlyQuests.includes(q.id)) &&
       !rules.excludedQuests.includes(q.id) &&
       !config.quests.excludedChains.includes(q.group) &&
       (config.quests.repeatable || !/repeatable/i.test(q.group)) &&
-      (config.quests.unfinishable || !this.questBlocker(q)));
+      (all || !this.questBlocker(q)));
+  }
+
+  /**
+   * Shop stops for the quests the autopilot works on (one per town: what to buy there, for what) and pickups of
+   * market offers it bought. Mobile-trader and market buys need no walk; the quest module does them on the spot.
+   */
+  buyTrips(): BuyTrip[] {
+    const trips = new Map<number, BuyTrip>();
+    const add = (townId: number, name: string, at: Position, cost: number, what: string) => {
+      const t = trips.get(townId) ?? { townId, name, at, cost: 0, what: [] };
+      t.cost += cost;
+      t.what.push(what);
+      trips.set(townId, t);
+    };
+    if (this.autopilot.config.quests.buy) {
+      const quests = this.autopilotQuests(false);
+      const all = this.questPurchases(quests);
+      for (const q of quests) {
+        for (const p of all.get(q.id)!.picks) {
+          if (p.source.kind === 'shop') add(p.source.townId, p.source.townName, p.source.at, p.cost, `${p.count > 1 ? `${p.count}× ` : ''}${p.name} (${where(p.source).split(' in ')[0]}) for "${q.soloTitle || q.title}"`);
+        }
+      }
+    }
+    for (const p of this.autopilot.pickups) add(p.townId, p.townName, p.at, 0, `pick up ${p.count > 1 ? `${p.count}× ` : ''}${this.itemName(p.itemId)} (market) for "${p.quest}"`);
+    return [...trips.values()];
   }
 
   /**
