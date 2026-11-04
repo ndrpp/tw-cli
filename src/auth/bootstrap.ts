@@ -8,16 +8,16 @@ import { isObj, type JsonObject } from '../util/json.ts';
 export function extractInitArg(html: string, call: string): unknown {
   const at = html.indexOf(`${call}(`);
   if (at < 0) return null;
-  let i = at + call.length + 1;
-  while (i < html.length && /\s/.test(html[i] ?? '')) i++;
-  if (html[i] !== '{' && html[i] !== '[') return null;
-  const start = i;
+  let index = at + call.length + 1;
+  while (index < html.length && /\s/.test(html[index] ?? '')) index++;
+  if (html[index] !== '{' && html[index] !== '[') return null;
+  const start = index;
   let depth = 0;
   let inStr: string | null = null;
-  for (; i < html.length; i++) {
-    const ch = html[i] ?? '';
+  for (; index < html.length; index++) {
+    const ch = html[index] ?? '';
     if (inStr) {
-      if (ch === '\\') i++;
+      if (ch === '\\') index++;
       else if (ch === inStr) inStr = null;
       continue;
     }
@@ -27,7 +27,7 @@ export function extractInitArg(html: string, call: string): unknown {
       depth--;
       if (depth === 0) {
         try {
-          return JSON.parse(html.slice(start, i + 1));
+          return JSON.parse(html.slice(start, index + 1));
         } catch {
           return null;
         }
@@ -50,21 +50,21 @@ export interface Bootstrap {
 export class BootstrapError extends Error {}
 
 export function parseBootstrap(html: string): Bootstrap {
-  const init = (call: string) => {
-    const v = extractInitArg(html, call);
-    return isObj(v) ? v : null;
+  const readInit = (call: string) => {
+    const value = extractInitArg(html, call);
+    return isObj(value) ? value : null;
   };
-  const player = init('Player.init');
-  const h = typeof player?.h === 'string' ? player.h : null;
-  if (!player || !h || !/^[0-9a-f]{4,32}$/i.test(h)) {
+  const player = readInit('Player.init');
+  const hash = typeof player?.h === 'string' ? player.h : null;
+  if (!player || !hash || !/^[0-9a-f]{4,32}$/i.test(hash)) {
     throw new BootstrapError('game.php did not contain Player.init({h:…}); not logged in or the page format changed');
   }
   return {
-    h,
+    h: hash,
     player,
-    game: init('Game.init'),
-    character: init('Character.init'),
-    premium: init('Premium.init'),
-    bag: init('Bag.init'),
+    game: readInit('Game.init'),
+    character: readInit('Character.init'),
+    premium: readInit('Premium.init'),
+    bag: readInit('Bag.init'),
   };
 }

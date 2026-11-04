@@ -73,9 +73,9 @@ function fakeServers(opts: { gameAcceptsSid?: Set<string> } = {}) {
     const form = body ? new URLSearchParams(body) : null;
     const cookie = headers.get('cookie') ?? '';
     calls.push({ method: init.method ?? 'GET', url, body, headers });
-    const res = (status: number, h: [string, string][] = [], text: string | null = null) => {
+    const res = (status: number, items: [string, string][] = [], text: string | null = null) => {
       const out = new Headers();
-      for (const [k, v] of h) out.append(k, v);
+      for (const [key, value] of items) out.append(key, value);
       return new Response(text, { status, headers: out });
     };
     if (url === `${PORTAL}/`) return res(200, [['set-cookie', 'PHPSESSID=portal; path=/']], '<html>');
@@ -139,35 +139,37 @@ test('full login: portal → world → game.php bootstrap → record_fp, then se
   const game = await ensureGame(opts);
   assert.equal(game.bootstrap.h, '0b89b1');
   assert.equal(game.bootstrap.character?.name, 'shallax');
-  assert.ok(calls.some((c) => c.url.includes('check_login') && c.url.includes('locale=en_DK')));
+  assert.ok(calls.some((candidate) => candidate.url.includes('check_login') && candidate.url.includes('locale=en_DK')));
   // Wrong world (12) is skipped, correct one (38) entered.
   assert.deepEqual(
-    calls.filter((c) => c.url.endsWith('action=login')).map((c) => new URLSearchParams(c.body!).get('world_id')),
+    calls
+      .filter((candidate) => candidate.url.endsWith('action=login'))
+      .map((candidate) => new URLSearchParams(candidate.body!).get('world_id')),
     ['12', '38'],
   );
   // Fingerprint sent once, with the browser's exact body and identity headers.
-  const fp = calls.filter((c) => c.url.includes('record_fp'));
+  const fp = calls.filter((candidate) => candidate.url.includes('record_fp'));
   assert.equal(fp.length, 1);
   assert.equal(fp[0]!.body, `fp=${profile.fp}&gv=&wd=false`);
   assert.equal(fp[0]!.headers.get('x-requested-with'), 'XMLHttpRequest');
   assert.equal(fp[0]!.headers.get('user-agent'), profile.userAgent);
   assert.equal(fp[0]!.headers.get('accept-language'), 'en-US,en;q=0.9');
   // Every request carries the captured User-Agent.
-  assert.ok(calls.every((c) => c.headers.get('user-agent') === profile.userAgent));
+  assert.ok(calls.every((candidate) => candidate.headers.get('user-agent') === profile.userAgent));
   assert.equal(statSync(sessionFile).mode & 0o777, 0o600);
 
   // Second run reuses cookies: no portal traffic, but record_fp again (it fires on each page load).
   calls = [];
   const again = await ensureGame({ ...opts, credentials: async () => assert.fail('should not ask for credentials') });
   assert.equal(again.bootstrap.h, '0b89b1');
-  assert.ok(calls.every((c) => c.url.startsWith(GAME)));
-  assert.equal(calls.filter((c) => c.url.includes('record_fp')).length, 1);
+  assert.ok(calls.every((candidate) => candidate.url.startsWith(GAME)));
+  assert.equal(calls.filter((candidate) => candidate.url.includes('record_fp')).length, 1);
 
   // Expired session → logs in again.
   sessions.clear();
   calls = [];
   await ensureGame(opts);
-  assert.ok(calls.some((c) => c.url.includes('check_login')));
+  assert.ok(calls.some((candidate) => candidate.url.includes('check_login')));
 });
 
 test('wrong password is reported', async () => {
@@ -180,6 +182,6 @@ test('wrong password is reported', async () => {
       world: { url: GAME, locale: 'en_DK' },
       credentials: async () => ({ name: 'Tester', password: 'nope' }),
     }),
-    (e: unknown) => e instanceof AuthError && /Wrong name or password/.test(e.message),
+    (entry: unknown) => entry instanceof AuthError && /Wrong name or password/.test(entry.message),
   );
 });

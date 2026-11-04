@@ -9,6 +9,7 @@
 import type { GameClient } from '../http/game-client.ts';
 import { arr, entries, type JsonObject, obj, objs } from '../util/json.ts';
 import type { Position } from './character.ts';
+import { baseId } from './items.ts';
 
 export type DurationKey = 'short' | 'middle' | 'long';
 export const DURATION_KEYS: DurationKey[] = ['short', 'middle', 'long'];
@@ -51,23 +52,37 @@ export interface JobInfo extends JobDef {
   values: Partial<Record<DurationKey, JobDurationValues>>;
 }
 
+/** Whether this character has the labor points the job requires. */
+export const isDoable = (job: JobInfo): boolean => job.jobPoints >= job.workPoints;
+
 export class JobCatalog {
   readonly byId = new Map<number, JobDef>();
 
   constructor(gameInit: JsonObject | null) {
-    for (const j of objs(gameInit?.jobs)) {
-      const d = obj(j.durations);
-      const id = Number(j.id);
+    for (const jsonValue of objs(gameInit?.jobs)) {
+      const durationsJson = obj(jsonValue.durations);
+      const id = Number(jsonValue.id);
       this.byId.set(id, {
         id,
-        groupid: Number(j.groupid),
-        name: String(j.name ?? ''),
-        shortname: String(j.shortname ?? ''),
-        level: Number(j.level) || 0,
-        malus: Number(j.malus) || 0,
-        skills: Object.fromEntries(entries(j.skills).map(([k, v]) => [k, Number(v) || 0])),
-        durations: { short: Number(d.short ?? 15), middle: Number(d.middle ?? 600), long: Number(d.long ?? 3600) },
-        yields: Object.fromEntries(entries(j.yields).map(([id, y]) => [Number(id), Number(obj(y).prop) || 0])),
+        groupid: Number(jsonValue.groupid),
+        name: String(jsonValue.name ?? ''),
+        shortname: String(jsonValue.shortname ?? ''),
+        level: Number(jsonValue.level) || 0,
+        malus: Number(jsonValue.malus) || 0,
+        skills: Object.fromEntries(
+          entries(jsonValue.skills).map(([entryKey, currentValue]) => [entryKey, Number(currentValue) || 0]),
+        ),
+        durations: {
+          short: Number(durationsJson.short ?? 15),
+          middle: Number(durationsJson.middle ?? 600),
+          long: Number(durationsJson.long ?? 3600),
+        },
+        yields: Object.fromEntries(
+          entries(jsonValue.yields).map(([yieldId, yieldValue]) => [
+            Number(yieldId),
+            Number(obj(yieldValue).prop) || 0,
+          ]),
+        ),
       });
     }
   }
@@ -78,14 +93,14 @@ export class JobCatalog {
 
   /** Jobs whose product drops include this item (any upgrade level), best chance first. */
   yielding(itemId: number): { job: JobDef; chance: number }[] {
-    const base = Math.floor(itemId / 1000);
+    const base = baseId(itemId);
     const out: { job: JobDef; chance: number }[] = [];
     for (const job of this.byId.values()) {
       for (const [id, chance] of Object.entries(job.yields ?? {})) {
-        if (Math.floor(Number(id) / 1000) === base) out.push({ job, chance });
+        if (baseId(Number(id)) === base) out.push({ job, chance });
       }
     }
-    return out.sort((a, b) => b.chance - a.chance);
+    return out.sort((firstValue, second) => second.chance - firstValue.chance);
   }
 }
 
@@ -115,26 +130,26 @@ export async function fetchJobInfos(client: GameClient, catalog: JobCatalog): Pr
   const json = await client.remoteCallMode('work', 'index');
   if (json.error) throw new Error(String(json.msg ?? 'work/index failed'));
   const out: JobInfo[] = [];
-  for (const [key, v] of entries(json.jobs)) {
-    const be = obj(v);
+  for (const [key, currentValue] of entries(json.jobs)) {
+    const be = obj(currentValue);
     const def = catalog.get(Number(key));
     if (!def) continue;
     const values: JobInfo['values'] = {};
-    DURATION_KEYS.forEach((k, i) => {
-      const raw = arr(be.durations)[i];
+    DURATION_KEYS.forEach((entryKey, index) => {
+      const raw = arr(be.durations)[index];
       if (!raw) return;
-      const d = obj(raw);
-      values[k] = {
-        duration: Number(d.duration),
-        energy: Number(d.cost),
-        money: Number(d.money) + (Number(d.featured_money) || 0),
-        experience: Number(d.xp) + (Number(d.featured_xp) || 0),
-        luck: Number(d.luck),
-        items: objs(d.items)
-          .filter((y) => !y.random && y.itemid)
-          .map((y) => {
-            const percent = (Number(y.prop) || 0) + (Number(y.probBonus) || 0);
-            return { itemId: Number(y.itemid), expected: percent / 100, percent };
+      const jsonValue = obj(raw);
+      values[entryKey] = {
+        duration: Number(jsonValue.duration),
+        energy: Number(jsonValue.cost),
+        money: Number(jsonValue.money) + (Number(jsonValue.featured_money) || 0),
+        experience: Number(jsonValue.xp) + (Number(jsonValue.featured_xp) || 0),
+        luck: Number(jsonValue.luck),
+        items: objs(jsonValue.items)
+          .filter((itemJson) => !itemJson.random && itemJson.itemid)
+          .map((itemJson) => {
+            const percent = (Number(itemJson.prop) || 0) + (Number(itemJson.probBonus) || 0);
+            return { itemId: Number(itemJson.itemid), expected: percent / 100, percent };
           }),
       };
     });
@@ -165,10 +180,10 @@ export async function fetchJobLocations(client: GameClient): Promise<JobLocation
 
 /** [[x, y], ...] → positions. */
 export const toPositions = (coords: unknown): Position[] =>
-  arr(coords).map((c) => ({ x: Number(arr(c)[0]), y: Number(arr(c)[1]) }));
+  arr(coords).map((candidate) => ({ x: Number(arr(candidate)[0]), y: Number(arr(candidate)[1]) }));
 
-export function distance(a: Position, b: Position): number {
-  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+export function distance(position: Position, positionValue: Position): number {
+  return Math.sqrt((position.x - positionValue.x) ** 2 + (position.y - positionValue.y) ** 2);
 }
 
 /** GameMap.calcWayTime, seconds. */
@@ -182,11 +197,11 @@ export function nearestLocation(locations: Position[] | undefined, from: Positio
   if (!first) return null;
   let best = first;
   let bestD = distance(best, from);
-  for (const p of locations) {
-    const d = distance(p, from);
-    if (d < bestD) {
-      best = p;
-      bestD = d;
+  for (const position of locations) {
+    const currentValue = distance(position, from);
+    if (currentValue < bestD) {
+      best = position;
+      bestD = currentValue;
     }
   }
   return best;

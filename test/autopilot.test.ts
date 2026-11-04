@@ -3,9 +3,10 @@ import { test } from 'node:test';
 import { levelStartXp } from '../src/game/character.ts';
 import { projectTimeline, regenSeconds, type TimelineStart, type TimelineStep } from '../src/game/timeline.ts';
 
-const way = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+const way = (first: { x: number; y: number }, second: { x: number; y: number }) =>
+  Math.abs(first.x - second.x) + Math.abs(first.y - second.y);
 // 100 max energy, 10 %/h regen: 1 energy per 360 s.
-const start = (o: Partial<TimelineStart> = {}): TimelineStart => ({
+const start = (options: Partial<TimelineStart> = {}): TimelineStart => ({
   now: 1_000_000,
   at: { x: 0, y: 0 },
   energy: 50,
@@ -17,9 +18,9 @@ const start = (o: Partial<TimelineStart> = {}): TimelineStart => ({
   level: 10,
   experience: levelStartXp(10),
   cash: 0,
-  ...o,
+  ...options,
 });
-const job = (o: Partial<Extract<TimelineStep, { kind: 'job' }>> = {}): TimelineStep => ({
+const job = (options: Partial<Extract<TimelineStep, { kind: 'job' }>> = {}): TimelineStep => ({
   kind: 'job',
   title: 'job',
   jobId: 1,
@@ -28,7 +29,7 @@ const job = (o: Partial<Extract<TimelineStep, { kind: 'job' }>> = {}): TimelineS
   energy: 12,
   xp: 50,
   money: 100,
-  ...o,
+  ...options,
 });
 
 test('regenSeconds: time to regenerate, capped at max, Infinity without regen', () => {
@@ -40,13 +41,13 @@ test('regenSeconds: time to regenerate, capped at max, Infinity without regen', 
 
 test('timeline: travel, energy paid at start, regen during the job, rewards at the end', () => {
   const tl = projectTimeline(start(), [job({ at: { x: 600, y: 0 } })], { wayTime: way });
-  const s = tl.steps[0]!;
-  assert.equal(s.travel, 600);
-  assert.equal(s.start, 1_000_600);
-  assert.equal(s.end, 1_004_200);
-  assert.ok(Math.abs(s.energyBefore - (50 + 600 / 360)) < 1e-9, 'regen while walking');
-  assert.ok(Math.abs(s.energy - (50 + 4200 / 360 - 12)) < 1e-9, 'cost paid, regen during the job');
-  assert.equal(s.cash, 100);
+  const task = tl.steps[0]!;
+  assert.equal(task.travel, 600);
+  assert.equal(task.start, 1_000_600);
+  assert.equal(task.end, 1_004_200);
+  assert.ok(Math.abs(task.energyBefore - (50 + 600 / 360)) < 1e-9, 'regen while walking');
+  assert.ok(Math.abs(task.energy - (50 + 4200 / 360 - 12)) < 1e-9, 'cost paid, regen during the job');
+  assert.equal(task.cash, 100);
   assert.equal(tl.gained.xp, 50);
   assert.deepEqual(tl.final.at, { x: 600, y: 0 });
 });
@@ -57,11 +58,11 @@ test('timeline: a planned job waits for energy; a server-queued job costs none',
   const fixed = projectTimeline(start({ energy: 2 }), [job({ fixed: { start: 999_000, end: 1_001_800 } })], {
     wayTime: way,
   });
-  const f = fixed.steps[0]!;
-  assert.equal(f.waited, 0);
-  assert.equal(f.start, 1_000_000, 'already running: from now');
-  assert.equal(f.end, 1_001_800);
-  assert.ok(Math.abs(f.energy - (2 + 5)) < 1e-9, 'no cost, 1800 s of regen');
+  const task = fixed.steps[0]!;
+  assert.equal(task.waited, 0);
+  assert.equal(task.start, 1_000_000, 'already running: from now');
+  assert.equal(task.end, 1_001_800);
+  assert.ok(Math.abs(task.energy - (2 + 5)) < 1e-9, 'no cost, 1800 s of regen');
 });
 
 test('timeline: level-up refills energy and health', () => {
@@ -75,13 +76,13 @@ test('timeline: level-up refills energy and health', () => {
     ],
     { wayTime: way },
   );
-  const [a, b, c] = tl.steps;
-  assert.equal(a!.levelUp, false);
-  assert.equal(b!.levelUp, true);
-  assert.equal(b!.level, 11);
-  assert.equal(b!.energy, 100);
-  assert.equal(b!.health, 500);
-  assert.ok(c!.energy < 100 && c!.energy > 87, 'the next job pays from the refilled energy');
+  const [task, taskInfo, followingStep] = tl.steps;
+  assert.equal(task!.levelUp, false);
+  assert.equal(taskInfo!.levelUp, true);
+  assert.equal(taskInfo!.level, 11);
+  assert.equal(taskInfo!.energy, 100);
+  assert.equal(taskInfo!.health, 500);
+  assert.ok(followingStep!.energy < 100 && followingStep!.energy > 87, 'the next job pays from the refilled energy');
   assert.equal(tl.gained.levels, 1);
 });
 
@@ -117,7 +118,7 @@ test('autopilot file: defaults, merge of saved values, ranking repaired, bad inp
   const empty = parseAutopilotFile(null);
   assert.deepEqual(empty.config, DEFAULT_CONFIG);
   assert.equal(empty.plan, null);
-  const f = parseAutopilotFile({
+  const autopilotFile = parseAutopilotFile({
     config: {
       running: true,
       priority: ['xp', 'bogus', 'money'],
@@ -128,16 +129,16 @@ test('autopilot file: defaults, merge of saved values, ranking repaired, bad inp
     rules: { excludedJobs: [5] },
     plan: { fingerprint: 'abc', savedAt: 7, tasks: [] },
   });
-  assert.equal(f.config.running, true);
-  assert.deepEqual(f.config.priority, ['xp', 'money', 'quests', 'products']);
-  assert.deepEqual(f.config.hp, { sleepBelow: 0.4, wakeAbove: 0.7 }, 'wrong types keep the default');
-  assert.equal(f.config.modules.quests, true);
-  assert.equal(f.config.modules.jobs, true, 'unsaved keys keep the default');
-  assert.equal('unknown' in f.config, false);
-  assert.deepEqual(f.rules.excludedJobs, [5]);
-  assert.equal(f.plan?.fingerprint, 'abc');
-  assert.deepEqual(goalWeights(f.config), { xp: 1, money: 0.25, quests: 0.06, products: 0.015 });
-  assert.deepEqual(goalWeights({ ...f.config, customWeights: { xp: 60, money: -1 } }), {
+  assert.equal(autopilotFile.config.running, true);
+  assert.deepEqual(autopilotFile.config.priority, ['xp', 'money', 'quests', 'products']);
+  assert.deepEqual(autopilotFile.config.hp, { sleepBelow: 0.4, wakeAbove: 0.7 }, 'wrong types keep the default');
+  assert.equal(autopilotFile.config.modules.quests, true);
+  assert.equal(autopilotFile.config.modules.jobs, true, 'unsaved keys keep the default');
+  assert.equal('unknown' in autopilotFile.config, false);
+  assert.deepEqual(autopilotFile.rules.excludedJobs, [5]);
+  assert.equal(autopilotFile.plan?.fingerprint, 'abc');
+  assert.deepEqual(goalWeights(autopilotFile.config), { xp: 1, money: 0.25, quests: 0.06, products: 0.015 });
+  assert.deepEqual(goalWeights({ ...autopilotFile.config, customWeights: { xp: 60, money: -1 } }), {
     quests: 0,
     xp: 60,
     money: 0,
@@ -155,8 +156,8 @@ test('autopilot file: defaults, merge of saved values, ranking repaired, bad inp
   const dir = mkdtempSync(join(tmpdir(), 'tw-ap-'));
   try {
     const file = join(dir, 'sub', 'autopilot.json');
-    saveAutopilot(f, file);
-    assert.deepEqual(loadAutopilot(file), f, 'round trip');
+    saveAutopilot(autopilotFile, file);
+    assert.deepEqual(loadAutopilot(file), autopilotFile, 'round trip');
     assert.deepEqual(loadAutopilot(join(dir, 'missing.json')).config, DEFAULT_CONFIG);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -194,10 +195,10 @@ test('autopilot screen: toggles, values and ranking change the saved config; que
     travelSpeed: 1,
     logs: [] as string[],
     runner: { plan: null },
-    info(m: string) {
-      this.logs.push(m);
+    info(message: string) {
+      this.logs.push(message);
     },
-    updateAutopilot(fn: (f: any) => void) {
+    updateAutopilot(fn: (value: any) => void) {
       fn(this.autopilot);
       saved.push(structuredClone(this.autopilot.config));
     },
@@ -226,12 +227,12 @@ test('autopilot screen: toggles, values and ranking change the saved config; que
   const stdin = new PassThrough() as any;
   Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
   let out = '';
-  stdout.on('data', (d: Buffer) => (out += d.toString()));
+  stdout.on('data', (data: Buffer) => (out += data.toString()));
   const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
-  const settle = (ms = 80) => new Promise((r) => setTimeout(r, ms));
+  const settle = (ms = 80) => new Promise((transform) => setTimeout(transform, ms));
   const keys = async (...ks: string[]) => {
-    for (const k of ks) {
-      stdin.write(k);
+    for (const key of ks) {
+      stdin.write(key);
       await settle();
     }
   };
@@ -257,7 +258,7 @@ test('autopilot screen: toggles, values and ranking change the saved config; que
     await settle();
     assert.match(plain(), /● running/);
     // Down to "below" (HP sleep threshold) and raise it by 5 %.
-    for (let i = 0; i < 8; i++) await keys('j');
+    for (let index = 0; index < 8; index++) await keys('j');
     await keys('+');
     assert.equal(state.autopilot.config.hp.sleepBelow, 0.55);
     await keys('X');
@@ -274,7 +275,7 @@ test('autopilot screen: toggles, values and ranking change the saved config; que
 const planJob = (
   id: number,
   groupid: number,
-  o: { xp: number; money: number; energy?: number; danger?: number; items?: any[] },
+  options: { xp: number; money: number; energy?: number; danger?: number; items?: any[] },
 ): any => ({
   id,
   groupid,
@@ -283,17 +284,24 @@ const planJob = (
   workPoints: 1,
   laborPoints: 9,
   motivation: 1,
-  danger: o.danger ?? null,
+  danger: options.danger ?? null,
   durations: {},
   values: {
-    long: { duration: 3600, energy: o.energy ?? 12, money: o.money, experience: o.xp, luck: 0, items: o.items ?? [] },
+    long: {
+      duration: 3600,
+      energy: options.energy ?? 12,
+      money: options.money,
+      experience: options.xp,
+      luck: 0,
+      items: options.items ?? [],
+    },
   },
 });
 
 async function planWith(
-  o: {
+  transform: {
     start?: Partial<TimelineStart>;
-    config?: (c: any) => void;
+    config?: (candidate: any) => void;
     jobs?: any[];
     hotels?: any[];
     needs?: any[];
@@ -304,38 +312,38 @@ async function planWith(
 ) {
   const { planAutopilot } = await import('../src/game/autopilot.ts');
   const { parseAutopilotFile } = await import('../src/game/autopilot-config.ts');
-  const f = parseAutopilotFile(null);
-  o.config?.(f.config);
-  const jobs = o.jobs ?? [planJob(1, 1, { xp: 100, money: 10 }), planJob(2, 2, { xp: 10, money: 200 })];
+  const autopilotFile = parseAutopilotFile(null);
+  transform.config?.(autopilotFile.config);
+  const jobs = transform.jobs ?? [planJob(1, 1, { xp: 100, money: 10 }), planJob(2, 2, { xp: 10, money: 200 })];
   const locs: Record<number, any[]> = { 1: [{ x: 100, y: 0 }], 2: [{ x: 200, y: 0 }], 3: [{ x: 50, y: 0 }] };
   return planAutopilot({
-    start: start(o.start),
+    start: start(transform.start),
     fixed: [],
     jobs,
-    locations: (g) => locs[g],
+    locations: (value) => locs[value],
     wayTime: way,
-    config: f.config,
-    rules: f.rules,
-    needs: o.needs ?? [],
+    config: autopilotFile.config,
+    rules: autopilotFile.rules,
+    needs: transform.needs ?? [],
     itemValue: () => 5,
-    hotels: o.hotels ?? [],
-    consumables: o.consumables ?? [],
+    hotels: transform.hotels ?? [],
+    consumables: transform.consumables ?? [],
     homeTownId: 9,
-    towns: o.towns ?? [],
-    buyTrips: o.buyTrips,
+    towns: transform.towns ?? [],
+    buyTrips: transform.buyTrips,
     budget: 1000,
     maxJobs: 6,
   });
 }
 
 test('planner: the top goal decides the job; per hour vs per energy', async () => {
-  const xp = await planWith({ config: (c) => (c.priority = ['xp', 'money', 'quests', 'products']) });
+  const xp = await planWith({ config: (candidate) => (candidate.priority = ['xp', 'money', 'quests', 'products']) });
   assert.equal((xp.tasks[0]!.step as any).jobId, 1);
   assert.match(xp.why, /best XP per energy/);
-  const money = await planWith({ config: (c) => (c.priority = ['money', 'xp', 'quests', 'products']) });
+  const money = await planWith({ config: (candidate) => (candidate.priority = ['money', 'xp', 'quests', 'products']) });
   assert.equal((money.tasks[0]!.step as any).jobId, 2);
   assert.ok(money.value > 0);
-  const off = await planWith({ config: (c) => (c.modules.jobs = false) });
+  const off = await planWith({ config: (candidate) => (candidate.modules.jobs = false) });
   assert.equal(off.tasks.length, 0);
   assert.match(off.why, /Queue jobs is off/);
 });
@@ -369,7 +377,7 @@ test("planner: per hour counts the time to regenerate a run's energy (no 15 s ru
   });
   const jobs = [{ ...planJob(3, 3, { xp: 0, money: 0 }), values: durations([6, 128, 767]) }];
   const needs = [{ key: 'item:700', label: 'Tobacco', amount: 40, unit: 'items', itemId: 700000, quests: ['Q'] }];
-  const perHour = (c: any) => (c.per = 'time');
+  const perHour = (candidate: any) => (candidate.per = 'time');
   // 3 energy an hour (the log that found this): energy is the limit, the long run wins.
   const slow = await planWith({ jobs, needs, config: perHour, start: { energyRegen: 0.03 } });
   assert.equal(slow.tasks[0]!.key, 'job:3:long');
@@ -390,9 +398,9 @@ test("planner: per hour counts the time to regenerate a run's energy (no 15 s ru
   const fast = await planWith({
     jobs,
     needs,
-    config: (c) => {
-      perHour(c);
-      c.slotCost = 0;
+    config: (candidate) => {
+      perHour(candidate);
+      candidate.slotCost = 0;
     },
     start: { energyRegen: 40, at: { x: 50, y: 0 } },
   });
@@ -405,18 +413,18 @@ test('planner: quest needs come first with Quests on top; dangerous jobs are ski
     planJob(3, 3, { xp: 1, money: 1, items: [{ itemId: 700000, expected: 1, percent: 100 }] }),
   ];
   const needs = [{ key: 'item:700', label: 'Ham', amount: 2, unit: 'items', itemId: 700000, quests: ['Q'] }];
-  const p = await planWith({ jobs, needs });
+  const pick = await planWith({ jobs, needs });
   assert.deepEqual(
-    p.tasks.slice(0, 2).map((t) => (t.step as any).jobId),
+    pick.tasks.slice(0, 2).map((task) => (task.step as any).jobId),
     [3, 3],
     'two runs cover the 2 ham',
   );
-  assert.equal((p.tasks[2]!.step as any).jobId, 1, 'then the next goal (XP)');
+  assert.equal((pick.tasks[2]!.step as any).jobId, 1, 'then the next goal (XP)');
   const risky = [planJob(1, 1, { xp: 1000, money: 0, danger: 100 }), planJob(2, 2, { xp: 10, money: 10 })];
   const safe = await planWith({
     jobs: risky,
     start: { health: 270 },
-    config: (c) => (c.priority = ['xp', 'money', 'quests', 'products']),
+    config: (candidate) => (candidate.priority = ['xp', 'money', 'quests', 'products']),
   });
   assert.equal((safe.tasks[0]!.step as any).jobId, 2, '1000 XP job could take HP (270/500) under 50 %');
 });
@@ -432,15 +440,15 @@ test('planner: out of energy → sleeps until enough to level up when that beats
   ];
   const gap = levelStartXp(11) - levelStartXp(10);
   const jobs = [planJob(1, 1, { xp: Math.ceil(gap / 3), money: 0, energy: 10 })];
-  const p = await planWith({ jobs, hotels, start: { energy: 0 } });
-  const sl = p.tasks[0]!;
+  const pick = await planWith({ jobs, hotels, start: { energy: 0 } });
+  const sl = pick.tasks[0]!;
   assert.equal(sl.step.kind, 'sleep');
   assert.equal(sl.module, 'energySleep');
   assert.equal(sl.wake!.energy, 30, '3 runs of 10 energy reach the next level');
   assert.match(sl.why!, /enough to level up/);
   assert.deepEqual(sl.post, { town_id: 9, room: 'cubby', taskType: 'sleep' });
   assert.ok(
-    p.timeline.steps.some((s) => s.levelUp),
+    pick.timeline.steps.some((task) => task.levelUp),
     'the level-up is in the projection',
   );
   const hp = await planWith({ jobs, hotels, start: { health: 100 } });
@@ -450,7 +458,7 @@ test('planner: out of energy → sleeps until enough to level up when that beats
     jobs,
     hotels,
     start: { energy: 0 },
-    config: (c) => (c.modules.energySleep = false),
+    config: (candidate) => (candidate.modules.energySleep = false),
   });
   assert.equal(noSleep.tasks[0]!.step.kind, 'job', 'waits for regen instead');
 });
@@ -467,17 +475,17 @@ test('planner: sleeps only for the next run when that run levels up (not until f
   // Money first: the 10-energy job runs next; a 1-energy XP job could level up on the 2 energy left, which used
   // to leave no wake reason, so the sleep went to full.
   const jobs = [planJob(1, 1, { xp: 100, money: 500, energy: 10 }), planJob(2, 2, { xp: 60, money: 0, energy: 1 })];
-  const p = await planWith({
+  const pick = await planWith({
     jobs,
     hotels,
     start: { energy: 2, experience: levelStartXp(11) - 50 },
-    config: (c) => (c.priority = ['money', 'xp', 'quests', 'products']),
+    config: (candidate) => (candidate.priority = ['money', 'xp', 'quests', 'products']),
   });
-  const sl = p.tasks[0]!;
+  const sl = pick.tasks[0]!;
   assert.equal(sl.step.kind, 'sleep');
   assert.equal(sl.wake!.energy, 10);
   assert.match(sl.why!, /enough for job1, which levels up/);
-  assert.equal((p.tasks[1]!.step as any).jobId, 1);
+  assert.equal((pick.tasks[1]!.step as any).jobId, 1);
 });
 
 test('planner: banks cash over the limit at home when close, not beyond the detour', async () => {
@@ -485,13 +493,13 @@ test('planner: banks cash over the limit at home when close, not beyond the deto
     { id: 9, name: 'Home', at: { x: 300, y: 0 } },
     { id: 8, name: 'Far', at: { x: 9000, y: 0 } },
   ];
-  const p = await planWith({ towns, start: { cash: 5000 } });
+  const pick = await planWith({ towns, start: { cash: 5000 } });
   assert.deepEqual(
-    p.tasks.slice(0, 2).map((t) => t.step.kind),
+    pick.tasks.slice(0, 2).map((task) => task.step.kind),
     ['walk', 'action'],
   );
-  assert.deepEqual(p.tasks[1]!.action, { type: 'deposit', townId: 9 });
-  assert.equal(p.timeline.steps[1]!.cash, 0);
+  assert.deepEqual(pick.tasks[1]!.action, { type: 'deposit', townId: 9 });
+  assert.equal(pick.timeline.steps[1]!.cash, 0);
   const far = await planWith({ towns: [towns[1]], start: { cash: 5000 } });
   assert.equal(far.tasks[0]!.step.kind, 'job', 'Far is past the 30 min detour: bank later');
 });
@@ -499,7 +507,7 @@ test('planner: banks cash over the limit at home when close, not beyond the deto
 test('planner: queued jobs are scored like planned ones; walking inside the horizon is counted', async () => {
   const { planAutopilot } = await import('../src/game/autopilot.ts');
   const { parseAutopilotFile } = await import('../src/game/autopilot-config.ts');
-  const f = parseAutopilotFile(null);
+  const autopilotFile = parseAutopilotFile(null);
   const jobs = [planJob(1, 1, { xp: 100, money: 10 })];
   const plan = (fixed: TimelineStep[], rates?: any) =>
     planAutopilot({
@@ -508,8 +516,8 @@ test('planner: queued jobs are scored like planned ones; walking inside the hori
       jobs,
       locations: () => [{ x: 100, y: 0 }],
       wayTime: way,
-      config: f.config,
-      rules: f.rules,
+      config: autopilotFile.config,
+      rules: autopilotFile.rules,
       needs: [],
       itemValue: () => 0,
       hotels: [],
@@ -557,7 +565,7 @@ test('planner: queued jobs are scored like planned ones; walking inside the hori
 test('planner: a queued bank walk gets its deposit first even when the cash projection dips under the limit', async () => {
   const { planAutopilot } = await import('../src/game/autopilot.ts');
   const { parseAutopilotFile } = await import('../src/game/autopilot-config.ts');
-  const f = parseAutopilotFile(null);
+  const autopilotFile = parseAutopilotFile(null);
   const towns = [{ id: 9, name: 'Home', at: { x: 300, y: 0 } }];
   const fixed: TimelineStep[] = [
     {
@@ -574,8 +582,8 @@ test('planner: a queued bank walk gets its deposit first even when the cash proj
       jobs: [planJob(1, 1, { xp: 100, money: 10 })],
       locations: () => [{ x: 100, y: 0 }],
       wayTime: way,
-      config: f.config,
-      rules: f.rules,
+      config: autopilotFile.config,
+      rules: autopilotFile.rules,
       needs: [],
       itemValue: () => 0,
       hotels: [],
@@ -587,10 +595,10 @@ test('planner: a queued bank walk gets its deposit first even when the cash proj
     });
   // The live bug: $4,000 < $4,500, so a job went in behind the bank walk and a second walk to town followed it.
   assert.equal(plan().tasks[0]!.step.kind, 'job');
-  const p = plan(9);
-  assert.deepEqual(p.tasks[0]!.action, { type: 'deposit', townId: 9 });
-  assert.match(p.tasks[0]!.why!, /queued bank walk/);
-  assert.equal(p.tasks.filter((t) => t.module === 'bank').length, 1, 'no second walk to town');
+  const pick = plan(9);
+  assert.deepEqual(pick.tasks[0]!.action, { type: 'deposit', townId: 9 });
+  assert.match(pick.tasks[0]!.why!, /queued bank walk/);
+  assert.equal(pick.tasks.filter((task) => task.module === 'bank').length, 1, 'no second walk to town');
 });
 
 test('consumables: effects parsed from usebonus; energy item when it saves 30+ min, health item instead of a sleep', async () => {
@@ -623,12 +631,12 @@ test('consumables: effects parsed from usebonus; energy item when it saves 30+ m
     value: 29,
     effect: { energy: 0, health: 0.2, motivation: 0 },
   };
-  const on = (c: any) => (c.modules.consumables = true);
-  const p = await planWith({ start: { energy: 0 }, consumables: [coffee], config: on });
-  assert.equal(p.tasks[0]!.module, 'consumables');
-  assert.deepEqual(p.tasks[0]!.action, { type: 'use', itemId: 1 });
-  assert.equal(p.tasks[1]!.step.kind, 'job', 'the 15 energy pays the next run');
-  assert.equal(p.tasks.filter((t) => t.module === 'consumables').length, 1, 'only what is above the reserve');
+  const on = (candidate: any) => (candidate.modules.consumables = true);
+  const pick = await planWith({ start: { energy: 0 }, consumables: [coffee], config: on });
+  assert.equal(pick.tasks[0]!.module, 'consumables');
+  assert.deepEqual(pick.tasks[0]!.action, { type: 'use', itemId: 1 });
+  assert.equal(pick.tasks[1]!.step.kind, 'job', 'the 15 energy pays the next run');
+  assert.equal(pick.tasks.filter((task) => task.module === 'consumables').length, 1, 'only what is above the reserve');
   const off = await planWith({ start: { energy: 0 }, consumables: [coffee] });
   assert.equal(off.tasks[0]!.step.kind, 'job', 'module off: waits for regen');
   const close = await planWith({ start: { energy: 9 }, consumables: [coffee], config: on });
@@ -655,7 +663,7 @@ test('consumables: effects parsed from usebonus; energy item when it saves 30+ m
 test('planner: plans to the 6 h horizon (jobs of any length cover the same time); inserted sleep goes in at its time', async () => {
   const { planAutopilot } = await import('../src/game/autopilot.ts');
   const { parseAutopilotFile } = await import('../src/game/autopilot-config.ts');
-  const f = parseAutopilotFile(null);
+  const autopilotFile = parseAutopilotFile(null);
   const hotels = [
     {
       townId: 9,
@@ -664,13 +672,13 @@ test('planner: plans to the 6 h horizon (jobs of any length cover the same time)
       rooms: [{ key: 'cubby', name: 'Cubby', cost: 0, energyRate: 0.5, healthRate: 0.2 }],
     },
   ];
-  const input = (rules = f.rules) => ({
+  const input = (rules = autopilotFile.rules) => ({
     start: start({ energy: 100 }),
     fixed: [],
     jobs: [planJob(1, 1, { xp: 100, money: 10, energy: 5 })],
     locations: () => [{ x: 10, y: 0 }],
     wayTime: way,
-    config: f.config,
+    config: autopilotFile.config,
     rules,
     needs: [],
     itemValue: () => 0,
@@ -678,15 +686,15 @@ test('planner: plans to the 6 h horizon (jobs of any length cover the same time)
     towns: [],
     budget: 1000,
   });
-  const p = planAutopilot(input());
-  assert.equal(p.tasks.filter((t) => t.step.kind === 'job').length, 6, 'six one-hour jobs reach the horizon');
-  assert.ok(p.timeline.end - start().now >= 6 * 3600);
-  assert.ok(p.rates.xp > 0, 'the plan carries its exchange rates');
+  const pick = planAutopilot(input());
+  assert.equal(pick.tasks.filter((task) => task.step.kind === 'job').length, 6, 'six one-hour jobs reach the horizon');
+  assert.ok(pick.timeline.end - start().now >= 6 * 3600);
+  assert.ok(pick.rates.xp > 0, 'the plan carries its exchange rates');
   const at = start().now + 2 * 3600;
-  const ins = planAutopilot(input({ ...f.rules, inserts: [{ at, kind: 'sleep' }] }));
-  const i = ins.tasks.findIndex((t) => t.key === `insert:sleep:${at}`);
-  assert.equal(i, 2, 'after the two jobs that end by then');
-  assert.equal(ins.tasks[i]!.step.kind, 'sleep');
+  const ins = planAutopilot(input({ ...autopilotFile.rules, inserts: [{ at, kind: 'sleep' }] }));
+  const index = ins.tasks.findIndex((task) => task.key === `insert:sleep:${at}`);
+  assert.equal(index, 2, 'after the two jobs that end by then');
+  assert.equal(ins.tasks[index]!.step.kind, 'sleep');
 });
 
 test('queue view (Q): queued + planned rows; d excludes a planned job, s inserts a sleep, c cancels a queued task', async () => {
@@ -718,26 +726,26 @@ test('queue view (Q): queued + planned rows; d excludes a planned job, s inserts
         value: 1,
       },
     },
-    info(m: string) {
-      this.logs.push(m);
+    info(message: string) {
+      this.logs.push(message);
     },
-    updateAutopilot(fn: (f: any) => void) {
+    updateAutopilot(fn: (value: any) => void) {
       fn(this.autopilot);
     },
     timeline: () => timeline,
-    cancel: async (i: number) => void cancelled.push(i),
+    cancel: async (index: number) => void cancelled.push(index),
   };
   const stdout = new PassThrough() as any;
   Object.assign(stdout, { columns: 140, rows: 30, isTTY: true });
   const stdin = new PassThrough() as any;
   Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
   let out = '';
-  stdout.on('data', (d: Buffer) => (out += d.toString()));
+  stdout.on('data', (data: Buffer) => (out += data.toString()));
   const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
-  const settle = (ms = 80) => new Promise((r) => setTimeout(r, ms));
+  const settle = (ms = 80) => new Promise((transform) => setTimeout(transform, ms));
   const keys = async (...ks: string[]) => {
-    for (const k of ks) {
-      stdin.write(k);
+    for (const key of ks) {
+      stdin.write(key);
       await settle();
     }
   };
@@ -747,7 +755,7 @@ test('queue view (Q): queued + planned rows; d excludes a planned job, s inserts
       state,
       width: 140,
       height: 28,
-      onCapture: (c: boolean) => (captured = c),
+      onCapture: (flag: boolean) => (captured = flag),
       onExit: () => {},
     }),
     { stdout, stdin, exitOnCtrlC: false, patchConsole: false },
@@ -781,10 +789,12 @@ test('plan rows: back-to-back runs of a job merge, waits for energy are rows, re
     job({ title: 'Wheel', jobId: 3, energy: 40 }),
   ];
   const tl = projectTimeline(st, steps, { wayTime: way });
-  const tasks = steps.slice(1).map((s, i) => ({ module: 'jobs' as const, key: `t${i}`, step: s, why: `why ${i}` }));
+  const tasks = steps
+    .slice(1)
+    .map((task, index) => ({ module: 'jobs' as const, key: `t${index}`, step: task, why: `why ${index}` }));
   const rows = planRows(tl, tasks);
   assert.deepEqual(
-    rows.map((r) => [r.title, r.count, r.fixed]),
+    rows.map((result) => [result.title, result.count, result.fixed]),
     [
       ['Queued', 1, true],
       ['Cotton', 2, false],
@@ -797,30 +807,30 @@ test('plan rows: back-to-back runs of a job merge, waits for energy are rows, re
 });
 
 test('planner: a job picked for quests says which item, for which quest, and how many are left', async () => {
-  const p = await planWith({
+  const pick = await planWith({
     jobs: [planJob(1, 1, { xp: 100, money: 10, items: [{ itemId: 7000, expected: 1, percent: 100 }] })],
     needs: [{ key: 'item:7', label: 'Cotton', amount: 5, unit: 'items', itemId: 7000, quests: ["Farmer's woes"] }],
   });
-  assert.equal(p.why, `quest: Cotton for "Farmer's woes" (5 left)`);
-  assert.match(p.tasks[1]!.why!, /\(4 left\)/);
+  assert.equal(pick.why, `quest: Cotton for "Farmer's woes" (5 left)`);
+  assert.match(pick.tasks[1]!.why!, /\(4 left\)/);
 });
 
 test('quest rewards: picked by priority; a wearable upgrade always wins', async () => {
   const { chooseReward } = await import('../src/game/autopilot-quests.ts');
   const { parseAutopilotFile } = await import('../src/game/autopilot-config.ts');
-  const c = parseAutopilotFile(null).config;
+  const config = parseAutopilotFile(null).config;
   const opts = [
     { id: 1, text: '500 Experience points' },
     { id: 2, text: '300 Dollars' },
     { id: 3, text: 'Bowie knife' },
   ];
-  assert.equal(chooseReward(opts, { ...c, priority: ['xp', 'money', 'quests', 'products'] }), 1);
-  assert.equal(chooseReward(opts, { ...c, priority: ['money', 'xp', 'quests', 'products'] }), 2);
+  assert.equal(chooseReward(opts, { ...config, priority: ['xp', 'money', 'quests', 'products'] }), 1);
+  assert.equal(chooseReward(opts, { ...config, priority: ['money', 'xp', 'quests', 'products'] }), 2);
   assert.equal(
-    chooseReward(opts, c, (t) => t === 'Bowie knife'),
+    chooseReward(opts, config, (text) => text === 'Bowie knife'),
     3,
   );
-  assert.equal(chooseReward([{ id: 9, text: 'x' }], c), 9);
+  assert.equal(chooseReward([{ id: 9, text: 'x' }], config), 9);
 });
 
 test('duel outlook: needs 2+ results near the level, mostly wins; any loss in 24 h stops NPC duels', async () => {
@@ -845,8 +855,11 @@ test('duel outlook: needs 2+ results near the level, mostly wins; any loss in 24
 test("planner: a level-up refunds energy, so XP lowers a run's energy cost (refill tops up to max)", async () => {
   // Level 10 → 11 takes 393 XP: 300 XP brings back ~76 energy, so the 12-energy run costs its floor of 3.
   const jobs = [planJob(1, 1, { xp: 300, money: 100 }), planJob(2, 2, { xp: 0, money: 110 })];
-  const p = await planWith({ jobs, config: (c) => (c.priority = ['money', 'xp', 'quests', 'products']) });
-  assert.equal((p.tasks[0]!.step as any).jobId, 1, '$100 for ~3 net energy beats $110 for 12');
+  const pick = await planWith({
+    jobs,
+    config: (candidate) => (candidate.priority = ['money', 'xp', 'quests', 'products']),
+  });
+  assert.equal((pick.tasks[0]!.step as any).jobId, 1, '$100 for ~3 net energy beats $110 for 12');
 });
 
 test('planner: exchange rates are fixed per plan: once a need is nearly met, its crumbs lose to the next goal', async () => {
@@ -855,9 +868,9 @@ test('planner: exchange rates are fixed per plan: once a need is nearly met, its
     planJob(1, 1, { xp: 100, money: 0 }),
   ];
   const needs = [{ key: 'item:700', label: 'Ham', amount: 1.1, unit: 'items', itemId: 700000, quests: ['Q'] }];
-  const p = await planWith({ jobs, needs });
+  const pick = await planWith({ jobs, needs });
   assert.deepEqual(
-    p.tasks.slice(0, 2).map((t) => (t.step as any).jobId),
+    pick.tasks.slice(0, 2).map((task) => (task.step as any).jobId),
     [3, 1],
     'the 0.1 left is worth less than the XP job',
   );
@@ -871,7 +884,7 @@ test('planner: drops of jobs already queued count toward needs', async () => {
   const needs = [{ key: 'item:700', label: 'Ham', amount: 1, unit: 'items' as const, itemId: 700000, quests: ['Q'] }];
   const { planAutopilot } = await import('../src/game/autopilot.ts');
   const { parseAutopilotFile } = await import('../src/game/autopilot-config.ts');
-  const f = parseAutopilotFile(null);
+  const autopilotFile = parseAutopilotFile(null);
   const queued: any = {
     kind: 'job',
     title: 'job3',
@@ -883,14 +896,14 @@ test('planner: drops of jobs already queued count toward needs', async () => {
     money: 0,
     fixed: { start: 1_000_000, end: 1_003_600 },
   };
-  const p = planAutopilot({
+  const pick = planAutopilot({
     start: start(),
     fixed: [queued],
     jobs,
-    locations: (g) => (({ 1: [{ x: 100, y: 0 }], 3: [{ x: 50, y: 0 }] }) as any)[g],
+    locations: (value) => (({ 1: [{ x: 100, y: 0 }], 3: [{ x: 50, y: 0 }] }) as any)[value],
     wayTime: way,
-    config: f.config,
-    rules: f.rules,
+    config: autopilotFile.config,
+    rules: autopilotFile.rules,
     needs,
     itemValue: () => 0,
     hotels: [],
@@ -898,25 +911,25 @@ test('planner: drops of jobs already queued count toward needs', async () => {
     budget: 1000,
     maxJobs: 2,
   });
-  assert.equal((p.tasks[0]!.step as any).jobId, 1, 'the queued run already brings the ham');
+  assert.equal((pick.tasks[0]!.step as any).jobId, 1, 'the queued run already brings the ham');
 });
 
 test('planner: a queue slot costs time (the TUI is not always open), so runs that fill slots fast lose', async () => {
-  const job = {
+  const slotJob = {
     ...planJob(1, 1, { xp: 0, money: 0 }),
     values: {
       short: { duration: 15, energy: 1, money: 2, experience: 0, luck: 0, items: [] },
       long: { duration: 3600, energy: 12, money: 300, experience: 0, luck: 0, items: [] },
     },
   };
-  const money = (slot: number) => (c: any) => {
-    c.priority = ['money', 'xp', 'quests', 'products'];
-    c.per = 'time';
-    c.slotCost = slot;
+  const money = (slot: number) => (candidate: any) => {
+    candidate.priority = ['money', 'xp', 'quests', 'products'];
+    candidate.per = 'time';
+    candidate.slotCost = slot;
   };
   const fast = { energyRegen: 40, at: { x: 100, y: 0 } };
-  assert.equal((await planWith({ jobs: [job], config: money(0), start: fast })).tasks[0]!.key, 'job:1:short');
-  assert.equal((await planWith({ jobs: [job], config: money(600), start: fast })).tasks[0]!.key, 'job:1:long');
+  assert.equal((await planWith({ jobs: [slotJob], config: money(0), start: fast })).tasks[0]!.key, 'job:1:short');
+  assert.equal((await planWith({ jobs: [slotJob], config: money(600), start: fast })).tasks[0]!.key, 'job:1:long');
 });
 
 test('timeline: a level-up raises max HP by lpPerPoint', () => {
@@ -931,7 +944,7 @@ test('timeline: a level-up raises max HP by lpPerPoint', () => {
 
 test('quest requirements: a time window is its own kind (it only waits)', async () => {
   const { parseQuest } = await import('../src/game/quests.ts');
-  const q = parseQuest({
+  const quest = parseQuest({
     id: 1,
     title: 'Afternoon in the saloon',
     requirements: [
@@ -940,20 +953,20 @@ test('quest requirements: a time window is its own kind (it only waits)', async 
     ],
   });
   assert.deepEqual(
-    q.requirements.map((r) => r.kind),
+    quest.requirements.map((requirement) => requirement.kind),
     ['window', 'bought'],
   );
-  assert.deepEqual(q.requirements[0]!.window, { from: '06:00', to: '11:00' });
+  assert.deepEqual(quest.requirements[0]!.window, { from: '06:00', to: '11:00' });
 });
 
 test('quest buys: no walk first, then the nearest shop, within the quest limit; else the market within its own', async () => {
   const { chooseBuys } = await import('../src/game/quest-buy.ts');
-  const shop = (townId: number, x: number, price: number): any => ({
+  const shop = (townId: number, xCoord: number, price: number): any => ({
     kind: 'shop',
     shop: 'general',
     townId,
     townName: `T${townId}`,
-    at: { x, y: 0 },
+    at: { x: xCoord, y: 0 },
     price,
   });
   const market = (id: number, price: number, count = 1): any => ({
@@ -969,36 +982,42 @@ test('quest buys: no walk first, then the nearest shop, within the quest limit; 
   const limits = { buyLimit: 3000, marketLimit: 5000, market: true, walkValue: 0.25, maxWalk: Infinity };
   const need = (count = 2) => [{ itemId: 1000, name: 'Jug of water', count }];
 
-  let r = chooseBuys(need(), () => [shop(1, 900, 30), shop(2, 100, 35), mobile], limits, travel);
-  assert.equal(r.problem, null);
-  assert.equal(r.picks[0]!.source.kind, 'mobile', 'no walk beats a cheaper shop');
-  r = chooseBuys(need(), () => [shop(1, 900, 30), shop(2, 100, 35)], limits, travel);
-  assert.deepEqual([(r.picks[0]!.source as any).townId, r.picks[0]!.cost], [2, 70], 'the nearest shop, price × count');
+  let result = chooseBuys(need(), () => [shop(1, 900, 30), shop(2, 100, 35), mobile], limits, travel);
+  assert.equal(result.problem, null);
+  assert.equal(result.picks[0]!.source.kind, 'mobile', 'no walk beats a cheaper shop');
+  result = chooseBuys(need(), () => [shop(1, 900, 30), shop(2, 100, 35)], limits, travel);
+  assert.deepEqual(
+    [(result.picks[0]!.source as any).townId, result.picks[0]!.cost],
+    [2, 70],
+    'the nearest shop, price × count',
+  );
 
   // The horse: $2,800 in a shop fits the $3,000 limit; two of them do not, and the market takes over.
-  r = chooseBuys(need(2), () => [shop(1, 100, 2800), market(7, 2500), market(8, 2400)], limits, travel);
-  assert.equal(r.problem, null);
+  result = chooseBuys(need(2), () => [shop(1, 100, 2800), market(7, 2500), market(8, 2400)], limits, travel);
+  assert.equal(result.problem, null);
   assert.deepEqual(
-    r.picks.map((p) => p.source.kind),
+    result.picks.map((pick) => pick.source.kind),
     ['market', 'market'],
   );
   assert.equal(
-    r.picks.reduce((a, p) => a + p.cost, 0),
+    result.picks.reduce((accumulator, current) => accumulator + current.cost, 0),
     4900,
   );
-  r = chooseBuys(need(1), () => [market(7, 5200)], limits, travel);
-  assert.match(r.problem!, /over the \$5,000 market limit/);
-  r = chooseBuys(need(1), () => [market(7, 100)], { ...limits, market: false }, travel);
-  assert.match(r.problem!, /no shop in reach or the mobile trader sells it/);
-  r = chooseBuys(need(1), () => [shop(1, 100, 3500)], { ...limits, market: false }, travel);
-  assert.match(r.problem!, /\$3,500 \(general store in T1\), over the \$3,000 quest buy limit/);
+  result = chooseBuys(need(1), () => [market(7, 5200)], limits, travel);
+  assert.match(result.problem!, /over the \$5,000 market limit/);
+  result = chooseBuys(need(1), () => [market(7, 100)], { ...limits, market: false }, travel);
+  assert.match(result.problem!, /no shop in reach or the mobile trader sells it/);
+  result = chooseBuys(need(1), () => [shop(1, 100, 3500)], { ...limits, market: false }, travel);
+  assert.match(result.problem!, /\$3,500 \(general store in T1\), over the \$3,000 quest buy limit/);
 });
 
 test('buy catalog: shop price × charge, mobile trader in dollars, market offers mapped to their town', async () => {
   const { BuyCatalog } = await import('../src/game/quest-buy.ts');
-  const c = new BuyCatalog();
-  c.setShops(3, [{ key: 'tailor', townId: 3, townName: 'Slobozia', level: 1, charge: 1.5, items: [300000] } as any]);
-  c.setMobile({
+  const candidate = new BuyCatalog();
+  candidate.setShops(3, [
+    { key: 'tailor', townId: 3, townName: 'Slobozia', level: 1, charge: 1.5, items: [300000] } as any,
+  ]);
+  candidate.setMobile({
     items: [
       {
         itemId: 300000,
@@ -1012,18 +1031,18 @@ test('buy catalog: shop price × charge, mobile trader in dollars, market offers
     ],
     changesAt: null,
   });
-  c.setMarket(300000, [
+  candidate.setMarket(300000, [
     { id: 9, itemId: 300000, count: 1, buyNow: 25, direction: 'SELL', town: { name: 'Far', x: 7, y: 7 } } as any,
     { id: 10, itemId: 300000, count: 1, buyNow: null, direction: 'SELL', town: { name: 'Far', x: 7, y: 7 } } as any,
   ]);
-  const src = c.sources(
+  const src = candidate.sources(
     300000,
     () => 10,
     (id) => (id === 3 ? { name: 'Slobozia', at: { x: 1, y: 1 } } : undefined),
     (at) => (at.x === 7 ? 4 : undefined),
   );
   assert.deepEqual(
-    src.map((x) => [x.kind, x.price]),
+    src.map((xCoord) => [xCoord.kind, xCoord.price]),
     [
       ['shop', 15],
       ['market', 25],
@@ -1031,9 +1050,9 @@ test('buy catalog: shop price × charge, mobile trader in dollars, market offers
     'nugget-only offers and bid-only offers are left out',
   );
   assert.equal((src[1] as any).townId, 4);
-  c.dropOffer(9);
+  candidate.dropOffer(9);
   assert.equal(
-    c.sources(
+    candidate.sources(
       300000,
       () => 10,
       () => undefined,
@@ -1051,24 +1070,24 @@ test('planner: a quest shopping trip in reach is walked first (cost from the bud
     cost: 60,
     what: ['2× Jug of water (general store) for "Party preparation"'],
   };
-  const on = (c: any) => (c.modules.quests = true);
-  const p = await planWith({ config: on, buyTrips: [trip] });
+  const on = (candidate: any) => (candidate.modules.quests = true);
+  const pick = await planWith({ config: on, buyTrips: [trip] });
   assert.deepEqual(
-    p.tasks.slice(0, 2).map((t) => t.step.kind),
+    pick.tasks.slice(0, 2).map((task) => task.step.kind),
     ['walk', 'action'],
   );
-  assert.deepEqual(p.tasks[1]!.action, { type: 'buy', townId: 3 });
-  assert.match(p.tasks[1]!.why!, /quest items: 2× Jug of water/);
-  assert.equal(p.timeline.steps[1]!.cash, -60);
-  assert.equal(p.tasks.filter((t) => t.action?.type === 'buy').length, 1, 'once per plan');
+  assert.deepEqual(pick.tasks[1]!.action, { type: 'buy', townId: 3 });
+  assert.match(pick.tasks[1]!.why!, /quest items: 2× Jug of water/);
+  assert.equal(pick.timeline.steps[1]!.cash, -60);
+  assert.equal(pick.tasks.filter((task) => task.action?.type === 'buy').length, 1, 'once per plan');
   const far = await planWith({
-    config: (c) => {
-      on(c);
-      c.quests.buyTrip = 200;
+    config: (candidate) => {
+      on(candidate);
+      candidate.quests.buyTrip = 200;
     },
     buyTrips: [trip],
   });
   assert.equal(far.tasks[0]!.step.kind, 'job');
   const off = await planWith({ buyTrips: [trip] });
-  assert.ok(!off.tasks.some((t) => t.action?.type === 'buy'), 'Quests module off: no trips');
+  assert.ok(!off.tasks.some((task) => task.action?.type === 'buy'), 'Quests module off: no trips');
 });

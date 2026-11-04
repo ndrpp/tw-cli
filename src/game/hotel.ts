@@ -26,23 +26,23 @@ export interface Hotel {
 }
 
 /** A room's energy / health number as a fraction of max per hour (read as % per hour; checked by calibration.ts). */
-export const roomRate = (v: number) => Math.max(0, v) / 100;
+export const roomRate = (value: number) => Math.max(0, value) / 100;
 
 export function parseHotel(townId: number, json: JsonObject): Hotel {
-  const rooms = entries(json.rooms).map(([key, v]) => {
-    const r = obj(v);
+  const rooms = entries(json.rooms).map(([key, value]) => {
+    const jsonValue = obj(value);
     return {
       key,
-      name: String(r.name ?? key),
-      level: Number(r.level) || 0,
-      available: !!r.available,
-      free: !!r.free,
-      costs: Number(r.costs) || 0,
-      energy: Number(r.energy) || 0,
-      health: Number(r.health) || 0,
+      name: String(jsonValue.name ?? key),
+      level: Number(jsonValue.level) || 0,
+      available: !!jsonValue.available,
+      free: !!jsonValue.free,
+      costs: Number(jsonValue.costs) || 0,
+      energy: Number(jsonValue.energy) || 0,
+      health: Number(jsonValue.health) || 0,
     };
   });
-  rooms.sort((a, b) => a.level - b.level);
+  rooms.sort((first, second) => first.level - second.level);
   return {
     townId,
     townName: String(json.town_name ?? `town ${townId}`),
@@ -55,10 +55,10 @@ export function parseHotel(townId: number, json: JsonObject): Hotel {
 }
 
 /** The room the browser pre-selects: own hotel → its level; else the best free one. */
-export function defaultRoom(h: Hotel): HotelRoom | undefined {
-  const usable = h.rooms.filter((r) => r.available);
-  if (h.own) return usable.find((r) => r.level === h.level) ?? usable.at(-1);
-  return usable.filter((r) => r.free && r.level <= h.level).at(-1) ?? usable[0];
+export function defaultRoom(hotel: Hotel): HotelRoom | undefined {
+  const usable = hotel.rooms.filter((room) => room.available);
+  if (hotel.own) return usable.find((room) => room.level === hotel.level) ?? usable.at(-1);
+  return usable.filter((room) => room.free && room.level <= hotel.level).at(-1) ?? usable[0];
 }
 
 export async function fetchHotel(client: GameClient, townId: number): Promise<Hotel> {

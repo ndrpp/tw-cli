@@ -132,23 +132,23 @@ function fakeServer() {
     const path = url.replace(WORLD, '').replace(/&h=\w+/, '');
     const route = routes[path];
     if (route) {
-      const r = route(body);
-      return r instanceof Response ? r : Response.json(r);
+      const result = route(body);
+      return result instanceof Response ? result : Response.json(result);
     }
     return new Response(`unexpected ${url}`, { status: 404 });
   }) as typeof fetch;
 }
 
 function makeState() {
-  const b = bootstrap();
+  const second = bootstrap();
   const client = new GameClient({
     worldUrl: WORLD,
-    h: b.h,
+    h: second.h,
     jar: new CookieJar(),
     identity: { userAgent: 'UA', acceptLanguage: 'en' },
     policy: FAST,
   });
-  return new GameState({ client, bootstrap: b }, async () => ({ client, bootstrap: b }));
+  return new GameState({ client, bootstrap: second }, async () => ({ client, bootstrap: second }));
 }
 
 beforeEach(() => {
@@ -163,18 +163,18 @@ afterEach(() => {
 test.after(() => rmSync(home, { recursive: true, force: true }));
 
 test('items: base id / upgrade level, names and bonus text', () => {
-  const c = ItemCatalog.fromRaw(ITEMS);
-  assert.equal(c.name(110001), 'Rusty rifle ☆1');
-  assert.equal(c.get(54997000)?.type, 'right_arm');
-  const withSkills = ITEMS.find((i: any) => !Array.isArray(i.bonus.skills));
-  if (withSkills) assert.match(bonusText(c.get(withSkills.item_id)), /^\+\d/);
+  const candidate = ItemCatalog.fromRaw(ITEMS);
+  assert.equal(candidate.name(110001), 'Rusty rifle ☆1');
+  assert.equal(candidate.get(54997000)?.type, 'right_arm');
+  const withSkills = ITEMS.find((index: any) => !Array.isArray(index.bonus.skills));
+  if (withSkills) assert.match(bonusText(candidate.get(withSkills.item_id)), /^\+\d/);
 });
 
 test('item stats: computed like the web popup (upgrade level, per-level rounding, sets)', async () => {
   const { itemStats, calculateItemLevelBonus, upgradedSpeed, speedPercent, mergedStages, setBonusLines } = await import(
     '../src/game/itemstats.ts'
   );
-  const c = ItemCatalog.fromRaw(ITEMS);
+  const candidate = ItemCatalog.fromRaw(ITEMS);
   // ItemManager.calculateItemLevelBonus: ≥1 → round(max(1, v·lvl/10)); <1 → round(max(1, v·1000·lvl))/10000
   assert.equal(calculateItemLevelBonus(1, 22), 2);
   assert.equal(calculateItemLevelBonus(1, 6), 1);
@@ -182,30 +182,34 @@ test('item stats: computed like the web popup (upgrade level, per-level rounding
   assert.equal(calculateItemLevelBonus(2, 0.5), 0.1);
   assert.equal(calculateItemLevelBonus(0, 10), 0);
   // Bowie knife ☆1 at level 30: damage 22-34 → 24-37; +0.19 Appearance per level → ceil(5.7)=6, +1 upgrade = 7
-  const knife = itemStats(c.get(16000)!, 16001, { charLevel: 30 });
+  const knife = itemStats(candidate.get(16000)!, 16001, { charLevel: 30 });
   assert.deepEqual(knife.damage, { min: 24, max: 37 });
   assert.equal(knife.lines[0]!.text, '24-37 Damage');
   assert.ok(
-    knife.lines.some((l) => l.text === '+ 7 Appearance'),
+    knife.lines.some((line) => line.text === '+ 7 Appearance'),
     JSON.stringify(knife.lines),
   );
   assert.equal(knife.totals.appearance, 7);
   // Without a character: per-level description as the game writes it
-  const plain = itemStats(c.get(16000)!, 16000);
-  assert.ok(plain.lines.some((l) => l.text === '+0.19 Appearance (per Level)'));
+  const plain = itemStats(candidate.get(16000)!, 16000);
+  assert.ok(plain.lines.some((line) => line.text === '+0.19 Appearance (per Level)'));
   // Tomahawk: damage per level is folded into the damage range when the character is known
-  const tom = itemStats(c.get(75000)!, 75000, { charLevel: 20 });
+  const tom = itemStats(candidate.get(75000)!, 75000, { charLevel: 20 });
   assert.deepEqual(tom.damage, { min: 16, max: 25 });
-  assert.ok(!tom.lines.some((l) => /Damage$/.test(l.text) && l.kind !== 'damage'));
-  assert.equal(itemStats(c.get(75000)!, 75000).lines[0]!.text, '1-10 Base damage');
+  assert.ok(!tom.lines.some((line) => /Damage$/.test(line.text) && line.kind !== 'damage'));
+  assert.equal(itemStats(candidate.get(75000)!, 75000).lines[0]!.text, '1-10 Base damage');
   // Fixed attribute + upgrade: The Joker +1 Charisma → ☆2: 1 + max(1, round(0.2)) = 2
-  assert.equal(itemStats(c.get(2716000)!, 2716002, { charLevel: 10 }).totals.charisma, 2);
+  assert.equal(itemStats(candidate.get(2716000)!, 2716002, { charLevel: 10 }).totals.charisma, 2);
   // Speed (Item.parseSpeed) and the popup's percentage
-  const bat = c.get(54994000)!;
+  const bat = candidate.get(54994000)!;
   assert.equal(speedPercent(bat.speed!), 272);
-  const s1 = upgradedSpeed(bat.speed, 1)!;
-  assert.ok(s1 < bat.speed!, 'upgrade makes the horse faster');
-  assert.ok(itemStats(bat, 54994001, { charLevel: 50 }).lines.some((l) => l.text === `Speed: +${speedPercent(s1)}%`));
+  const upgradedSpeedValue = upgradedSpeed(bat.speed, 1)!;
+  assert.ok(upgradedSpeedValue < bat.speed!, 'upgrade makes the horse faster');
+  assert.ok(
+    itemStats(bat, 54994001, { charLevel: 50 }).lines.some(
+      (line) => line.text === `Speed: +${speedPercent(upgradedSpeedValue)}%`,
+    ),
+  );
   // Set stages merge per bonus and stop at the worn count
   const set = {
     key: 's',
@@ -234,7 +238,7 @@ test('item stats: computed like the web popup (upgrade level, per-level rounding
 
 test('quest route: needs from requirements, greedy plan per energy, unmet reasons', async () => {
   const { questNeeds, planRoute } = await import('../src/game/route.ts');
-  const req = (o: any) => ({ solved: false, info: '', ...o });
+  const req = (options: any) => ({ solved: false, info: '', ...options });
   const quests: any[] = [
     {
       id: 1,
@@ -262,7 +266,7 @@ test('quest route: needs from requirements, greedy plan per energy, unmet reason
     (id) => `item${id}`,
     (id) => `job${id}`,
   );
-  const by = Object.fromEntries(needs.map((n) => [n.key, n]));
+  const by = Object.fromEntries(needs.map((need) => [need.key, need]));
   assert.equal(by['item:700']?.amount, 6, '5 + 2 needed, 1 in the bag');
   assert.deepEqual([by['job:92:runs']?.amount, by['job:36:seconds']?.amount], [4, 1800]);
   const job = (id: number, groupid: number, items: Record<string, number>, ok = true): any => ({
@@ -280,7 +284,11 @@ test('quest route: needs from requirements, greedy plan per energy, unmet reason
         money: 1,
         experience: 1,
         luck: 0,
-        items: Object.entries(items).map(([i, p]) => ({ itemId: +i, expected: p * 0.02, percent: p * 2 })),
+        items: Object.entries(items).map(([text, value]) => ({
+          itemId: +text,
+          expected: value * 0.02,
+          percent: value * 2,
+        })),
       },
       long: {
         duration: 3600,
@@ -288,7 +296,11 @@ test('quest route: needs from requirements, greedy plan per energy, unmet reason
         money: 100,
         experience: 50,
         luck: 0,
-        items: Object.entries(items).map(([i, p]) => ({ itemId: +i, expected: p * 1.5, percent: p * 150 })),
+        items: Object.entries(items).map(([text, value]) => ({
+          itemId: +text,
+          expected: value * 1.5,
+          percent: value * 150,
+        })),
       },
     },
   });
@@ -302,30 +314,31 @@ test('quest route: needs from requirements, greedy plan per energy, unmet reason
   const plan = planRoute({
     needs,
     jobs,
-    locations: (g) => locs[g],
+    locations: (value) => locs[value],
     from: { x: 0, y: 0 },
-    wayTime: (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
+    wayTime: (position, positionValue) =>
+      Math.abs(position.x - positionValue.x) + Math.abs(position.y - positionValue.y),
   });
-  const ham = plan.stops.find((s) => s.job.id === 10)!;
+  const ham = plan.stops.find((source) => source.job.id === 10)!;
   assert.equal(ham.duration, 'long', 'per energy, 1 h runs drop far more per point');
   assert.equal(ham.runs, 4, '6 ham at ~1.5 per run');
-  const muck = plan.stops.find((s) => s.job.id === 92)!;
+  const muck = plan.stops.find((source) => source.job.id === 92)!;
   assert.deepEqual([muck.duration, muck.runs], ['short', 4], 'count-based job requirement: cheapest runs');
   assert.equal(plan.totals.runs, 8);
-  assert.deepEqual(plan.unmet.map((u) => u.need.key).sort(), ['item:999', 'job:36:seconds']);
-  assert.match(plan.unmet.find((u) => u.need.key === 'item:999')!.why, /labor points/);
-  assert.match(plan.unmet.find((u) => u.need.key === 'job:36:seconds')!.why, /labor points/);
+  assert.deepEqual(plan.unmet.map((value) => value.need.key).sort(), ['item:999', 'job:36:seconds']);
+  assert.match(plan.unmet.find((value) => value.need.key === 'item:999')!.why, /labor points/);
+  assert.match(plan.unmet.find((value) => value.need.key === 'job:36:seconds')!.why, /labor points/);
   assert.deepEqual(plan.leftover, {});
 });
 
 test('inventory: Bag.init, worn slots, and Bag.handleChanges semantics (new totals, 0 removes)', () => {
-  const c = ItemCatalog.fromRaw(ITEMS);
+  const candidate = ItemCatalog.fromRaw(ITEMS);
   const inv = Inventory.fromInit(BAG);
   assert.ok(
-    [...inv.wear.keys()].every((k) => k.startsWith('#')),
+    [...inv.wear.keys()].every((key) => key.startsWith('#')),
     'slots unknown before items load',
   );
-  inv.retype(c);
+  inv.retype(candidate);
   assert.equal(inv.wear.get('animal'), 54994000);
   assert.equal(inv.wear.get('left_arm'), 110001);
   const knife = BAG.bag.right_arm[0];
@@ -335,7 +348,7 @@ test('inventory: Bag.init, worn slots, and Bag.handleChanges semantics (new tota
     Math.max(
       ...Object.values<any>(BAG.bag)
         .flat()
-        .map((i: any) => i.inv_id),
+        .map((index: any) => index.inv_id),
     ),
   );
   inv.applyChanges([
@@ -351,51 +364,51 @@ test('inventory: Bag.init, worn slots, and Bag.handleChanges semantics (new tota
 });
 
 test('skills: planning respects free points; attribute points raise their skills; save payload', () => {
-  const s = Skills.fromInit(SKILL_DATA);
-  assert.equal(s.total('trade'), 226);
-  assert.equal(s.total('charisma'), 40);
+  const source = Skills.fromInit(SKILL_DATA);
+  assert.equal(source.total('trade'), 226);
+  assert.equal(source.total('charisma'), 40);
   const plan = emptyPlan();
-  assert.ok(adjustPlan(plan, s, 'strength', 1));
-  assert.equal(adjustPlan(plan, s, 'charisma', 1), false, 'only one free attribute point');
-  for (let i = 0; i < 3; i++) assert.ok(adjustPlan(plan, s, 'build', 1));
-  assert.equal(adjustPlan(plan, s, 'trade', 1), false);
+  assert.ok(adjustPlan(plan, source, 'strength', 1));
+  assert.equal(adjustPlan(plan, source, 'charisma', 1), false, 'only one free attribute point');
+  for (let index = 0; index < 3; index++) assert.ok(adjustPlan(plan, source, 'build', 1));
+  assert.equal(adjustPlan(plan, source, 'trade', 1), false);
   assert.equal(plannedDelta(plan, 'build'), 4); // 3 skill + 1 from strength
   assert.equal(plannedDelta(plan, 'punch'), 1);
   assert.equal(plannedDelta(plan, 'trade'), 0);
-  const p = savePayload(plan);
-  assert.equal(p.modifier, 'add');
-  assert.deepEqual(JSON.parse(p.data), {
+  const pick = savePayload(plan);
+  assert.equal(pick.modifier, 'add');
+  assert.deepEqual(JSON.parse(pick.data), {
     attribute_modifications: { strength: 1 },
     skill_modifications: { build: 3 },
     attribute_points_used: 1,
     skill_points_used: 3,
   });
-  assert.ok(adjustPlan(plan, s, 'build', -1));
+  assert.ok(adjustPlan(plan, source, 'build', -1));
   assert.equal(plan.skills.build, 2);
 });
 
 test('quests: captured quest log parses (requirements, rewards, HTML stripped)', () => {
-  const qs = QUESTS.quests.map((q: any) => parseQuest(q, (id) => `#${id}`));
-  const mike = qs.find((q: any) => q.id === 280)!;
+  const qs = QUESTS.quests.map((query: any) => parseQuest(query, (id) => `#${id}`));
+  const mike = qs.find((query: any) => query.id === 280)!;
   assert.equal(mike.finishable, true);
   assert.equal(mike.accepted, true);
   assert.deepEqual(mike.requirements, [
     { solved: true, info: 'Trading (30 minutes)', kind: 'job', jobId: 36, count: 3600 },
   ]);
-  const kinds = qs.flatMap((q: any) => q.requirements.map((r: any) => r.kind));
+  const kinds = qs.flatMap((query: any) => query.requirements.map((result: any) => result.kind));
   assert.ok(
     kinds.includes('wear') && kinds.includes('item') && kinds.includes('bought'),
     'wear / item / bought told apart',
   );
-  const bought = qs.flatMap((q: any) => q.requirements).find((r: any) => r.kind === 'bought');
+  const bought = qs.flatMap((query: any) => query.requirements).find((result: any) => result.kind === 'bought');
   assert.equal(bought.buy, 'White horse');
   assert.deepEqual(
-    mike.rewards.map((r: any) => r.text),
+    mike.rewards.map((result: any) => result.text),
     ['125 Experience points', '50 Dollars'],
   );
-  const horse = qs.find((q: any) => q.id === 3063)!;
-  assert.equal(horse.requirements.filter((r: any) => !r.solved).length, 3);
-  assert.ok(horse.rewards.some((r: any) => r.item === 722000 && r.text === '#722000'));
+  const horse = qs.find((query: any) => query.id === 3063)!;
+  assert.equal(horse.requirements.filter((result: any) => !result.solved).length, 3);
+  assert.ok(horse.rewards.some((result: any) => result.item === 722000 && result.text === '#722000'));
   assert.doesNotMatch(horse.description, /<|&hellip;|&nbsp;/);
   assert.equal(plainText('<p>a&nbsp;b</p><p>c</p>'), 'a b\n\nc');
   assert.equal(plainText('<div>Motivation</div><div>82 &#37;</div>', { compact: true }), 'Motivation\n82 %');
@@ -404,7 +417,7 @@ test('quests: captured quest log parses (requirements, rewards, HTML stripped)',
   assert.equal(horse.soloTitle, 'Times of trial');
   const chains = groupByChain(qs);
   assert.deepEqual(
-    chains.map((c) => [c.title, c.quests.length, c.finishable]),
+    chains.map((candidate) => [candidate.title, candidate.quests.length, candidate.finishable]),
     [
       ['Angel of love', 1, 1],
       ['Repeatable quests', 1, 0],
@@ -414,7 +427,7 @@ test('quests: captured quest log parses (requirements, rewards, HTML stripped)',
 });
 
 test('hotel: rooms sorted, default room like HotelWindow', () => {
-  const h = parseHotel(1421, {
+  const hotelInfo = parseHotel(1421, {
     hotel_level: 2,
     town_name: 'Slobozia',
     own_hotel: true,
@@ -426,26 +439,26 @@ test('hotel: rooms sorted, default room like HotelWindow', () => {
     },
   });
   assert.deepEqual(
-    h.rooms.map((r) => r.key),
+    hotelInfo.rooms.map((room) => room.key),
     ['cubby', 'bedroom', 'hotel_room'],
   );
-  assert.equal(defaultRoom(h)?.key, 'bedroom');
-  assert.equal(defaultRoom({ ...h, own: false })?.key, 'cubby');
+  assert.equal(defaultRoom(hotelInfo)?.key, 'bedroom');
+  assert.equal(defaultRoom({ ...hotelInfo, own: false })?.key, 'cubby');
 });
 
 test('chat long-poll: request format, Status/UserUpdate → character, invalid sid stops', async () => {
   fakeServer();
   const state = makeState();
-  let n = 0;
+  let count = 0;
   routes['/gameservice/chat/'] = (body) => {
     const req: any = JSON.parse(decodeURIComponent(body));
-    assert.equal(req.messageid, ++n);
+    assert.equal(req.messageid, ++count);
     assert.deepEqual(
-      req.batch.map((b: any) => b.op),
+      req.batch.map((second: any) => second.op),
       ['nop'],
     );
     assert.equal(req.clid.length, 22);
-    if (n === 1) {
+    if (count === 1) {
       return {
         timenow: Date.now(),
         batch: [
@@ -462,7 +475,7 @@ test('chat long-poll: request format, Status/UserUpdate → character, invalid s
         ],
       };
     }
-    if (n === 2) {
+    if (count === 2) {
       return {
         timenow: Date.now(),
         batch: [
@@ -490,9 +503,9 @@ test('chat long-poll: request format, Status/UserUpdate → character, invalid s
   };
   const poller = new ChatPoller(state.client, { policy: { ...FAST, lane: 'chat' } as any, errorPauseMs: 10 });
   state.live = poller;
-  poller.on('self', (u) => state.applySelf(u));
+  poller.on('self', (value) => state.applySelf(value));
   let invalid = '';
-  poller.on('invalid', (w) => (invalid = w));
+  poller.on('invalid', (text) => (invalid = text));
   assert.equal(await poller.pollOnce(), true);
   assert.equal(poller.myId, 'client_42');
   assert.equal(await poller.pollOnce(), true);
@@ -503,7 +516,7 @@ test('chat long-poll: request format, Status/UserUpdate → character, invalid s
   assert.equal(state.character.energy, 30);
   assert.equal(await poller.pollOnce(), false);
   assert.match(invalid, /invalid sid/);
-  const call = calls.find((c) => c.url === `${WORLD}/gameservice/chat/`)!;
+  const call = calls.find((candidate) => candidate.url === `${WORLD}/gameservice/chat/`)!;
   assert.match(call.body, /^%7B%22messageid%22%3A1/);
   assert.equal(encodeChatRequest({ a: 'x\ny' }), encodeURIComponent('{"a":"x\\ny"}'));
   assert.match(
@@ -517,17 +530,17 @@ test('chat lane: a pending long-poll does not block game requests', async () => 
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
     if (url.endsWith('/gameservice/chat/')) {
-      await new Promise<void>((r) => (release = r));
+      await new Promise<void>((transform) => (release = transform));
       return Response.json({ batch: [] });
     }
     return Response.json({ ok: true });
   }) as typeof fetch;
   const poll = throttledFetch(`${WORLD}/gameservice/chat/`, { method: 'POST' }, { ...FAST, lane: 'chat' });
-  await new Promise((r) => setTimeout(r, 20));
-  const t0 = Date.now();
+  await new Promise((transform) => setTimeout(transform, 20));
+  const startedAt = Date.now();
   const game = await throttledFetch(`${WORLD}/game.php?window=task&mode=get_tasks`, { method: 'POST' }, FAST);
   assert.equal(game.status, 200);
-  assert.ok(Date.now() - t0 < 500);
+  assert.ok(Date.now() - startedAt < 500);
   release();
   await poll;
 });
@@ -620,21 +633,24 @@ test('state: wear/unwear, skills save, quest accept/finish, sleep send the clien
   await state.loadItems();
   assert.equal(state.inventory.wear.get('animal'), 54994000);
   await state.wear(16000);
-  const carry = calls.find((c) => c.url.includes('action=carry'))!;
+  const carry = calls.find((candidate) => candidate.url.includes('action=carry'))!;
   assert.match(carry.url, /h=abc123/);
   assert.equal(
     carry.body,
     `item_id=16000&last_inv_id=${Math.max(
       ...Object.values<any>(BAG.bag)
         .flat()
-        .map((i: any) => i.inv_id),
+        .map((index: any) => index.inv_id),
     )}`,
   );
   assert.equal(state.inventory.wear.get('right_arm'), 16000);
   assert.equal(state.inventory.count(16000), 0);
   assert.equal(state.character.speed, 0.8);
   await state.unwear('animal');
-  assert.equal(calls.find((c) => c.url.includes('action=uncarry'))!.body, 'last_inv_id=99999999&type=animal');
+  assert.equal(
+    calls.find((candidate) => candidate.url.includes('action=uncarry'))!.body,
+    'last_inv_id=99999999&type=animal',
+  );
   assert.equal(state.inventory.wear.has('animal'), false);
 
   // Equipment sets: list and switch; the flat wear list is mapped back to slots.
@@ -642,7 +658,9 @@ test('state: wear/unwear, skills save, quest accept/finish, sleep send the clien
   assert.deepEqual([state.equipSets!.sets.length, state.equipSets!.sets[0]!.name], [1, 'xp']);
   await state.switchEquipSet(1334);
   assert.deepEqual(
-    Object.fromEntries(new URLSearchParams(calls.find((c) => c.url.includes('action=switch_equip'))!.body)),
+    Object.fromEntries(
+      new URLSearchParams(calls.find((candidate) => candidate.url.includes('action=switch_equip'))!.body),
+    ),
     { id: '1334', last_inv_id: '99999999' },
   );
   assert.equal(state.inventory.wear.get('head'), 54988000);
@@ -652,28 +670,31 @@ test('state: wear/unwear, skills save, quest accept/finish, sleep send the clien
   const plan = emptyPlan();
   adjustPlan(plan, state.skills, 'trade', 1);
   assert.ok(await state.saveSkills(plan));
-  const save = calls.find((c) => c.url.includes('save_skill_changes'))!;
+  const save = calls.find((candidate) => candidate.url.includes('save_skill_changes'))!;
   const form = new URLSearchParams(save.body);
   assert.equal(form.get('modifier'), 'add');
   assert.deepEqual((JSON.parse(form.get('data')!) as any).skill_modifications, { trade: 1 });
 
   await state.loadQuests();
-  const mike = state.quests.find((q) => q.id === 280)!;
+  const mike = state.quests.find((quest) => quest.id === 280)!;
   await state.finishQuest(mike);
-  assert.equal(calls.find((c) => c.url.includes('finish_quest'))!.body, 'quest_id=280&reward_option_id=');
-  assert.ok(state.log.some((l) => /Finished: .*125 Experience points/.test(l.msg)));
-  await state.acceptQuest(state.quests.find((q) => q.id === 3063)!);
-  assert.equal(calls.find((c) => c.url.includes('accept_quest'))!.body, 'quest_id=3063');
+  assert.equal(
+    calls.find((candidate) => candidate.url.includes('finish_quest'))!.body,
+    'quest_id=280&reward_option_id=',
+  );
+  assert.ok(state.log.some((line) => /Finished: .*125 Experience points/.test(line.msg)));
+  await state.acceptQuest(state.quests.find((quest) => quest.id === 3063)!);
+  assert.equal(calls.find((candidate) => candidate.url.includes('accept_quest'))!.body, 'quest_id=3063');
 
   const hotel = (await state.openHotel(1421))!;
-  assert.equal(calls.find((c) => c.url.includes('building_hotel'))!.body, 'town_id=1421');
+  assert.equal(calls.find((candidate) => candidate.url.includes('building_hotel'))!.body, 'town_id=1421');
   assert.ok(await state.sleep(hotel, hotel.rooms[0]!));
-  const add = calls.find((c) => c.url.includes('task&action=add'))!;
+  const add = calls.find((candidate) => candidate.url.includes('task&action=add'))!;
   assert.equal(decodeURIComponent(add.body), 'tasks[0][town_id]=1421&tasks[0][room]=cubby&tasks[0][taskType]=sleep');
   assert.equal(state.queue.at(-1)?.type, 'sleep');
 
   await state.walkToQuestGiver('indianvillage', "Waupee's Indian village", { x: 28002, y: 16658 });
-  const walk = calls.filter((c) => c.url.includes('task&action=add')).at(-1)!;
+  const walk = calls.filter((candidate) => candidate.url.includes('task&action=add')).at(-1)!;
   assert.equal(
     decodeURIComponent(walk.body).replace(/\+/g, ' '),
     'tasks[1][unitId]=indianvillage&tasks[1][type]=questgiver&tasks[1][x]=28002&tasks[1][y]=16658&tasks[1][taskType]=walk',
@@ -771,18 +792,18 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
   Object.assign(stdout, { columns: 120, rows: 36, isTTY: true });
   const stdin = new PassThrough() as PassThrough & {
     isTTY: boolean;
-    setRawMode: (m: boolean) => void;
+    setRawMode: (flag: boolean) => void;
     ref: () => void;
     unref: () => void;
   };
   Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
   let out = '';
-  stdout.on('data', (d) => (out += d.toString()));
+  stdout.on('data', (data) => (out += data.toString()));
   const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
-  const settle = (ms = 120) => new Promise((r) => setTimeout(r, ms));
+  const settle = (ms = 120) => new Promise((transform) => setTimeout(transform, ms));
   const keys = async (...ks: string[]) => {
-    for (const k of ks) {
-      stdin.write(k);
+    for (const key of ks) {
+      stdin.write(key);
       await settle();
     }
   };
@@ -804,7 +825,7 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     await keys('/', 'b', 'o', 'w', 'i', 'e', '\r');
     assert.match(plain(), /Bowie knife/);
     await keys('\r');
-    assert.equal(calls.filter((c) => c.url.includes('action=carry')).length, 1);
+    assert.equal(calls.filter((candidate) => candidate.url.includes('action=carry')).length, 1);
     // Coffee is usable but not wearable: Enter opens the use form instead of trying to equip it.
     await keys('\x1b', '\x1b', 'g', 'i');
     await settle(200);
@@ -816,7 +837,7 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     assert.match(plain(), /Use Coffee/);
     await keys('\r');
     assert.equal(
-      new URLSearchParams(calls.find((c) => c.url.includes('action=use_item'))!.body).get('item_id'),
+      new URLSearchParams(calls.find((candidate) => candidate.url.includes('action=use_item'))!.body).get('item_id'),
       '2128000',
     );
     // Sets tab: list the saved set and switch with Enter → y.
@@ -828,11 +849,14 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     assert.match(plain(), /Switch to xp\? y \/ n/);
     await keys('y');
     await settle(200);
-    assert.equal(new URLSearchParams(calls.find((c) => c.url.includes('action=switch_equip'))!.body).get('id'), '1334');
+    assert.equal(
+      new URLSearchParams(calls.find((candidate) => candidate.url.includes('action=switch_equip'))!.body).get('id'),
+      '1334',
+    );
     // Skills: plan +1 Trading with '+', save with Enter → y.
     await keys('\x1b[C');
     assert.match(plain(), /Free: .*1 attribute.*3 skill/);
-    for (let i = 0; i < 21; i++) {
+    for (let index = 0; index < 21; index++) {
       stdin.write('j'); // charisma group: row 18, Trading row 21
       await settle(25);
     }
@@ -846,7 +870,7 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     assert.match(plain(), /permanent\. y \/ n/);
     await keys('y');
     await settle(200);
-    const save = calls.find((c) => c.url.includes('save_skill_changes'));
+    const save = calls.find((candidate) => candidate.url.includes('save_skill_changes'));
     assert.ok(save, 'skills saved');
     assert.deepEqual((JSON.parse(new URLSearchParams(save.body).get('data')!) as any).skill_modifications, {
       trade: 1,
@@ -864,7 +888,10 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     assert.match(plain(), /Finish "Mike and Jenny/);
     await keys('y');
     await settle(200);
-    assert.equal(calls.find((c) => c.url.includes('finish_quest'))!.body, 'quest_id=280&reward_option_id=');
+    assert.equal(
+      calls.find((candidate) => candidate.url.includes('finish_quest'))!.body,
+      'quest_id=280&reward_option_id=',
+    );
     await keys('\t');
     await settle(200);
     assert.match(plain(), /Barkeeper \(saloon\)/);
@@ -891,10 +918,10 @@ test('quest item sources: jobs whose yields drop the item, nearest first; g mark
       { id: 7, groupid: 4, name: 'Leather work', malus: 5, level: 10, yields: { 1987000: { prop: 0.3 } }, skills: {} },
     ],
   });
-  state.jobs = [...state.catalog.byId.values()].map((d) => ({
-    ...d,
+  state.jobs = [...state.catalog.byId.values()].map((jobInfo) => ({
+    ...jobInfo,
     jobPoints: 50,
-    workPoints: d.malus + 1,
+    workPoints: jobInfo.malus + 1,
     laborPoints: 49,
     motivation: 1,
     danger: 0,
@@ -907,15 +934,15 @@ test('quest item sources: jobs whose yields drop the item, nearest first; g mark
     [12, [{ x: 120, y: 100 }]],
   ]);
   assert.deepEqual(
-    state.catalog.yielding(1987000).map((y) => y.job.id),
+    state.catalog.yielding(1987000).map((yCoord) => yCoord.job.id),
     [7, 9],
   ); // best chance first
-  const horse = parseQuest(QUESTS.quests.find((q: any) => q.id === 3063));
-  const reins = horse.requirements.find((r) => r.itemId === 1987000)!;
+  const horse = parseQuest(QUESTS.quests.find((query: any) => query.id === 3063));
+  const reins = horse.requirements.find((requirement) => requirement.itemId === 1987000)!;
   assert.equal(reins.count, 2);
   const src = state.requirementSources(reins);
   assert.deepEqual(
-    src.map((s) => [s.job.name, s.chance]),
+    src.map((source) => [source.job.name, source.chance]),
     [
       ['Leather work', 0.3],
       ['Saddler', 0.12],
@@ -929,8 +956,8 @@ test('quest item sources: jobs whose yields drop the item, nearest first; g mark
 test('TUI: loading screen, job filter by product + sort + LP toggle, map layers, quest route + estimates', async () => {
   fakeServer();
   routes['/game.php?window=job&mode=job'] = (body) => {
-    const p = new URLSearchParams(body);
-    return { id: Number(p.get('jobId')), danger: 37, motivation: 0.55 };
+    const urlValue = new URLSearchParams(body);
+    return { id: Number(urlValue.get('jobId')), danger: 37, motivation: 0.55 };
   };
   const state = makeState();
   const { JobCatalog } = await import('../src/game/jobs.ts');
@@ -956,33 +983,33 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
       money: 1,
       experience: 1,
       luck: 0,
-      items: items.map((i) => ({ ...i, expected: i.expected / 50, percent: i.percent / 50 })),
+      items: items.map((index) => ({ ...index, expected: index.expected / 50, percent: index.percent / 50 })),
     },
     long: { duration: 3600, energy: 12, money, experience: xp, luck, items },
   });
-  const v: Record<number, any> = {
+  const value: Record<number, any> = {
     1: vals(50, 90, 0.1, [{ itemId: 700000, expected: 2, percent: 200 }]),
     9: vals(500, 900, 0.9, [{ itemId: 1987000, expected: 1, percent: 100 }]),
     7: vals(80, 300, 0.5, [{ itemId: 1987000, expected: 1.5, percent: 150 }]),
   };
   state.jobs = [...state.catalog.byId.values()]
-    .map((d) => ({
-      ...d,
-      jobPoints: d.id === 9 ? 0 : 50,
-      workPoints: d.malus + 1,
-      laborPoints: d.id === 9 ? -500 : 49,
+    .map((jobInfo) => ({
+      ...jobInfo,
+      jobPoints: jobInfo.id === 9 ? 0 : 50,
+      workPoints: jobInfo.malus + 1,
+      laborPoints: jobInfo.id === 9 ? -500 : 49,
       motivation: 1,
       danger: 0,
-      luckValue: [0, { 1: 400, 9: 20, 7: 250 }[d.id]!] as [number, number],
-      values: v[d.id],
+      luckValue: [0, { 1: 400, 9: 20, 7: 250 }[jobInfo.id]!] as [number, number],
+      values: value[jobInfo.id],
     }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((first, second) => first.name.localeCompare(second.name));
   state.world.jobGroups = new Map([
     [3, [{ x: 150, y: 100 }]],
     [4, [{ x: 400, y: 100 }]],
     [12, [{ x: 120, y: 100 }]],
   ]);
-  state.quests = QUESTS.quests.map((q: any) => parseQuest(q, (id: number) => state.itemName(id)));
+  state.quests = QUESTS.quests.map((query: any) => parseQuest(query, (id: number) => state.itemName(id)));
   state.startup = { steps: [{ label: 'Jobs and map', status: 'running', startedAt: Date.now() }], done: false };
   routes['/game.php?window=reports&action=get_reports'] = () => ({
     count: 1,
@@ -1017,18 +1044,18 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
   Object.assign(stdout, { columns: 130, rows: 40, isTTY: true });
   const stdin = new PassThrough() as PassThrough & {
     isTTY: boolean;
-    setRawMode: (m: boolean) => void;
+    setRawMode: (flag: boolean) => void;
     ref: () => void;
     unref: () => void;
   };
   Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
   let out = '';
-  stdout.on('data', (d) => (out += d.toString()));
+  stdout.on('data', (data) => (out += data.toString()));
   const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
-  const settle = (ms = 120) => new Promise((r) => setTimeout(r, ms));
+  const settle = (ms = 120) => new Promise((transform) => setTimeout(transform, ms));
   const keys = async (...ks: string[]) => {
-    for (const k of ks) {
-      stdin.write(k);
+    for (const key of ks) {
+      stdin.write(key);
       await settle();
     }
   };
@@ -1068,7 +1095,7 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     assert.equal(
       state
         .jobOptions('ham')
-        .map((o) => o.job.name)
+        .map((options) => options.job.name)
         .join(),
       'Tending pigs',
     );
@@ -1080,16 +1107,16 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     assert.match(plain(), /sort: XP \(S\)/);
     assert.match(plain(), /job +xp +\$ +LP +travel/);
     assert.deepEqual(
-      state.jobOptions('', { sort: 'xp', showAll: true }).map((o) => o.job.id),
+      state.jobOptions('', { sort: 'xp', showAll: true }).map((options) => options.job.id),
       [9, 7, 1],
     );
     assert.deepEqual(
-      state.jobOptions('', { sort: 'money' }).map((o) => o.job.id),
+      state.jobOptions('', { sort: 'money' }).map((options) => options.job.id),
       [7, 1],
     );
     // Luck sorts by the $ value of a lucky find (maxLuck), not the duration's luck chance.
     assert.deepEqual(
-      state.jobOptions('', { sort: 'luck' }).map((o) => o.job.id),
+      state.jobOptions('', { sort: 'luck' }).map((options) => options.job.id),
       [1, 7],
     );
     // Map layers.

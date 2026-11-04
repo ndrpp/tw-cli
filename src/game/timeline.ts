@@ -114,7 +114,7 @@ export function regenSeconds(have: number, want: number, max: number, rate: numb
 
 export function projectTimeline(start: TimelineStart, steps: TimelineStep[], opts: TimelineOptions): Timeline {
   const maxLevel = start.maxLevel ?? 250;
-  let t = start.now;
+  let time = start.now;
   let at = start.at;
   let energy = start.energy;
   let health = start.health;
@@ -145,7 +145,7 @@ export function projectTimeline(start: TimelineStart, steps: TimelineStep[], opt
 
   const out: ProjectedStep[] = [];
   for (const step of steps) {
-    const depart = t;
+    const depart = time;
     let travel = 0;
     let waited = 0;
     let begin: number;
@@ -153,14 +153,14 @@ export function projectTimeline(start: TimelineStart, steps: TimelineStep[], opt
     const target = step.kind === 'action' ? at : step.at;
     if (step.fixed) {
       // Server task: its times are known; only regen and rewards are projected.
-      begin = Math.max(t, step.fixed.start);
+      begin = Math.max(time, step.fixed.start);
       end = Math.max(begin, step.fixed.end);
-      travel = Math.max(0, begin - t);
-      regen(begin - t);
+      travel = Math.max(0, begin - time);
+      regen(begin - time);
     } else {
       travel = step.kind === 'action' ? 0 : opts.wayTime(at, target);
       regen(travel);
-      begin = t + travel;
+      begin = time + travel;
       if (step.kind === 'job' && energy < step.energy) {
         waited = regenSeconds(energy, step.energy, start.maxEnergy, start.energyRegen);
         regen(waited);
@@ -205,7 +205,7 @@ export function projectTimeline(start: TimelineStart, steps: TimelineStep[], opt
         levelUp = gainXp(step.xp ?? 0);
         break;
     }
-    t = end;
+    time = end;
     at = target;
     out.push({
       step,
@@ -226,7 +226,7 @@ export function projectTimeline(start: TimelineStart, steps: TimelineStep[], opt
   }
   return {
     steps: out,
-    end: t,
+    end: time,
     final: { at, energy, health, experience, level, cash },
     gained: { xp: experience - start.experience, money: cash - start.cash, levels: level - start.level },
   };

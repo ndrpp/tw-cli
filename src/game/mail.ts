@@ -78,8 +78,10 @@ export interface Telegram {
 }
 
 /** Game.TextHandler-ish: BBCode tags dropped, [player]x[/player] → x, then HTML → text. */
-export function bbText(s: unknown): string {
-  return plainText(String(s ?? '').replace(/\[\/?(b|i|u|del|quote|player|town|fort|url|color|size)(=[^\]]*)?\]/gi, ''));
+export function bbText(source: unknown): string {
+  return plainText(
+    String(source ?? '').replace(/\[\/?(b|i|u|del|quote|player|town|fort|url|color|size)(=[^\]]*)?\]/gi, ''),
+  );
 }
 
 const JOB_LABELS = [
@@ -92,27 +94,27 @@ const JOB_LABELS = [
   'Luck',
   'Items Found',
 ] as const;
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escapeRe = (textValue: string) => textValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const JOB_LABEL_RE = new RegExp(`^(${JOB_LABELS.map(escapeRe).join('|')})(?![A-Za-z])\\s*:?\\s*(.+)$`, 'i');
 const NUMBER_VALUE_RE = /^\d[\d.,]*(?:\s*%|\s*(?:Points?|s|min|h|hours?|days?))?$/i;
 const MONEY_VALUE_RE = /^[$€£]\s*\d[\d.,]*(?:\s*%|\s*(?:Points?|s|min|h|hours?|days?))?$/i;
 
-const cleanLabel = (s: string) => s.replace(/:\s*$/, '').trim();
-const isValue = (s: string) => NUMBER_VALUE_RE.test(s) || MONEY_VALUE_RE.test(s);
-const isKnownLabel = (s: string) => {
-  const label = cleanLabel(s).toLowerCase();
-  return JOB_LABELS.some((x) => x.toLowerCase() === label);
+const cleanLabel = (textValue: string) => textValue.replace(/:\s*$/, '').trim();
+const isValue = (textValue: string) => NUMBER_VALUE_RE.test(textValue) || MONEY_VALUE_RE.test(textValue);
+const isKnownLabel = (textValue: string) => {
+  const label = cleanLabel(textValue).toLowerCase();
+  return JOB_LABELS.some((xCoord) => xCoord.toLowerCase() === label);
 };
-const canonicalLabel = (s: string) => {
-  const label = cleanLabel(s).toLowerCase();
-  return JOB_LABELS.find((x) => x.toLowerCase() === label) ?? cleanLabel(s);
+const canonicalLabel = (textValue: string) => {
+  const label = cleanLabel(textValue).toLowerCase();
+  return JOB_LABELS.find((xCoord) => xCoord.toLowerCase() === label) ?? cleanLabel(textValue);
 };
-const isGenericLabel = (s: string) => {
-  const label = cleanLabel(s);
+const isGenericLabel = (textValue: string) => {
+  const label = cleanLabel(textValue);
   return label.length >= 2 && label.length <= 30 && /^[A-Z]/.test(label) && !/[.!?]$/.test(label) && !isValue(label);
 };
-const normalizeValue = (s: string) =>
-  s
+const normalizeValue = (textValue: string) =>
+  textValue
     .trim()
     .replace(/^([$€£])\s+/, '$1')
     .replace(/\s+%$/, '%')
@@ -149,18 +151,18 @@ function formatItems(lines: string[]): string[] {
 export function reportItems(info: unknown, itemName: (id: number) => string): string[] {
   return arr(obj(info).items)
     .filter(Array.isArray)
-    .filter((i) => Number(i[0]))
-    .map((i) => `${itemName(Number(i[0]))} x ${Number(i[2]) || 1}`);
+    .filter((item) => Number(item[0]))
+    .map((item) => `${itemName(Number(item[0]))} x ${Number(item[2]) || 1}`);
 }
 
 /** The report list's popupData shows found items as one <img alt="name"> each: "name x count", in order. */
 export function popupItems(html: unknown): string[] {
   const counts = new Map<string, number>();
-  for (const m of String(html ?? '').matchAll(/<img[^>]*src="[^"]*\/items\/[^"]*"[^>]*alt="([^"]+)"/g)) {
-    const name = plainText(m[1]);
+  for (const match of String(html ?? '').matchAll(/<img[^>]*src="[^"]*\/items\/[^"]*"[^>]*alt="([^"]+)"/g)) {
+    const name = plainText(match[1]);
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
-  return [...counts].map(([n, c]) => `${n} x ${c}`);
+  return [...counts].map(([name, count]) => `${name} x ${count}`);
 }
 
 /**
@@ -173,7 +175,7 @@ export function formatReport(text: string, type = '', items: string[] = []): str
   if (!items.length) return out;
   const line = `Items: ${items.join(', ')}`;
   const lines = out.split('\n');
-  const at = lines.findIndex((l) => /^Items:/.test(l));
+  const at = lines.findIndex((candidateLine) => /^Items:/.test(candidateLine));
   if (at >= 0) lines[at] = line;
   else lines.push(line);
   return lines.join('\n');
@@ -182,30 +184,30 @@ export function formatReport(text: string, type = '', items: string[] = []): str
 function formatJobReport(text: string): string {
   const lines = text
     .split('\n')
-    .map((l) => l.trim())
+    .map((line) => line.trim())
     .filter(Boolean);
   const out: string[] = [];
   const push = (line: string) => {
     const value = line.trim();
     if (value && out[out.length - 1] !== value) out.push(value);
   };
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? '';
     if (/^items found:?$/i.test(line)) {
       const raw: string[] = [];
-      let j = i + 1;
-      for (; j < lines.length; j++) {
-        const nextLine = lines[j] ?? '';
+      let foundAt = index + 1;
+      for (; foundAt < lines.length; foundAt++) {
+        const nextLine = lines[foundAt] ?? '';
         if (isKnownLabel(nextLine)) break;
         if (/^no items? (were|was) found/i.test(nextLine)) {
-          j++;
+          foundAt++;
           break;
         }
         raw.push(nextLine);
       }
       const items = formatItems(raw);
       push(items.length ? `Items: ${items.join(', ')}` : 'Items: none');
-      i = j - 1;
+      index = foundAt - 1;
       continue;
     }
     const inlineItems = /^items found:?\s+(.+)$/i.exec(line);
@@ -222,16 +224,16 @@ function formatJobReport(text: string): string {
         continue;
       }
     }
-    const next = lines[i + 1];
+    const next = lines[index + 1];
     if (next) {
       const knownLabel = isKnownLabel(line);
       const genericLabel = !knownLabel && isGenericLabel(line) && NUMBER_VALUE_RE.test(next);
       if ((knownLabel && isValue(next)) || genericLabel) {
         const value = normalizeValue(next);
-        let j = i + 1;
-        while (j + 1 < lines.length && normalizeValue(lines[j + 1] ?? '') === value) j++;
+        let repeatTo = index + 1;
+        while (repeatTo + 1 < lines.length && normalizeValue(lines[repeatTo + 1] ?? '') === value) repeatTo++;
         push(`${knownLabel ? canonicalLabel(line) : cleanLabel(line)}: ${value}`);
-        i = j;
+        index = repeatTo;
         continue;
       }
     }
@@ -275,17 +277,17 @@ function withItems(summary: string, items: string[]): string {
  * ("Time: 1 hour Money: 297\nBonds: 0 XP: 161\nDanger: 0 355 Cempasúchil\nFound items: Water x 11"; an
  * unlabelled "<n> <name>" after a labelled number is an event currency). Other reports keep their title.
  */
-export function reportLogLine(r: ReportRow): string {
-  const job = /^Job report:\s*(.+)$/i.exec(r.title)?.[1];
-  if (!job) return `Report: ${r.title}`;
-  const num = (re: RegExp) => Number(re.exec(r.summary)?.[1]) || 0;
+export function reportLogLine(reportInfo: ReportRow): string {
+  const job = /^Job report:\s*(.+)$/i.exec(reportInfo.title)?.[1];
+  if (!job) return `Report: ${reportInfo.title}`;
+  const num = (re: RegExp) => Number(re.exec(reportInfo.summary)?.[1]) || 0;
   const xp = num(/\bXP:\s*(\d+)/i);
   const money = num(/\bMoney:\s*(\d+)/i);
-  const extras = [...r.summary.matchAll(/:\s*\d+\s+(\d+\s+[^\d\s:][^\n:]*)$/gm)].flatMap((m) => {
-    const text = m[1]?.trim();
+  const extras = [...reportInfo.summary.matchAll(/:\s*\d+\s+(\d+\s+[^\d\s:][^\n:]*)$/gm)].flatMap((matchValue) => {
+    const text = matchValue[1]?.trim();
     return text ? [text] : [];
   });
-  const found = /^Found items:\s*(.+)$/im.exec(r.summary)?.[1]?.trim();
+  const found = /^Found items:\s*(.+)$/im.exec(reportInfo.summary)?.[1]?.trim();
   const gains = [xp && `+${xp} XP`, money && `$${money}`, ...extras].filter(Boolean).join(', ');
   return `${job}${gains ? `: ${gains}` : ''}${found ? ` · found ${found}` : ''}`;
 }
@@ -303,11 +305,11 @@ export function parseJobReport(
   if (String(json.reportType ?? '') !== 'job' || !jobId) return null;
   const items = arr(info.items)
     .filter(Array.isArray)
-    .filter((i) => Number(i[0]))
-    .map((i): [number, number] => [Number(i[0]), Number(i[2]) || 1]);
-  const m = plainText(json.page).match(/(\d+)\s*(second|minute|hour)s?\b/i);
+    .filter((item) => Number(item[0]))
+    .map((item): [number, number] => [Number(item[0]), Number(item[2]) || 1]);
+  const match = plainText(json.page).match(/(\d+)\s*(second|minute|hour)s?\b/i);
   const unitSeconds = { second: 1, minute: 60, hour: 3600 } as Record<string, number>;
-  const seconds = m ? Number(m[1]) * (unitSeconds[m[2]?.toLowerCase() ?? ''] ?? 1) : null;
+  const seconds = match ? Number(match[1]) * (unitSeconds[match[2]?.toLowerCase() ?? ''] ?? 1) : null;
   return { jobId, items, seconds };
 }
 
@@ -327,13 +329,13 @@ export class MailApi {
     return {
       page: Number(json.page) || page,
       pages: Number(json.count) || 1,
-      reports: objs(json.reports).map((r) => ({
-        id: Number(r.report_id),
-        title: plainText(r.title),
-        hash: String(r.hash ?? ''),
-        read: !!r.read,
-        date: plainText(r.date_received),
-        summary: withItems(popupText(r.popupData), popupItems(r.popupData)),
+      reports: objs(json.reports).map((report) => ({
+        id: Number(report.report_id),
+        title: plainText(report.title),
+        hash: String(report.hash ?? ''),
+        read: !!report.read,
+        date: plainText(report.date_received),
+        summary: withItems(popupText(report.popupData), popupItems(report.popupData)),
       })),
     };
   }
@@ -395,15 +397,15 @@ export class MailApi {
     return {
       page: Number(json.page) || page,
       pages: Number(json.count ?? json.pages) || 1,
-      telegrams: objs(json.messages).map((m) => {
-        const names = arr(m.partner_name).map(String);
+      telegrams: objs(json.messages).map((message) => {
+        const names = arr(message.partner_name).map(String);
         return {
-          id: Number(m.message_id),
-          subject: plainText(m.subject),
-          partners: names.filter((n) => n && n !== 'NULL'),
-          unread: m.own_status === 3 || m.own_status === 5,
-          answered: m.own_status === 2,
-          date: plainText(m.last_post_date ?? m.date ?? ''),
+          id: Number(message.message_id),
+          subject: plainText(message.subject),
+          partners: names.filter((name) => name && name !== 'NULL'),
+          unread: message.own_status === 3 || message.own_status === 5,
+          answered: message.own_status === 2,
+          date: plainText(message.last_post_date ?? message.date ?? ''),
         };
       }),
     };
@@ -417,19 +419,19 @@ export class MailApi {
       subject: plainText(json.subject),
       page: Number(json.page) || 0,
       pages: Number(json.pages) || 1,
-      posts: objs(json.posts).map((p) => ({
-        from: p.name ? String(p.name) : 'System',
-        date: plainText(p.post_date),
-        text: bbText(p.text),
+      posts: objs(json.posts).map((post) => ({
+        from: post.name ? String(post.name) : 'System',
+        date: plainText(post.post_date),
+        text: bbText(post.text),
       })),
     };
   }
 
   /** Replies are [ok, message] arrays. */
   async reply(id: number, text: string): Promise<void> {
-    const r = await this.client.remoteCallRaw('messages', 'reply', { message_id: id, text });
-    if (Array.isArray(r) ? !r[0] : obj(r).error)
-      throw new Error(plainText(Array.isArray(r) ? r[1] : obj(r).msg) || 'Reply failed');
+    const response = await this.client.remoteCallRaw('messages', 'reply', { message_id: id, text });
+    if (Array.isArray(response) ? !response[0] : obj(response).error)
+      throw new Error(plainText(Array.isArray(response) ? response[1] : obj(response).msg) || 'Reply failed');
   }
 
   /** `to`: names separated by ; or , (MessagesWindow.Telegram.send checks: subject ≥ 1, text ≥ 3 characters). */
@@ -437,9 +439,9 @@ export class MailApi {
     if (!to.trim()) throw new Error('No recipient');
     if (!subject.trim()) throw new Error('The subject is empty');
     if (text.length < 3) throw new Error('The text has to be at least 3 characters long!');
-    const r = await this.client.remoteCallRaw('messages', 'send', { to, subject, text, masstelegramm: 0 });
-    if (Array.isArray(r) ? !r[0] : obj(r).error)
-      throw new Error(plainText(Array.isArray(r) ? r[1] : obj(r).msg) || 'Sending failed');
+    const response = await this.client.remoteCallRaw('messages', 'send', { to, subject, text, masstelegramm: 0 });
+    if (Array.isArray(response) ? !response[0] : obj(response).error)
+      throw new Error(plainText(Array.isArray(response) ? response[1] : obj(response).msg) || 'Sending failed');
   }
 
   async deleteTelegram(id: number): Promise<void> {

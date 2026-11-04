@@ -21,7 +21,7 @@ export const SKILLS_OF: Record<Attribute, string[]> = {
 };
 
 export const ATTRIBUTE_OF: Record<string, Attribute> = Object.fromEntries(
-  ATTRIBUTES.flatMap((a) => SKILLS_OF[a].map((s) => [s, a])),
+  ATTRIBUTES.flatMap((first) => SKILLS_OF[first].map((text) => [text, first])),
 ) as Record<string, Attribute>;
 
 export const NAMES: Record<string, string> = {
@@ -68,26 +68,26 @@ export class Skills {
   freeSkills = 0;
 
   static fromInit(skillData: JsonObject | undefined): Skills {
-    const s = new Skills();
-    if (!skillData) return s;
-    s.attributes = nums(skillData.attributes);
-    s.attributeBonus = nums(skillData.attributeBonus);
-    s.skills = nums(skillData.skills);
-    s.skillBonus = nums(skillData.skillBonus);
-    s.freeAttributes = Number(skillData.freeAttribute) || 0;
-    s.freeSkills = Number(skillData.freeSkill) || 0;
-    return s;
+    const source = new Skills();
+    if (!skillData) return source;
+    source.attributes = nums(skillData.attributes);
+    source.attributeBonus = nums(skillData.attributeBonus);
+    source.skills = nums(skillData.skills);
+    source.skillBonus = nums(skillData.skillBonus);
+    source.freeAttributes = Number(skillData.freeAttribute) || 0;
+    source.freeSkills = Number(skillData.freeSkill) || 0;
+    return source;
   }
 
   static fromOverview(json: JsonObject): Skills {
-    const s = new Skills();
-    s.attributes = nums(json.attributes);
-    s.attributeBonus = nums(json.attributeBonuspoints);
-    s.skills = nums(json.skills);
-    s.skillBonus = nums(json.skillBonuspoints);
-    s.freeAttributes = Number(json.open_attrPoints) || 0;
-    s.freeSkills = Number(json.open_skillPoints) || 0;
-    return s;
+    const source = new Skills();
+    source.attributes = nums(json.attributes);
+    source.attributeBonus = nums(json.attributeBonuspoints);
+    source.skills = nums(json.skills);
+    source.skillBonus = nums(json.skillBonuspoints);
+    source.freeAttributes = Number(json.open_attrPoints) || 0;
+    source.freeSkills = Number(json.open_skillPoints) || 0;
+    return source;
   }
 
   /** Total = own points + bonus from items/sets/buffs (what job labor points use). */
@@ -110,7 +110,8 @@ export interface SkillPlan {
 export const emptyPlan = (): SkillPlan => ({ attributes: {}, skills: {} });
 
 export function planUsed(plan: SkillPlan): { attributes: number; skills: number } {
-  const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0);
+  const sum = (options: Record<string, number>) =>
+    Object.values(options).reduce((accumulator, current) => accumulator + current, 0);
   return { attributes: sum(plan.attributes), skills: sum(plan.skills) };
 }
 

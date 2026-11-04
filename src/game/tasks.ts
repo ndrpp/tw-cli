@@ -34,31 +34,31 @@ export interface QueuedTask {
   raw: JsonObject;
 }
 
-const coordsOf = (v: unknown): Position => ({ x: Number(obj(v).x ?? 0), y: Number(obj(v).y ?? 0) });
+const coordsOf = (value: unknown): Position => ({ x: Number(obj(value).x ?? 0), y: Number(obj(value).y ?? 0) });
 
-export function parseQueueEntry(t: JsonObject): QueuedTask {
-  const data = obj(t.data_obj ?? t.data);
+export function parseQueueEntry(jsonValue: JsonObject): QueuedTask {
+  const data = obj(jsonValue.data_obj ?? jsonValue.data);
   let way: TaskWay | undefined;
   if (data.wayData) {
-    const w = obj(data.wayData);
-    const wd = obj(w.data_obj ?? w.data);
+    const wayDataJson = obj(data.wayData);
+    const wd = obj(wayDataJson.data_obj ?? wayDataJson.data);
     way = {
-      queueId: Number(w.queue_id),
-      start: Number(w.date_start),
-      end: Number(w.date_done),
+      queueId: Number(wayDataJson.queue_id),
+      start: Number(wayDataJson.date_start),
+      end: Number(wayDataJson.date_done),
       to: coordsOf(wd.coords),
     };
   }
   return {
-    queueId: Number(t.queue_id),
-    type: String(t.type),
-    start: Number(t.date_start),
-    end: Number(t.date_done),
+    queueId: Number(jsonValue.queue_id),
+    type: String(jsonValue.type),
+    start: Number(jsonValue.date_start),
+    end: Number(jsonValue.date_done),
     coords: coordsOf(data.coords),
-    title: String(data.title ?? data.town_name ?? data.name ?? t.type),
+    title: String(data.title ?? data.town_name ?? data.name ?? jsonValue.type),
     jobId: data.job_id === undefined || data.job_id === null ? undefined : Number(data.job_id),
     way,
-    raw: t,
+    raw: jsonValue,
   };
 }
 
@@ -115,14 +115,14 @@ export class TaskApi {
     if (room <= 0) throw new TaskLimitError(`Task queue is full (${queueLength}/${limit})`);
     const batch = posts.slice(0, room);
     const tasks: Record<string, FormValue> = {};
-    batch.forEach((p, i) => {
-      tasks[String(queueLength + i)] = p;
+    batch.forEach((pick, index) => {
+      tasks[String(queueLength + index)] = pick;
     });
     const json = await this.client.remoteCall('task', 'add', { tasks });
     const result: AddResult = { added: [], errors: [] };
-    for (const q of vals(json.tasks).map(obj)) {
-      if (q.task) result.added.push(parseQueueEntry(obj(q.task)));
-      if (q.error) result.errors.push(String(q.msg ?? q.error));
+    for (const jsonValue of vals(json.tasks).map(obj)) {
+      if (jsonValue.task) result.added.push(parseQueueEntry(obj(jsonValue.task)));
+      if (jsonValue.error) result.errors.push(String(jsonValue.msg ?? jsonValue.error));
     }
     if (json.error && json.msg) result.errors.push(String(json.msg));
     if (json.energy !== undefined) result.energy = Number(json.energy);
@@ -136,16 +136,16 @@ export class TaskApi {
   ): Promise<{ queue: QueuedTask[]; errors: string[]; energy?: number | undefined; money?: number | undefined }> {
     const tasks: Record<string, FormValue> = {};
     for (const pos of positions) {
-      const t = queue[pos];
-      if (t?.queueId) tasks[String(pos)] = { queueId: t.queueId, type: t.type };
+      const task = queue[pos];
+      if (task?.queueId) tasks[String(pos)] = { queueId: task.queueId, type: task.type };
     }
     const json = await this.client.remoteCall('task', 'cancel', { tasks });
     const errors: string[] = [];
     let energy: number | undefined;
     let money: number | undefined;
-    for (const q of vals(json.tasks).map(obj)) {
-      const extra = obj(q.extra);
-      if (q.error) errors.push(String(q.msg ?? q.error));
+    for (const jsonValue of vals(json.tasks).map(obj)) {
+      const extra = obj(jsonValue.extra);
+      if (jsonValue.error) errors.push(String(jsonValue.msg ?? jsonValue.error));
       if (extra.energy !== undefined) energy = Number(extra.energy);
       if (extra.money !== undefined) money = Number(extra.money);
     }
@@ -154,14 +154,14 @@ export class TaskApi {
 }
 
 /** Seconds of walking still ahead for a task (its wayData leg), from `now`. */
-export function walkLeft(t: QueuedTask, now: number): number {
-  if (!t.way) return 0;
-  return Math.max(0, t.way.end - Math.max(now, t.way.start));
+export function walkLeft(task: QueuedTask, now: number): number {
+  if (!task.way) return 0;
+  return Math.max(0, task.way.end - Math.max(now, task.way.start));
 }
 
 /** Seconds of the task itself (excluding its walk) still ahead, from `now`. */
-export function workLeft(t: QueuedTask, now: number): number {
-  return Math.max(0, t.end - Math.max(now, t.start));
+export function workLeft(task: QueuedTask, now: number): number {
+  return Math.max(0, task.end - Math.max(now, task.start));
 }
 
 export interface QueueSummary {
@@ -175,7 +175,11 @@ export interface QueueSummary {
 
 export function queueSummary(queue: QueuedTask[], now: number): QueueSummary | null {
   if (!queue.length) return null;
-  const doneAt = Math.max(...queue.map((t) => t.end));
-  const walk = queue.reduce((s, t) => s + walkLeft(t, now) + (t.type === 'walk' ? workLeft(t, now) : 0), 0);
+  const doneAt = Math.max(...queue.map((task) => task.end));
+  const walk = queue.reduce(
+    (accumulator, current) =>
+      accumulator + walkLeft(current, now) + (current.type === 'walk' ? workLeft(current, now) : 0),
+    0,
+  );
   return { doneAt, left: Math.max(0, doneAt - now), walk };
 }

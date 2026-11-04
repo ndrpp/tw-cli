@@ -3,9 +3,9 @@
 // Usage: node scripts/extract-endpoints.ts [path/to/tw2game.js] [out.json]
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const src = process.argv[2] ?? '../en32.the_west.net/en32.the-west.net/cache/tw2game.en_DK.js';
-const out = process.argv[3] ?? 'docs/endpoints.json';
-const s = readFileSync(src, 'utf8');
+const sourcePath = process.argv[2] ?? '../en32.the_west.net/en32.the-west.net/cache/tw2game.en_DK.js';
+const outputPath = process.argv[3] ?? 'docs/endpoints.json';
+const source = readFileSync(sourcePath, 'utf8');
 
 interface Site {
   offset: number;
@@ -19,98 +19,101 @@ interface Endpoint {
   sites: Site[];
 }
 
-/** Reads one JS argument starting at i (balanced brackets, skips strings); returns [text, next index]. */
-function readArg(i: number): [string, number] {
+/** Reads one JS argument starting at `index` (balanced brackets, skips strings); returns [text, next index]. */
+function readArgument(index: number): [string, number] {
   let depth = 0;
-  const start = i;
-  while (i < s.length) {
-    const c = s[i] ?? '';
-    if (c === '"' || c === "'" || c === '`') {
-      const q = c;
-      i++;
-      while (i < s.length && s[i] !== q) i += s[i] === '\\' ? 2 : 1;
-    } else if (c === '(' || c === '{' || c === '[') depth++;
-    else if (c === ')' || c === '}' || c === ']') {
-      if (depth === 0) return [s.slice(start, i).trim(), i];
+  const start = index;
+  while (index < source.length) {
+    const character = source[index] ?? '';
+    if (character === '"' || character === "'" || character === '`') {
+      const quote = character;
+      index++;
+      while (index < source.length && source[index] !== quote) index += source[index] === '\\' ? 2 : 1;
+    } else if (character === '(' || character === '{' || character === '[') depth++;
+    else if (character === ')' || character === '}' || character === ']') {
+      if (depth === 0) return [source.slice(start, index).trim(), index];
       depth--;
-    } else if (c === ',' && depth === 0) return [s.slice(start, i).trim(), i];
-    i++;
+    } else if (character === ',' && depth === 0) return [source.slice(start, index).trim(), index];
+    index++;
   }
-  return [s.slice(start).trim(), i];
+  return [source.slice(start).trim(), index];
 }
 
-const str = (a: string) => /^(['"])(.*)\1$/.exec(a)?.[2] ?? `<${a}>`;
+const unquote = (argument: string) => /^(['"])(.*)\1$/.exec(argument)?.[2] ?? `<${argument}>`;
 
 /** Top-level keys of an object literal argument. */
-function keys(a: string): string[] | null {
-  if (!a.startsWith('{')) return null;
-  const body = a.slice(1, -1);
-  const out: string[] = [];
+function topLevelKeys(argument: string): string[] | null {
+  if (!argument.startsWith('{')) return null;
+  const body = argument.slice(1, -1);
+  const keys: string[] = [];
   let depth = 0;
-  let tok = '';
-  for (let i = 0; i < body.length; i++) {
-    const c = body[i] ?? '';
-    if (c === '"' || c === "'") {
-      const q = c;
-      let j = i + 1;
-      while (j < body.length && body[j] !== q) j += body[j] === '\\' ? 2 : 1;
-      if (depth === 0) tok += body.slice(i, j + 1);
-      i = j;
+  let token = '';
+  for (let index = 0; index < body.length; index++) {
+    const character = body[index] ?? '';
+    if (character === '"' || character === "'") {
+      const quote = character;
+      let close = index + 1;
+      while (close < body.length && body[close] !== quote) close += body[close] === '\\' ? 2 : 1;
+      if (depth === 0) token += body.slice(index, close + 1);
+      index = close;
       continue;
     }
-    if ('({['.includes(c)) depth++;
-    else if (')}]'.includes(c)) depth--;
-    else if (depth === 0 && c === ':') {
-      const k = tok.trim().replace(/^['"]|['"]$/g, '');
-      if (k) out.push(k);
-      tok = '';
+    if ('({['.includes(character)) depth++;
+    else if (')}]'.includes(character)) depth--;
+    else if (depth === 0 && character === ':') {
+      const key = token.trim().replace(/^['"]|['"]$/g, '');
+      if (key) keys.push(key);
+      token = '';
       continue;
-    } else if (depth === 0 && c === ',') {
-      tok = '';
+    } else if (depth === 0 && character === ',') {
+      token = '';
       continue;
     }
-    if (depth === 0) tok += c;
+    if (depth === 0) token += character;
   }
-  return out;
+  return keys;
 }
 
 /** Nearest preceding "name:function(" / "name=function(" / "function name(" as a rough location. */
-function context(offset: number): string {
-  const back = s.slice(Math.max(0, offset - 4000), offset);
-  const re = /([A-Za-z_$][\w$.]*)\s*[:=]\s*function\s*\(|function\s+([A-Za-z_$][\w$]*)\s*\(/g;
+function enclosingName(offset: number): string {
+  const before = source.slice(Math.max(0, offset - 4_000), offset);
+  const pattern = /([A-Za-z_$][\w$.]*)\s*[:=]\s*function\s*\(|function\s+([A-Za-z_$][\w$]*)\s*\(/g;
   let last = '';
-  for (let m = re.exec(back); m; m = re.exec(back)) last = m[1] ?? m[2] ?? last;
+  for (let match = pattern.exec(before); match; match = pattern.exec(before)) last = match[1] ?? match[2] ?? last;
   return last;
 }
 
 const endpoints = new Map<string, Endpoint>();
-const re = /Ajax\.(remoteCall|remoteCallMode|get|gameServiceRequest)\(/g;
-for (let m = re.exec(s); m; m = re.exec(s)) {
-  const i = m.index + m[0].length;
-  const [w, i1] = readArg(i);
+const callPattern = /Ajax\.(remoteCall|remoteCallMode|get|gameServiceRequest)\(/g;
+for (let match = callPattern.exec(source); match; match = callPattern.exec(source)) {
+  const index = match.index + match[0].length;
+  const [windowArgument, afterWindow] = readArgument(index);
   let action = '';
   let fields: string[] | null = null;
-  if (m[1] === 'gameServiceRequest') {
+  if (match[1] === 'gameServiceRequest') {
     action = '';
-    const [d] = readArg(i1 + 1);
-    fields = keys(d);
+    const [dataArgument] = readArgument(afterWindow + 1);
+    fields = topLevelKeys(dataArgument);
   } else {
-    const [a, i2] = readArg(i1 + 1);
-    action = str(a);
-    const [d] = s[i2] === ',' ? readArg(i2 + 1) : [''];
-    fields = keys(d);
+    const [actionArgument, afterAction] = readArgument(afterWindow + 1);
+    action = unquote(actionArgument);
+    const [dataArgument] = source[afterAction] === ',' ? readArgument(afterAction + 1) : [''];
+    fields = topLevelKeys(dataArgument);
   }
-  const kind = m[1] ?? '';
-  const key = `${kind} ${str(w)} ${action}`;
-  const e = endpoints.get(key) ?? { kind, window: str(w), action, sites: [] };
-  e.sites.push({ offset: m.index, context: context(m.index), fields });
-  endpoints.set(key, e);
+  const kind = match[1] ?? '';
+  const window = unquote(windowArgument);
+  const key = `${kind} ${window} ${action}`;
+  const endpoint = endpoints.get(key) ?? { kind, window, action, sites: [] };
+  endpoint.sites.push({ offset: match.index, context: enclosingName(match.index), fields });
+  endpoints.set(key, endpoint);
 }
 const list = [...endpoints.values()].sort(
-  (a, b) => a.window.localeCompare(b.window) || a.action.localeCompare(b.action),
+  (first, second) => first.window.localeCompare(second.window) || first.action.localeCompare(second.action),
 );
 writeFileSync(
-  out,
-  `${JSON.stringify({ source: src.split('/').pop(), count: list.length, endpoints: list }, null, 1)}\n`,
+  outputPath,
+  `${JSON.stringify({ source: sourcePath.split('/').pop(), count: list.length, endpoints: list }, null, 1)}\n`,
 );
-console.log(`${list.length} endpoints (${list.reduce((n, e) => n + e.sites.length, 0)} call sites) → ${out}`);
+console.log(
+  `${list.length} endpoints (${list.reduce((total, endpoint) => total + endpoint.sites.length, 0)} call sites) → ${outputPath}`,
+);

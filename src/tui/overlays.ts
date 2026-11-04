@@ -1,3 +1,5 @@
+// Overlays that sit on top of a screen: the go-to key menu, help, the hotel room picker, map layers and
+// points of interest. They share the App's key handling through Mode and SCREEN_MODES.
 import { Box, Text } from 'ink';
 import React from 'react';
 import type { Hotel } from '../game/hotel.ts';
@@ -6,7 +8,7 @@ import type { GameState } from '../game/state.ts';
 import { defined } from '../util/defined.ts';
 import { formatDuration, money, truncate } from './format.ts';
 
-const h = React.createElement;
+const createElement = React.createElement;
 
 export type Mode =
   | 'home'
@@ -68,7 +70,7 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
     ['m', 'map'],
     ['u', 'refresh (queue / inventory / quests)'],
     ['q', 'quit'],
-    ...GOTO.map((g): [string, string] => [`g ${g.key}`, g.help]),
+    ...GOTO.map((group): [string, string] => [`g ${group.key}`, group.help]),
   ],
   home: [
     ['Enter', 'write in chat (Enter sends, Esc cancels)'],
@@ -230,29 +232,49 @@ const LEGEND: [string, string, string][] = [
 export function HelpOverlay({ mode, width, height }: { mode: Mode; width: number; height: number }) {
   const row =
     (prefix: string) =>
-    ([k, d]: [string, string], i: number) =>
-      h(Text, { key: `${prefix}${i}`, wrap: 'truncate' }, h(Text, { color: 'yellow' }, k.padEnd(12)), d);
-  return h(
+    ([key, date]: [string, string], index: number) =>
+      createElement(
+        Text,
+        { key: `${prefix}${index}`, wrap: 'truncate' },
+        createElement(Text, { color: 'yellow' }, key.padEnd(12)),
+        date,
+      );
+  return createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'double', borderColor: 'yellow', paddingX: 2, width, height },
-    h(
+    createElement(
       Text,
       { bold: true, color: 'yellow' },
       `Keyboard shortcuts · ${MODE_TITLE[mode].toLowerCase()}   (any key closes)`,
     ),
-    h(Text, null, ' '),
-    h(
+    createElement(Text, null, ' '),
+    createElement(
       Box,
       { gap: 4 },
-      h(Box, { flexDirection: 'column' }, h(Text, { bold: true }, MODE_TITLE[mode]), ...SHORTCUTS[mode].map(row('m'))),
-      h(Box, { flexDirection: 'column' }, h(Text, { bold: true }, 'Everywhere'), ...SHORTCUTS.global.map(row('g'))),
+      createElement(
+        Box,
+        { flexDirection: 'column' },
+        createElement(Text, { bold: true }, MODE_TITLE[mode]),
+        ...SHORTCUTS[mode].map(row('m')),
+      ),
+      createElement(
+        Box,
+        { flexDirection: 'column' },
+        createElement(Text, { bold: true }, 'Everywhere'),
+        ...SHORTCUTS.global.map(row('g')),
+      ),
       mode === 'map'
-        ? h(
+        ? createElement(
             Box,
             { flexDirection: 'column' },
-            h(Text, { bold: true }, 'Map legend'),
-            ...LEGEND.map(([ch, color, d], i) =>
-              h(Text, { key: i, wrap: 'truncate' }, h(Text, { color, bold: true }, ch.padEnd(5)), d),
+            createElement(Text, { bold: true }, 'Map legend'),
+            ...LEGEND.map(([ch, color, date], index) =>
+              createElement(
+                Text,
+                { key: index, wrap: 'truncate' },
+                createElement(Text, { color, bold: true }, ch.padEnd(5)),
+                date,
+              ),
             ),
           )
         : null,
@@ -272,26 +294,30 @@ export function PoiOverlay(props: {
   const listRows = Math.max(3, height - 3);
   const start = Math.max(0, Math.min(selected - Math.floor(listRows / 2), pois.length - listRows));
   const travelPerPx = state.travelSpeed * state.character.speed;
-  return h(
+  return createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'double', borderColor: 'cyan', paddingX: 1, width, height },
-    h(
+    createElement(
       Text,
       { bold: true, color: 'cyan', wrap: 'truncate' },
       `Points of interest · ${pois.length}  ·  type to filter: ${filter}▏  ·  Enter jump · Esc close`,
     ),
-    ...pois.slice(start, start + listRows).map((p, i) => {
-      const idx = start + i;
-      const st = POI_STYLE[p.kind];
-      return h(
+    ...pois.slice(start, start + listRows).map((pick, index) => {
+      const idx = start + index;
+      const st = POI_STYLE[pick.kind];
+      return createElement(
         Text,
         { key: idx, inverse: idx === selected, wrap: 'truncate' },
-        h(Text, { color: st.color, bold: true }, ` ${st.ch} `),
-        `${truncate(p.label, Math.max(10, width - 40))} `,
-        h(Text, { dimColor: true }, `${st.name.padEnd(14)} ${formatDuration(p.dist * travelPerPx).padStart(8)}`),
+        createElement(Text, { color: st.color, bold: true }, ` ${st.ch} `),
+        `${truncate(pick.label, Math.max(10, width - 40))} `,
+        createElement(
+          Text,
+          { dimColor: true },
+          `${st.name.padEnd(14)} ${formatDuration(pick.dist * travelPerPx).padStart(8)}`,
+        ),
       );
     }),
-    pois.length === 0 ? h(Text, { dimColor: true }, 'Nothing matches.') : null,
+    pois.length === 0 ? createElement(Text, { dimColor: true }, 'Nothing matches.') : null,
   );
 }
 
@@ -309,42 +335,47 @@ export function HotelOverlay({
   height: number;
 }) {
   if (!hotel) {
-    return h(
+    return createElement(
       Box,
       { borderStyle: 'double', borderColor: 'blue', paddingX: 2, width, height },
-      h(Text, { color: 'yellow' }, 'Loading hotel…'),
+      createElement(Text, { color: 'yellow' }, 'Loading hotel…'),
     );
   }
-  const c = state.character;
-  return h(
+  const character = state.character;
+  return createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'double', borderColor: 'blue', paddingX: 2, width, height },
-    h(
+    createElement(
       Text,
       { bold: true, color: 'blue' },
       `Hotel · ${hotel.townName} (level ${hotel.level})${hotel.own ? ' · your town' : ''}`,
     ),
-    h(
+    createElement(
       Text,
       { dimColor: true, wrap: 'truncate' },
       `Distance ${hotel.waytime || '—'} · Duration 8 hours${hotel.attackable ? ` · can be attacked until ${hotel.attackable}` : ''}`,
     ),
-    h(
+    createElement(
       Text,
       { dimColor: true, wrap: 'truncate' },
-      `Now: energy ${c.energy}/${c.maxEnergy} · health ${c.health}/${c.maxHealth}`,
+      `Now: energy ${character.energy}/${character.maxEnergy} · health ${character.health}/${character.maxHealth}`,
     ),
-    h(Text, null, ' '),
-    ...hotel.rooms.map((r, i) =>
-      h(
+    createElement(Text, null, ' '),
+    ...hotel.rooms.map((room, index) =>
+      createElement(
         Text,
-        defined({ key: r.key, inverse: i === selected, color: r.available ? undefined : 'gray', wrap: 'truncate' }),
-        `${'★'.repeat(r.level).padEnd(5)} ${truncate(r.name, 22)} ${`+${r.energy} energy`.padStart(11)} ${`+${r.health} HP`.padStart(9)}  `,
-        h(Text, { color: r.free ? 'green' : 'yellow' }, r.free ? 'free' : money(r.costs)),
-        r.available ? '' : '  (not available)',
+        defined({
+          key: room.key,
+          inverse: index === selected,
+          color: room.available ? undefined : 'gray',
+          wrap: 'truncate',
+        }),
+        `${'★'.repeat(room.level).padEnd(5)} ${truncate(room.name, 22)} ${`+${room.energy} energy`.padStart(11)} ${`+${room.health} HP`.padStart(9)}  `,
+        createElement(Text, { color: room.free ? 'green' : 'yellow' }, room.free ? 'free' : money(room.costs)),
+        room.available ? '' : '  (not available)',
       ),
     ),
-    h(Text, null, ' '),
-    h(Text, { dimColor: true }, 'Enter sleep here (queued like a job) · Esc close'),
+    createElement(Text, null, ' '),
+    createElement(Text, { dimColor: true }, 'Enter sleep here (queued like a job) · Esc close'),
   );
 }

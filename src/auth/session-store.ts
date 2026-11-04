@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { type Cookie, CookieJar } from '../http/cookie-jar.ts';
+import { arr, obj } from '../util/json.ts';
 
 export const CONFIG_DIR = process.env.TW_CLI_HOME ?? join(homedir(), '.config', 'tw-cli');
 export const SESSION_FILE = join(CONFIG_DIR, 'session.json');
@@ -25,9 +26,9 @@ export function saveSession(worldUrl: string, jar: CookieJar, file = SESSION_FIL
 export function loadSession(worldUrl: string, file = SESSION_FILE): CookieJar | null {
   if (!existsSync(file)) return null;
   try {
-    const data = JSON.parse(readFileSync(file, 'utf8')) as StoredSession;
+    const data = obj(JSON.parse(readFileSync(file, 'utf8')));
     if (data.worldUrl !== worldUrl) return null;
-    return CookieJar.fromJSON(data.cookies);
+    return CookieJar.fromJSON(arr(data.cookies) as Cookie[]);
   } catch {
     return null;
   }

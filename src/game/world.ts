@@ -56,58 +56,68 @@ export class WorldMap {
   fair: Position | null = null;
 
   static fromMinimap(json: JsonObject): WorldMap {
-    const w = new WorldMap();
-    for (const t of vals(json.towns).map(obj)) {
-      w.towns.push({
-        id: Number(t.town_id),
-        x: Number(t.x),
-        y: Number(t.y),
-        name: t.name == null ? null : String(t.name),
-        members: Number(t.member_count ?? 0),
-        npc: !!t.npctown,
-        points: Number(t.town_points ?? 0),
+    const width = new WorldMap();
+    for (const jsonValue of vals(json.towns).map(obj)) {
+      width.towns.push({
+        id: Number(jsonValue.town_id),
+        x: Number(jsonValue.x),
+        y: Number(jsonValue.y),
+        name: jsonValue.name == null ? null : String(jsonValue.name),
+        members: Number(jsonValue.member_count ?? 0),
+        npc: !!jsonValue.npctown,
+        points: Number(jsonValue.town_points ?? 0),
       });
     }
-    for (const [x, ys] of entries(json.forts)) {
-      for (const [y, v] of entries(ys)) {
-        const f = isObj(v) && isObj(v.fort) ? v.fort : null;
-        w.forts.push({
-          id: Number(f?.fort_id ?? 0),
-          x: Number(x),
-          y: Number(y),
-          name: String(f?.name ?? 'Fort site'),
-          townId: Number(f?.town_id ?? 0),
+    for (const [text, ys] of entries(json.forts)) {
+      for (const [textValue, value] of entries(ys)) {
+        const fortJson = isObj(value) && isObj(value.fort) ? value.fort : null;
+        width.forts.push({
+          id: Number(fortJson?.fort_id ?? 0),
+          x: Number(text),
+          y: Number(textValue),
+          name: String(fortJson?.name ?? 'Fort site'),
+          townId: Number(fortJson?.town_id ?? 0),
         });
       }
     }
-    for (const [group, coords] of entries(json.job_groups)) w.jobGroups.set(Number(group), toPositions(coords));
-    for (const coords of vals(json.quest_locations)) w.quests.push(...toPositions(coords));
+    for (const [group, coords] of entries(json.job_groups)) width.jobGroups.set(Number(group), toPositions(coords));
+    for (const coords of vals(json.quest_locations)) width.quests.push(...toPositions(coords));
     const points = (list: unknown) =>
-      objs(list).map((p) => ({ x: Number(p.x), y: Number(p.y), amount: Number(p.amount ?? 1) }));
-    w.markets = points(json.market_locations);
-    w.friends = points(json.friend_locations);
-    w.townMembers = points(json.town_members);
-    w.counties = objs(json.counties).map((c) => ({
-      id: Number(c.county_id),
-      name: String(c.name ?? ''),
-      x1: Number(c.start_x),
-      y1: Number(c.start_y),
-      x2: Number(c.end_x),
-      y2: Number(c.end_y),
+      objs(list).map((jsonValue) => ({
+        x: Number(jsonValue.x),
+        y: Number(jsonValue.y),
+        amount: Number(jsonValue.amount ?? 1),
+      }));
+    width.markets = points(json.market_locations);
+    width.friends = points(json.friend_locations);
+    width.townMembers = points(json.town_members);
+    width.counties = objs(json.counties).map((jsonValue) => ({
+      id: Number(jsonValue.county_id),
+      name: String(jsonValue.name ?? ''),
+      x1: Number(jsonValue.start_x),
+      y1: Number(jsonValue.start_y),
+      x2: Number(jsonValue.end_x),
+      y2: Number(jsonValue.end_y),
     }));
-    w.currentCounty = Number(json.current_county ?? 0);
+    width.currentCounty = Number(json.current_county ?? 0);
     const fair = json.fair;
-    if (isObj(fair) && Number.isFinite(Number(fair.x))) w.fair = { x: Number(fair.x), y: Number(fair.y) };
-    return w;
+    if (isObj(fair) && Number.isFinite(Number(fair.x))) width.fair = { x: Number(fair.x), y: Number(fair.y) };
+    return width;
   }
 
-  countyAt(p: Position): County | undefined {
-    return this.counties.find((c) => p.x >= c.x1 && p.x <= c.x2 && p.y >= c.y1 && p.y <= c.y2);
+  countyAt(position: Position): County | undefined {
+    return this.counties.find(
+      (candidate) =>
+        position.x >= candidate.x1 &&
+        position.x <= candidate.x2 &&
+        position.y >= candidate.y1 &&
+        position.y <= candidate.y2,
+    );
   }
 
   /** Everything inside the rectangle [x1,x2) × [y1,y2). */
   within(x1: number, y1: number, x2: number, y2: number) {
-    const inside = (p: Position) => p.x >= x1 && p.x < x2 && p.y >= y1 && p.y < y2;
+    const inside = (position: Position) => position.x >= x1 && position.x < x2 && position.y >= y1 && position.y < y2;
     const jobs: { groupId: number; at: Position }[] = [];
     for (const [groupId, locs] of this.jobGroups) for (const at of locs) if (inside(at)) jobs.push({ groupId, at });
     return {

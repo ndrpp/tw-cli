@@ -50,7 +50,8 @@ the summary. Small gains compound; nobody needs to schedule a cleanup.
   hourly JSONL files kept 24 h in `<config dir>/debug/`, Debug screen `g x`), `calibration.ts` (what the
   autopilot learns from reports, health, motivation and sleeps; `calibration.json`).
 - `src/tui/`: Ink (React) screens; `app.ts` is the shell (header, nav, ticker, global keys), `root.ts` connects.
-- `src/util/`: `json.ts` (narrowing unknown JSON), `defined.ts` (drop undefined props), disk cache, wake detection.
+- `src/util/`: `json.ts` (narrowing unknown JSON), `errors.ts` (`errorMessage` for a caught value), `defined.ts`
+  (drop undefined props), disk cache, wake detection.
   `src/types/reset.d.ts`: lib typings that would hand out `any`.
 - `src/http/`, `src/auth/`, `src/fingerprint/`, `src/realtime/`: transport, login, fingerprint, chat long-poll.
 - `test/`: node:test. `features`/`social`/`setup` tests set `TW_CLI_HOME` to a temp dir; new tests that write
@@ -73,6 +74,9 @@ the summary. Small gains compound; nobody needs to schedule a cleanup.
 - Match the surrounding style: short header comment per file saying what it mirrors in the browser client
   (often with `@offset` into tw2game), terse JSDoc on non-obvious members, no comments that restate code.
 - Pure logic (planners, parsers, formulas) lives apart from requests so it can be unit-tested with fixtures.
+- Shared domain facts have one home: `isDoable` (jobs), `baseId` (items), `questInScope` (autopilot-config),
+  `DEFAULT_MOTIVATION` (calibration), `DEFAULT_WALK_ENERGY_PER_SECOND` (route), `errorMessage` (util/errors).
+  Import them instead of repeating the comparison or number.
 - Requests go through `GameState`: `guard()` (busy lock, logs errors) for user actions; `autopilotCall()`
   (busy lock, throws) for the autopilot, which needs the error to back off.
 - Line endings are mixed (several files are CRLF). The Edit tool handles both. When scripting edits with Node,
@@ -92,3 +96,5 @@ the summary. Small gains compound; nobody needs to schedule a cleanup.
 - Unverified game behaviour is labelled as such in code comments and docs, and checked live when possible.
 - Keys: vim-like and predictable. Esc is always "back", `q` the only quit, no toggle keys, lowercase `j k` (never
   `J K`) to scroll, mnemonic letters behind the `g` go-to menu rather than odd single keys (see `docs/tui.md`).
+- No single-letter variables or parameters, even in small callbacks: write `index`, `entry`, `option`, `xCoord`,
+  `yCoord` (the only short names kept are words like `id`, `url`, `html`).

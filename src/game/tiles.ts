@@ -37,8 +37,8 @@ export class TileCache {
   private inflight = false;
 
   private fresh(tx: number, ty: number): boolean {
-    const t = this.loadedAt.get(`${tx},${ty}`);
-    return t !== undefined && Date.now() - t < TTL_MS;
+    const entryValue = this.loadedAt.get(`${tx},${ty}`);
+    return entryValue !== undefined && Date.now() - entryValue < TTL_MS;
   }
 
   /** Loads stale tiles in a square around `at` (radius in tiles). Returns true if a request was made. */
@@ -70,56 +70,74 @@ export class TileCache {
 
   ingest(json: JsonObject, requested: [number, number][]): void {
     const now = Date.now();
-    // Forget old entries of the requested tiles before re-adding.
-    const inTiles = new Set(requested.map(([x, y]) => `${x},${y}`));
-    const tileOf = (p: Position) => `${Math.floor(p.x / TILE)},${Math.floor(p.y / TILE)}`;
-    for (const m of [this.specialJobs, this.questGivers, this.crowds] as Map<string, Position>[]) {
-      for (const [k, v] of m) if (inTiles.has(tileOf(v))) m.delete(k);
-    }
-    for (const t of inTiles) this.loadedAt.set(t, now);
+    for (const tile of this.forgetRequestedTiles(requested)) this.loadedAt.set(tile, now);
+    this.ingestDynamic(json);
+    this.ingestQuestGivers(json);
+  }
 
+  /** Forget old entries of the requested tiles before re-adding them; returns those tile keys. */
+  private forgetRequestedTiles(requested: [number, number][]): Set<string> {
+    const tiles = new Set(requested.map(([xCoord, yCoord]) => `${xCoord},${yCoord}`));
+    const tileOf = (position: Position) => `${Math.floor(position.x / TILE)},${Math.floor(position.y / TILE)}`;
+    for (const entries of [this.specialJobs, this.questGivers, this.crowds] as Map<string, Position>[]) {
+      for (const [key, position] of entries) if (tiles.has(tileOf(position))) entries.delete(key);
+    }
+    return tiles;
+  }
+
+  /** Job locations and crowds from the dynamic layer. */
+  private ingestDynamic(json: JsonObject): void {
     const layers = Array.isArray(json.dynamic) ? json.dynamic : json.dynamic ? [json.dynamic] : [];
     for (const layer of layers) {
-      for (const ys of vals(layer)) {
-        for (const list of vals(ys)) {
-          for (const e of vals(list)) {
-            const d = arr(e)[1];
-            if (!isObj(d)) continue;
-            const x = Number(d.x);
-            const y = Number(d.y);
-            const key = `${x},${y}`;
-            if (d.job_id !== undefined && (d.gold || d.silver)) {
-              this.specialJobs.set(`${key}#${String(d.job_id)}`, {
-                x,
-                y,
-                jobId: Number(d.job_id),
-                groupId: Number(d.group_id),
-                gold: !!d.gold,
-                silver: !!d.silver,
+      for (const row of vals(layer)) {
+        for (const column of vals(row)) {
+          for (const entry of vals(column)) {
+            const data = arr(entry)[1];
+            if (!isObj(data)) continue;
+            const xCoord = Number(data.x);
+            const yCoord = Number(data.y);
+            const key = `${xCoord},${yCoord}`;
+            if (data.job_id !== undefined && (data.gold || data.silver)) {
+              this.specialJobs.set(`${key}#${String(data.job_id)}`, {
+                x: xCoord,
+                y: yCoord,
+                jobId: Number(data.job_id),
+                groupId: Number(data.group_id),
+                gold: !!data.gold,
+                silver: !!data.silver,
               });
-            } else if (d.count !== undefined && d.town_id === undefined) {
-              this.crowds.set(key, { x, y, count: Number(d.count) });
+            } else if (data.count !== undefined && data.town_id === undefined) {
+              this.crowds.set(key, { x: xCoord, y: yCoord, count: Number(data.count) });
             }
           }
         }
       }
     }
-    for (const ys of vals(json.quests)) {
-      for (const list of vals(ys)) {
-        for (const e of vals(list)) {
-          const d = arr(e)[1];
-          if (!isObj(d)) continue;
-          const employers = objs(d.employer)
-            .filter((em) => em.visible !== false)
-            .map((em) => ({
-              key: String(em.key),
-              name: String(em.name)
+  }
+
+  /** Quest givers and the employers standing at them. */
+  private ingestQuestGivers(json: JsonObject): void {
+    for (const row of vals(json.quests)) {
+      for (const column of vals(row)) {
+        for (const entry of vals(column)) {
+          const data = arr(entry)[1];
+          if (!isObj(data)) continue;
+          const employers = objs(data.employer)
+            .filter((employer) => employer.visible !== false)
+            .map((employer) => ({
+              key: String(employer.key),
+              name: String(employer.name)
                 .replace(/&#039;/g, "'")
                 .replace(/&amp;/g, '&'),
             }));
-          const x = Number(d.x);
-          const y = Number(d.y);
-          this.questGivers.set(`${x},${y}`, { x, y, names: employers.map((em) => em.name), employers });
+          const xCoord = Number(data.x);
+          const yCoord = Number(data.y);
+          this.questGivers.set(`${xCoord},${yCoord}`, {
+            x: xCoord,
+            y: yCoord,
+            names: employers.map((employer) => employer.name),
+            employers,
+          });
         }
       }
     }

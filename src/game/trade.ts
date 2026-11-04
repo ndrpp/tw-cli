@@ -42,7 +42,10 @@ import { plainText } from './quests.ts';
 
 const errText = (json: JsonObject, what: string) =>
   plainText(json.msg ?? (typeof json.error === 'string' ? json.error : '')) || `${what} failed`;
-const optNum = (v: unknown) => (typeof v === 'number' ? v : undefined);
+const optNum = (value: unknown) => (typeof value === 'number' ? value : undefined);
+/** A number, or null when the server left the field out / empty (auction prices). */
+const numberOrNull = (value: unknown): number | null =>
+  value === null || value === undefined || value === '' ? null : Number(value);
 
 // ---- bank ----------------------------------------------------------------------------------
 
@@ -87,7 +90,8 @@ export const SHOPS = [
   { key: 'gunsmith', window: 'building_gunsmith', label: 'Gunsmith' },
 ] as const;
 export type ShopKey = (typeof SHOPS)[number]['key'];
-const shopWindow = (k: ShopKey): string => SHOPS.find((s) => s.key === k)?.window ?? SHOPS[0].window;
+const shopWindow = (entryKey: ShopKey): string =>
+  SHOPS.find((source) => source.key === entryKey)?.window ?? SHOPS[0].window;
 
 export interface Shop {
   key: ShopKey;
@@ -108,7 +112,7 @@ export async function fetchShop(client: GameClient, key: ShopKey, townId: number
     townName: plainText(json.town_name),
     level: Number(json.level) || 0,
     charge: json.charge !== undefined ? Number(json.charge) : 1,
-    items: objs(json.trader_inv).map((r) => Number(r.item_id)),
+    items: objs(json.trader_inv).map((jsonValue) => Number(jsonValue.item_id)),
   };
 }
 
@@ -171,40 +175,43 @@ export interface UseResult {
 }
 
 /** ItemUse.doIt effect messages (texts as the web shows them). */
-export function effectText(m: JsonObject, itemName: (id: number) => string): string[] {
-  const buff = obj(m.buff);
-  switch (m.type) {
+export function effectText(jsonValue: JsonObject, itemName: (id: number) => string): string[] {
+  const buff = obj(jsonValue.buff);
+  switch (jsonValue.type) {
     case 'experience':
     case 'level':
-      return [`+${Math.ceil(Number(m.experience))} XP`];
+      return [`+${Math.ceil(Number(jsonValue.experience))} XP`];
     case 'dollar':
-      return [`+$${Math.ceil(Number(m.dollar))}`];
+      return [`+$${Math.ceil(Number(jsonValue.dollar))}`];
     case 'energy':
-      return [`Your energy increased to ${Math.floor(Number(m.energy))} points.`];
+      return [`Your energy increased to ${Math.floor(Number(jsonValue.energy))} points.`];
     case 'hitpoints':
-      return [`Your health points increased to ${Math.round(Number(m.hitpoints))} points.`];
+      return [`Your health points increased to ${Math.round(Number(jsonValue.hitpoints))} points.`];
     case 'walk_time':
       return ['Walking time decreased.'];
     case 'duel_motivation':
-      return [`Your duel motivation increased to ${Math.round(Number(m.duelmotivation) * 100)}%.`];
+      return [`Your duel motivation increased to ${Math.round(Number(jsonValue.duelmotivation) * 100)}%.`];
     case 'work_motivation':
       return ['Your work motivation has increased.'];
     case 'buff':
       return [
         Number(buff.duration) > 0 ? 'Buffed:' : `Raised for ${String(buff.charge ?? '?')} action(s):`,
-        ...arr(buff.description).map((d) => plainText(d)),
+        ...arr(buff.description).map((data) => plainText(data)),
       ];
     case 'content':
     case 'lottery':
       return [
-        `You get: ${objs(m.items)
-          .map((i) => `${Number(i.count) > 1 ? `${Number(i.count)}× ` : ''}${itemName(Number(i.item_id))}`)
+        `You get: ${objs(jsonValue.items)
+          .map(
+            (receivedItem) =>
+              `${Number(receivedItem.count) > 1 ? `${Number(receivedItem.count)}× ` : ''}${itemName(Number(receivedItem.item_id))}`,
+          )
           .join(', ')}`,
       ];
     case 'learn_recipe':
       return ['You learned a new recipe.'];
     default:
-      return [String(m.type ?? 'done')];
+      return [String(jsonValue.type ?? 'done')];
   }
 }
 
@@ -221,9 +228,9 @@ export async function useItem(
   const effects = objs(msg.effects);
   return {
     changes: arr(msg.changes),
-    effects: effects.flatMap((e) => effectText(e, itemName)),
-    energy: optNum(effects.find((e) => e.type === 'energy')?.energy),
-    health: optNum(effects.find((e) => e.type === 'hitpoints')?.hitpoints),
+    effects: effects.flatMap((jsonValue) => effectText(jsonValue, itemName)),
+    energy: optNum(effects.find((jsonValue) => jsonValue.type === 'energy')?.energy),
+    health: optNum(effects.find((jsonValue) => jsonValue.type === 'hitpoints')?.hitpoints),
   };
 }
 
@@ -261,29 +268,31 @@ export interface MobileTrader {
   changesAt: number | null;
 }
 
-export function parseMobileTraderItem(r: JsonObject): MobileTraderItem {
-  const currency = Number(r.currency) || 0;
-  const discount = Number(r.reduced_value) || 0;
+export function parseMobileTraderItem(jsonValue: JsonObject): MobileTraderItem {
+  const currency = Number(jsonValue.currency) || 0;
+  const discount = Number(jsonValue.reduced_value) || 0;
   const prices: MobileTraderPrice[] = [];
   for (const [bit, name] of SHOP_CURRENCIES) {
     if (!(currency & bit)) continue;
-    const base = Number(r[`price_${name}`]) || 0;
+    const base = Number(jsonValue[`price_${name}`]) || 0;
     if (!base) continue;
     prices.push({ currency: name, base, amount: discount ? Math.round((base * (100 - discount)) / 100) : base });
   }
   // The mobile trader is a dollar shop; prefer that price when an offer accepts several currencies.
-  prices.sort((a, b) => Number(b.currency === 'dollar') - Number(a.currency === 'dollar'));
-  const limited = Number(r.limited_count);
-  const limitedAt = Number(r.limited_time) || null;
+  prices.sort((first, second) => Number(second.currency === 'dollar') - Number(first.currency === 'dollar'));
+  const limited = Number(jsonValue.limited_count);
+  const limitedAt = Number(jsonValue.limited_time) || null;
   return {
-    itemId: Number(r.item_id),
-    tab: String(r.tab ?? 'trader'),
+    itemId: Number(jsonValue.item_id),
+    tab: String(jsonValue.tab ?? 'trader'),
     prices,
     discount,
     limitedAt,
     limitedCount:
-      Number.isFinite(limited) && r.limited_count !== null && r.limited_count !== undefined ? limited : null,
-    teaser: plainText(String(r.teaser ?? '')),
+      Number.isFinite(limited) && jsonValue.limited_count !== null && jsonValue.limited_count !== undefined
+        ? limited
+        : null,
+    teaser: plainText(String(jsonValue.teaser ?? '')),
   };
 }
 
@@ -294,7 +303,7 @@ export async function fetchMobileTrader(client: GameClient): Promise<MobileTrade
   return {
     items: objs(obj(json.inventory).trader)
       .map(parseMobileTraderItem)
-      .filter((i) => i.prices.length > 0),
+      .filter((index) => index.prices.length > 0),
     changesAt: Number(json.traderTime) || null,
   };
 }
@@ -378,30 +387,30 @@ export interface MarketOffer {
   description: string;
 }
 
-export function parseOffer(o: JsonObject): MarketOffer {
-  const bid = o.current_bid ?? o.auction_price;
-  const ends = Number(o.auction_ends_in) || 0;
+export function parseOffer(jsonValue: JsonObject): MarketOffer {
+  const bid = jsonValue.current_bid ?? jsonValue.auction_price;
+  const ends = Number(jsonValue.auction_ends_in) || 0;
   return {
-    id: Number(o.market_offer_id),
-    itemId: Number(o.item_id),
-    count: Number(o.item_count) || 1,
-    bid: bid === null || bid === undefined || bid === '' ? null : Number(bid),
-    startPrice:
-      o.auction_price === null || o.auction_price === undefined || o.auction_price === ''
-        ? null
-        : Number(o.auction_price),
-    currentBid:
-      o.current_bid === null || o.current_bid === undefined || o.current_bid === '' ? null : Number(o.current_bid),
-    buyNow: o.max_price === null || o.max_price === undefined || o.max_price === '' ? null : Number(o.max_price),
+    id: Number(jsonValue.market_offer_id),
+    itemId: Number(jsonValue.item_id),
+    count: Number(jsonValue.item_count) || 1,
+    bid: numberOrNull(bid),
+    startPrice: numberOrNull(jsonValue.auction_price),
+    currentBid: numberOrNull(jsonValue.current_bid),
+    buyNow: numberOrNull(jsonValue.max_price),
     endsIn: Math.max(0, ends),
-    seller: o.seller_name ? String(o.seller_name) : 'Deleted',
-    sellerId: Number(o.seller_player_id) || 0,
-    bidder: o.bidder_name ? String(o.bidder_name) : '',
-    town: { name: String(o.market_town_name ?? ''), x: Number(o.market_town_x) || 0, y: Number(o.market_town_y) || 0 },
-    highestBidder: !!o.is_highest_bidder,
-    direction: o.direction === 'BUY' ? 'BUY' : 'SELL',
+    seller: jsonValue.seller_name ? String(jsonValue.seller_name) : 'Deleted',
+    sellerId: Number(jsonValue.seller_player_id) || 0,
+    bidder: jsonValue.bidder_name ? String(jsonValue.bidder_name) : '',
+    town: {
+      name: String(jsonValue.market_town_name ?? ''),
+      x: Number(jsonValue.market_town_x) || 0,
+      y: Number(jsonValue.market_town_y) || 0,
+    },
+    highestBidder: !!jsonValue.is_highest_bidder,
+    direction: jsonValue.direction === 'BUY' ? 'BUY' : 'SELL',
     finished: ends <= 0,
-    description: o.description ? plainText(String(o.description)) : '',
+    description: jsonValue.description ? plainText(String(jsonValue.description)) : '',
   };
 }
 
@@ -409,13 +418,18 @@ const offerList = (rows: unknown): MarketOffer[] => objs(rows).map(parseOffer);
 const offers = (json: JsonObject): MarketOffer[] => offerList(obj(json.msg).search_result);
 
 /** The bid the web's bid dialog pre-fills: just above the current bid / starting price, else the instant price. */
-export function suggestedBid(o: MarketOffer): number {
-  if (o.startPrice) return Math.max(o.startPrice - 1, o.currentBid ?? 0) + 1;
-  return o.buyNow ?? (o.bid ?? 0) + 1;
+export function suggestedBid(offerInfo: MarketOffer): number {
+  if (offerInfo.startPrice) return Math.max(offerInfo.startPrice - 1, offerInfo.currentBid ?? 0) + 1;
+  return offerInfo.buyNow ?? (offerInfo.bid ?? 0) + 1;
 }
 
+/** showMarketFees: 2 % of the price, 3 per day, doubled outside the home town, split by the market stage. */
+const FEE_RATE = 0.02;
+const FEE_PER_DAY = 3;
+const FOREIGN_TOWN_FEE = 2;
+
 /** The fee the market window shows before putting up an offer or buy order (showMarketFees). */
-export function marketFee(o: {
+export function marketFee(options: {
   startPrice?: number | undefined;
   buyNow?: number | undefined;
   days: number;
@@ -423,12 +437,15 @@ export function marketFee(o: {
   homeTown: boolean;
   auctions?: number | undefined;
 }): number {
-  const a = o.startPrice || 0;
-  const b = o.buyNow || 0;
-  if (!a && !b) return 0;
-  const price = a && b ? Math.min(a, b) : Math.max(a, b);
-  const base = Math.trunc(price * 0.02 * 10 + o.days * 3);
-  return Math.ceil((base / Math.max(1, o.stage ?? 1)) * (o.homeTown ? 1 : 2)) * (o.auctions ?? 1);
+  const startPrice = options.startPrice || 0;
+  const buyNow = options.buyNow || 0;
+  if (!startPrice && !buyNow) return 0;
+  const price = startPrice && buyNow ? Math.min(startPrice, buyNow) : Math.max(startPrice, buyNow);
+  const base = Math.trunc(price * FEE_RATE * 10 + options.days * FEE_PER_DAY);
+  return (
+    Math.ceil((base / Math.max(1, options.stage ?? 1)) * (options.homeTown ? 1 : FOREIGN_TOWN_FEE)) *
+    (options.auctions ?? 1)
+  );
 }
 
 /** calcUnitPrice: the buy-now price if set, else the starting price, per item (rounded up). */
@@ -437,12 +454,13 @@ export const unitPrice = (startPrice: number | undefined, buyNow: number | undef
 
 /** putupOffer's checks for a buy order; returns the error text or null. */
 export function buyOrderProblem(
-  o: { maxBid?: number | undefined; instant?: number | undefined; count: number },
+  options: { maxBid?: number | undefined; instant?: number | undefined; count: number },
   itemSellPrice: number,
 ): string | null {
-  if (!o.maxBid && !o.instant) return 'Set an instant price or a maximum bid.';
-  if (o.maxBid && o.instant && o.instant >= o.maxBid) return 'The maximum bid must be higher than the instant price.';
-  if (unitPrice(o.maxBid, o.instant, o.count) < itemSellPrice)
+  if (!options.maxBid && !options.instant) return 'Set an instant price or a maximum bid.';
+  if (options.maxBid && options.instant && options.instant >= options.maxBid)
+    return 'The maximum bid must be higher than the instant price.';
+  if (unitPrice(options.maxBid, options.instant, options.count) < itemSellPrice)
     return `The price per item must be at least the shop sell price ($ ${itemSellPrice}).`;
   return null;
 }
@@ -476,7 +494,7 @@ export class MarketApi {
       direction_buy: filter.buyOrders,
     });
     if (json.error) throw new Error(errText(json, 'Market search'));
-    return { offers: offers(json).filter((o) => !o.finished), next: !!obj(json.msg).next };
+    return { offers: offers(json).filter((offerInfo) => !offerInfo.finished), next: !!obj(json.msg).next };
   }
 
   /**
@@ -495,12 +513,12 @@ export class MarketApi {
       direction: offer.direction,
     });
     if (json.error) throw new Error(errText(json, 'Bid'));
-    const m = obj(json.msg);
+    const jsonValue = obj(json.msg);
     return {
-      instant: !!(m.instantBuy ?? json.instantBuy),
-      cash: optNum(m.money) || undefined,
-      deposit: optNum(m.deposit) || undefined,
-      changes: arr(m.changes),
+      instant: !!(jsonValue.instantBuy ?? json.instantBuy),
+      cash: optNum(jsonValue.money) || undefined,
+      deposit: optNum(jsonValue.deposit) || undefined,
+      changes: arr(jsonValue.changes),
     };
   }
 
@@ -549,7 +567,7 @@ export class MarketApi {
   }
 
   /** Puts items up for sale in a town's market (MarketWindow.Offer.getOfferObject). */
-  async sell(o: {
+  async sell(options: {
     townId: number;
     itemId: number;
     count: number;
@@ -558,22 +576,22 @@ export class MarketApi {
     buyNow?: number | undefined;
     description?: string | undefined;
   }): Promise<{ fee: number; cash?: number | undefined; deposit?: number | undefined }> {
-    if (!o.startPrice && !o.buyNow) throw new Error('Set a starting bid or a buy-now price.');
+    if (!options.startPrice && !options.buyNow) throw new Error('Set a starting bid or a buy-now price.');
     return this.putup({
-      townId: o.townId,
-      itemId: o.itemId,
-      count: o.count,
-      days: o.days,
-      auctionprice: o.startPrice,
-      maxprice: o.buyNow,
-      description: o.description,
+      townId: options.townId,
+      itemId: options.itemId,
+      count: options.count,
+      days: options.days,
+      auctionprice: options.startPrice,
+      maxprice: options.buyNow,
+      description: options.description,
       direction: 'SELL',
       bidtype: 0,
     });
   }
 
   /** Places a buy order: you pay at most `maxBid` (auction) or `instant` (sells to you at once). */
-  async buyOrder(o: {
+  async buyOrder(options: {
     townId: number;
     itemId: number;
     count: number;
@@ -583,23 +601,23 @@ export class MarketApi {
     fromBank: boolean;
     description?: string | undefined;
   }): Promise<{ fee: number; cash?: number | undefined; deposit?: number | undefined }> {
-    if (!o.maxBid && !o.instant) throw new Error('Set an instant price or a maximum bid.');
-    if (o.maxBid && o.instant && o.instant >= o.maxBid)
+    if (!options.maxBid && !options.instant) throw new Error('Set an instant price or a maximum bid.');
+    if (options.maxBid && options.instant && options.instant >= options.maxBid)
       throw new Error('The maximum bid must be higher than the instant price.');
     return this.putup({
-      townId: o.townId,
-      itemId: o.itemId,
-      count: o.count,
-      days: o.days,
-      auctionprice: o.maxBid,
-      maxprice: o.instant,
-      description: o.description,
+      townId: options.townId,
+      itemId: options.itemId,
+      count: options.count,
+      days: options.days,
+      auctionprice: options.maxBid,
+      maxprice: options.instant,
+      description: options.description,
       direction: 'BUY',
-      bidtype: o.fromBank ? 1 : 0,
+      bidtype: options.fromBank ? 1 : 0,
     });
   }
 
-  private async putup(o: {
+  private async putup(options: {
     townId: number;
     itemId: number;
     count: number;
@@ -611,21 +629,21 @@ export class MarketApi {
     bidtype: 0 | 1;
   }) {
     const post: Record<string, string | number> = {
-      town_id: o.townId,
-      item_id: o.itemId,
-      itemcount: o.count,
+      town_id: options.townId,
+      item_id: options.itemId,
+      itemcount: options.count,
       auctioncount: 1,
       sellrights: 2,
-      auctionlength: o.days,
-      description: o.description ?? '',
-      direction: o.direction,
-      bidtype: o.bidtype,
+      auctionlength: options.days,
+      description: options.description ?? '',
+      direction: options.direction,
+      bidtype: options.bidtype,
     };
-    if (o.auctionprice) post.auctionprice = o.auctionprice;
-    if (o.maxprice) post.maxprice = o.maxprice;
+    if (options.auctionprice) post.auctionprice = options.auctionprice;
+    if (options.maxprice) post.maxprice = options.maxprice;
     const json = await this.client.remoteCall('building_market', 'putup', post);
-    if (json.error) throw new Error(errText(json, o.direction === 'BUY' ? 'Buy order' : 'Market offer'));
-    const m = obj(json.msg);
-    return { fee: Number(m.costs) || 0, cash: optNum(m.money), deposit: optNum(m.deposit) };
+    if (json.error) throw new Error(errText(json, options.direction === 'BUY' ? 'Buy order' : 'Market offer'));
+    const jsonValue = obj(json.msg);
+    return { fee: Number(jsonValue.costs) || 0, cash: optNum(jsonValue.money), deposit: optNum(jsonValue.deposit) };
   }
 }

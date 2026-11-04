@@ -35,14 +35,14 @@ const FAST: HostPolicy = {
 
 /** Real bootstrap from the saved page, with the clock moved so the saved queue is still running. */
 function realBootstrap(): Bootstrap {
-  const b: any = parseBootstrap(readFileSync(GAME_PHP, 'utf8'));
-  const shift = Math.floor(Date.now() / 1000) - b.game!.sincepoch;
-  b.game!.sincepoch += shift;
-  for (const t of b.character!.taskQueue) {
-    t.date_start += shift;
-    t.date_done += shift;
+  const second: any = parseBootstrap(readFileSync(GAME_PHP, 'utf8'));
+  const shift = Math.floor(Date.now() / 1000) - second.game!.sincepoch;
+  second.game!.sincepoch += shift;
+  for (const target of second.character!.taskQueue) {
+    target.date_start += shift;
+    target.date_done += shift;
   }
-  return b;
+  return second;
 }
 
 interface Call {
@@ -76,15 +76,15 @@ function fakeGame() {
   }) as typeof fetch;
 }
 
-function makeState(b: Bootstrap): GameState {
+function makeState(second: Bootstrap): GameState {
   const client = new GameClient({
     worldUrl: WORLD,
-    h: b.h,
+    h: second.h,
     jar: new CookieJar(),
     identity: { userAgent: 'UA', acceptLanguage: 'en' },
     policy: FAST,
   });
-  return new GameState({ client, bootstrap: b }, async () => ({ client, bootstrap: b }));
+  return new GameState({ client, bootstrap: second }, async () => ({ client, bootstrap: second }));
 }
 
 beforeEach(() => {
@@ -140,15 +140,15 @@ test('task/add body matches jQuery serialisation of TaskQueue.sendAdd', () => {
 test('character from the real Character.init: max HP formula and regen', {
   skip: !HAVE_GAME && 'game.php missing',
 }, () => {
-  const b = realBootstrap();
-  const clock = new ServerClock(Number(b.game!.sincepoch));
-  const c = CharacterState.fromInit(b.character!, clock);
-  assert.equal(c.maxHealth, 600); // 100 + 29*10 + (7+14)*10
-  assert.equal(c.name, 'shallax');
-  const e0 = c.energy;
+  const second = realBootstrap();
+  const clock = new ServerClock(Number(second.game!.sincepoch));
+  const character = CharacterState.fromInit(second.character!, clock);
+  assert.equal(character.maxHealth, 600); // 100 + 29*10 + (7+14)*10
+  assert.equal(character.name, 'shallax');
+  const energyBefore = character.energy;
   clock.driftMs -= 3600_000; // one hour later
-  assert.equal(c.energy, Math.min(c.maxEnergy, Math.floor(7.519 + 100 * 0.03))); // energyRegen 0.03 * maxEnergy per hour
-  assert.ok(c.energy > e0);
+  assert.equal(character.energy, Math.min(character.maxEnergy, Math.floor(7.519 + 100 * 0.03))); // energyRegen 0.03 * maxEnergy per hour
+  assert.ok(character.energy > energyBefore);
 });
 
 test('level progress follows Character.calcLowerExp / getExperience4Level', {
@@ -156,38 +156,38 @@ test('level progress follows Character.calcLowerExp / getExperience4Level', {
 }, () => {
   // Values the browser computes: calcLowerExp(1) = 0, (2) = 42, (30) = 29232, (31) = 32145; > 120 adds 1000·(l−120)^2.9.
   assert.deepEqual(
-    [1, 2, 30, 31].map((l) => levelStartXp(l)),
+    [1, 2, 30, 31].map((value) => levelStartXp(value)),
     [0, 42, 29232, 32145],
   );
   assert.equal(levelStartXp(121), Math.floor(((121 * 122 * 243) / 6 + 1220 - 21) * 3 + 1000));
-  const b = realBootstrap();
-  assert.equal(b.game!.maxLevel, 250);
-  const c = CharacterState.fromInit(b.character!, new ServerClock(Number(b.game!.sincepoch)));
-  assert.deepEqual([c.level, c.experience], [30, 32067]);
-  const p = c.progress;
-  assert.deepEqual([p.have, p.need, p.maxed], [32067 - 29232, 32145 - 29232, false]);
-  assert.equal(Math.floor(p.ratio * 100), 97);
+  const second = realBootstrap();
+  assert.equal(second.game!.maxLevel, 250);
+  const character = CharacterState.fromInit(second.character!, new ServerClock(Number(second.game!.sincepoch)));
+  assert.deepEqual([character.level, character.experience], [30, 32067]);
+  const pick = character.progress;
+  assert.deepEqual([pick.have, pick.need, pick.maxed], [32067 - 29232, 32145 - 29232, false]);
+  assert.equal(Math.floor(pick.ratio * 100), 97);
   // Max level: the web shows the infinity image; the CLI says "max level".
   assert.deepEqual(levelProgress(250, 9e9, 250).maxed, true);
   assert.equal(levelProgress(249, levelStartXp(249), 250).have, 0);
 });
 
 test('real task queue entries parse', { skip: !HAVE_GAME && 'game.php missing' }, () => {
-  const q = parseQueue(realBootstrap().character!.taskQueue);
-  assert.ok(q.length >= 1);
-  assert.equal(q[0]!.type, 'job');
-  assert.equal(q[0]!.jobId, 54);
-  assert.equal(q[0]!.title, 'Bartering with Indians');
-  assert.deepEqual(q[0]!.coords, { x: 29888, y: 15564 });
+  const task = parseQueue(realBootstrap().character!.taskQueue);
+  assert.ok(task.length >= 1);
+  assert.equal(task[0]!.type, 'job');
+  assert.equal(task[0]!.jobId, 54);
+  assert.equal(task[0]!.title, 'Bartering with Indians');
+  assert.deepEqual(task[0]!.coords, { x: 29888, y: 15564 });
 });
 
 test('jobs load and startJob sends task/add with the next queue position and h', {
   skip: !HAVE_GAME && 'game.php missing',
 }, async () => {
   fakeGame();
-  const b = realBootstrap();
-  b.premium = { premiumBoni: { automation: { expiration: Math.floor(Date.now() / 1000) + 3600 } } };
-  const state = makeState(b);
+  const second = realBootstrap();
+  second.premium = { premiumBoni: { automation: { expiration: Math.floor(Date.now() / 1000) + 3600 } } };
+  const state = makeState(second);
   const queued = state.queue.length;
   await state.loadJobs();
   assert.equal(state.jobs.length, 2);
@@ -218,13 +218,13 @@ test('jobs load and startJob sends task/add with the next queue position and h',
     };
   };
   await state.startJob(opt, 'middle');
-  const add = calls.find((c) => c.url.includes('action=add'))!;
-  assert.ok(add.url.endsWith(`&h=${b.h}`));
+  const add = calls.find((candidate) => candidate.url.includes('action=add'))!;
+  assert.ok(add.url.endsWith(`&h=${second.h}`));
   assert.equal(state.queue.length, queued + 1);
   assert.equal(state.queue.at(-1)!.queueId, 99);
   assert.equal(state.character.energy, 42);
   assert.deepEqual(
-    state.log.filter((l) => l.level === 'error'),
+    state.log.filter((line) => line.level === 'error'),
     [],
   );
 });
@@ -233,14 +233,14 @@ test('queue limit without automation premium is enforced before sending', {
   skip: !HAVE_GAME && 'game.php missing',
 }, async () => {
   fakeGame();
-  const b = realBootstrap();
-  b.premium = { premiumBoni: { automation: { expiration: 0 } } };
-  const state = makeState(b);
+  const second = realBootstrap();
+  second.premium = { premiumBoni: { automation: { expiration: 0 } } };
+  const state = makeState(second);
   await state.loadJobs();
   while (state.queue.length < state.taskLimit) state.queue.push({ ...state.queue[0]! });
   assert.equal(state.taskLimit, 4);
   await state.startJob(state.jobOptions()[0]!, 'short');
-  assert.ok(!calls.some((c) => c.url.includes('action=add')));
+  assert.ok(!calls.some((candidate) => candidate.url.includes('action=add')));
   assert.match(state.log.at(-1)!.msg, /queue is full/i);
   assert.ok(TaskLimitError);
 });
@@ -249,24 +249,24 @@ test('TUI renders status, jobs and queue, and keys drive actions', {
   skip: !HAVE_GAME && 'game.php missing',
 }, async () => {
   fakeGame();
-  const b = realBootstrap();
-  b.premium = { premiumBoni: { automation: { expiration: Math.floor(Date.now() / 1000) + 3600 } } };
-  const state = makeState(b);
+  const second = realBootstrap();
+  second.premium = { premiumBoni: { automation: { expiration: Math.floor(Date.now() / 1000) + 3600 } } };
+  const state = makeState(second);
   await state.loadJobs();
 
   const stdout = new PassThrough() as PassThrough & { columns: number; rows: number; isTTY: boolean };
   Object.assign(stdout, { columns: 120, rows: 36, isTTY: true });
   const stdin = new PassThrough() as PassThrough & {
     isTTY: boolean;
-    setRawMode: (m: boolean) => void;
+    setRawMode: (flag: boolean) => void;
     ref: () => void;
     unref: () => void;
   };
   Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
   let out = '';
-  stdout.on('data', (d) => (out += d.toString()));
+  stdout.on('data', (data) => (out += data.toString()));
   const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
-  const settle = () => new Promise((r) => setTimeout(r, 120));
+  const settle = () => new Promise((transform) => setTimeout(transform, 120));
 
   const app = render(React.createElement(App, { state }), {
     stdout: stdout as any,
@@ -301,22 +301,26 @@ test('TUI renders status, jobs and queue, and keys drive actions', {
         },
       },
     });
-    for (const k of ['/', 'p', 'i', 'g', '\r', '2']) {
-      stdin.write(k);
+    for (const key of ['/', 'p', 'i', 'g', '\r', '2']) {
+      stdin.write(key);
       await settle();
     }
-    assert.ok(calls.some((c) => c.url.includes('action=add') && decodeURIComponent(c.body).includes('[jobId]=1')));
+    assert.ok(
+      calls.some(
+        (candidate) => candidate.url.includes('action=add') && decodeURIComponent(candidate.body).includes('[jobId]=1'),
+      ),
+    );
     assert.equal(state.queue.length, queued + 1);
 
     // Tab to the queue, move to task 2, cancel with confirmation.
-    for (const k of ['\t', 'j', 'c']) {
-      stdin.write(k);
+    for (const entryKey of ['\t', 'j', 'c']) {
+      stdin.write(entryKey);
       await settle();
     }
     assert.match(plain(), /Cancel this task\? y \/ n/);
     stdin.write('y');
     await settle();
-    const cancel = calls.find((c) => c.url.includes('action=cancel'))!;
+    const cancel = calls.find((candidate) => candidate.url.includes('action=cancel'))!;
     assert.ok(cancel);
     assert.match(decodeURIComponent(cancel.body), /^tasks\[1\]\[queueId\]=\d+&tasks\[1\]\[type\]=job$/);
   } finally {
@@ -329,20 +333,20 @@ test('loading frame: the connect step shows as running with a timer, then as don
   const stdout = new PassThrough() as PassThrough & { columns: number; rows: number; isTTY: boolean };
   Object.assign(stdout, { columns: 80, rows: 20, isTTY: true });
   let out = '';
-  stdout.on('data', (d) => (out += d.toString()));
+  stdout.on('data', (data) => (out += data.toString()));
   const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
-  const t0 = Date.now() - 3_000;
+  const startedAt = Date.now() - 3_000;
   const app = render(
     React.createElement(LoadingFrame, {
       width: 80,
       height: 20,
-      steps: [{ label: 'Connecting to The West', status: 'running', startedAt: t0 }],
+      steps: [{ label: 'Connecting to The West', status: 'running', startedAt }],
       keys: 'q quit',
     }),
     { stdout: stdout as any, patchConsole: false },
   );
   try {
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((transform) => setTimeout(transform, 50));
     assert.match(plain(), /Connecting to The West\s+3 s/);
     assert.match(plain(), /q quit/);
     app.rerender(
@@ -350,13 +354,13 @@ test('loading frame: the connect step shows as running with a timer, then as don
         width: 80,
         height: 20,
         steps: [
-          { label: 'Connecting to The West', status: 'done', startedAt: t0, endedAt: t0 + 1500 },
+          { label: 'Connecting to The West', status: 'done', startedAt, endedAt: startedAt + 1500 },
           { label: 'Server clock', status: 'running', startedAt: Date.now() },
         ],
         keys: 'Esc skip · q quit',
       }),
     );
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((transform) => setTimeout(transform, 50));
     assert.match(plain(), /✔ Connecting to The West\s+1\.5 s/);
     assert.match(plain(), /Server clock/);
   } finally {

@@ -7,21 +7,23 @@ export const CACHE_TTL_MS = 12 * 3600_000;
 
 const fileFor = (name: string) => join(CONFIG_DIR, 'cache', `${name.replace(/[^\w.-]/g, '_')}.json`);
 
-/** Cached value if younger than `ttlMs`, else `fetch()` (stored on success). `fresh` skips the cache. */
-export async function cachedJson<T>(
+/** Cached value if younger than `ttlMs`, else `load()` (stored on success). `fresh` skips the cache. */
+export async function cachedJson<Value>(
   name: string,
-  fetch: () => Promise<T>,
+  load: () => Promise<Value>,
   opts: { ttlMs?: number; fresh?: boolean } = {},
-): Promise<T> {
+): Promise<Value> {
   const file = fileFor(name);
-  if (!opts.fresh && existsSync(file) && Date.now() - statSync(file).mtimeMs < (opts.ttlMs ?? CACHE_TTL_MS)) {
+  const ttlMs = opts.ttlMs ?? CACHE_TTL_MS;
+  const freshOnDisk = !opts.fresh && existsSync(file) && Date.now() - statSync(file).mtimeMs < ttlMs;
+  if (freshOnDisk) {
     try {
-      return JSON.parse(readFileSync(file, 'utf8')) as T;
+      return JSON.parse(readFileSync(file, 'utf8')) as Value;
     } catch {
       /* refetch */
     }
   }
-  const value = await fetch();
+  const value = await load();
   mkdirSync(join(CONFIG_DIR, 'cache'), { recursive: true, mode: 0o700 });
   writeFileSync(file, JSON.stringify(value), { mode: 0o600 });
   return value;

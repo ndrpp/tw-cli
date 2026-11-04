@@ -51,12 +51,12 @@ export function parseDuelData(json: JsonObject): DuelData {
   const npcs = obj(json.npcs);
   const delay = Number(npcs.arrival_delay) || 0;
   return {
-    npcs: objs(npcs.npcs).map((n) => ({
-      id: Number(n.duelnpc_id),
-      name: plainText(n.npc_name),
-      level: Number(n.npc_level) || 0,
-      weaponId: Number(n.weapon_id) || 0,
-      readyIn: Math.max(0, delay - (Number(n.arrival_delta) || 0)),
+    npcs: objs(npcs.npcs).map((jsonValue) => ({
+      id: Number(jsonValue.duelnpc_id),
+      name: plainText(jsonValue.npc_name),
+      level: Number(jsonValue.npc_level) || 0,
+      weaponId: Number(jsonValue.weapon_id) || 0,
+      readyIn: Math.max(0, delay - (Number(jsonValue.arrival_delta) || 0)),
     })),
     difficulty: String(npcs.difficulty ?? ''),
     motivation: Number(json.motivation) || 0,
@@ -64,8 +64,8 @@ export function parseDuelData(json: JsonObject): DuelData {
   };
 }
 
-const num = (v: unknown) =>
-  v === undefined || v === null || v === '' || Number.isNaN(Number(v)) ? undefined : Number(v);
+const num = (value: unknown) =>
+  value === undefined || value === null || value === '' || Number.isNaN(Number(value)) ? undefined : Number(value);
 
 export class DuelApi {
   private client: GameClient;
@@ -83,11 +83,11 @@ export class DuelApi {
   async fightNpc(npcId: number): Promise<NpcDuelResult> {
     const json = await this.client.remoteCall('duel', 'duel_npc', { duelnpc_id: npcId });
     if (json.error) throw new Error(errText(json, 'NPC duel'));
-    const d = obj(json.data);
-    const hit = (p: unknown) => (obj(p).damage ? Number(obj(p).damage) : null);
+    const jsonValue = obj(json.data);
+    const hit = (pick: unknown) => (obj(pick).damage ? Number(obj(pick).damage) : null);
     return {
-      result: plainText(d.duelResult ?? ''),
-      rounds: objs(d.rounds).map((r) => ({ own: hit(r.own), other: hit(r.other) })),
+      result: plainText(jsonValue.duelResult ?? ''),
+      rounds: objs(jsonValue.rounds).map((round) => ({ own: hit(round.own), other: hit(round.other) })),
       energy: num(json.energy),
       health: num(json.health),
       money: num(json.money),
@@ -110,14 +110,14 @@ export class DuelApi {
     if (json.error) throw new Error(errText(json, 'Duel opponents'));
     const ol = obj(json.oplist);
     return {
-      opponents: objs(ol.pclist).map((p) => ({
-        playerId: Number(p.player_id),
-        name: plainText(p.player_name),
-        duelLevel: Number(p.duellevel) || 0,
-        town: plainText(p.town_name ?? ''),
-        x: Number(p.character_x) || 0,
-        y: Number(p.character_y) || 0,
-        allianceId: Number(p.alliance_id) || 0,
+      opponents: objs(ol.pclist).map((jsonValue) => ({
+        playerId: Number(jsonValue.player_id),
+        name: plainText(jsonValue.player_name),
+        duelLevel: Number(jsonValue.duellevel) || 0,
+        town: plainText(jsonValue.town_name ?? ''),
+        x: Number(jsonValue.character_x) || 0,
+        y: Number(jsonValue.character_y) || 0,
+        allianceId: Number(jsonValue.alliance_id) || 0,
       })),
       next: !!ol.next,
     };

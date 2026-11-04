@@ -8,7 +8,7 @@ import type { ScreenProps } from './character.ts';
 import { type FormState, FormView, formKey, formValues, makeForm, wrap } from './form.ts';
 import { scrollWindow, truncate } from './format.ts';
 
-const h = React.createElement;
+const createElement = React.createElement;
 
 type Tab = 'reports' | 'telegrams';
 type Opened = { kind: 'report'; report: Report } | { kind: 'telegram'; telegram: Telegram } | null;
@@ -41,18 +41,18 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
   const idx = Math.min(sel, Math.max(0, count - 1));
   const list = tab === 'reports' ? state.reports : state.telegrams;
 
-  const open = async (i: number) => {
+  const open = async (index: number) => {
     setScroll(0);
     if (tab === 'reports') {
-      const row = reports[i];
+      const row = reports[index];
       if (!row) return;
-      const r = await state.openReport(row);
-      if (r) setOpened({ kind: 'report', report: r });
+      const reportInfo = await state.openReport(row);
+      if (reportInfo) setOpened({ kind: 'report', report: reportInfo });
     } else {
-      const row = telegrams[i];
+      const row = telegrams[index];
       if (!row) return;
-      const t = await state.openTelegram(row.id);
-      if (t) setOpened({ kind: 'telegram', telegram: t });
+      const openedTelegram = await state.openTelegram(row.id);
+      if (openedTelegram) setOpened({ kind: 'telegram', telegram: openedTelegram });
     }
   };
 
@@ -70,23 +70,23 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
   useInput(
     (input, key) => {
       if (form) {
-        const r = formKey(form, input, key);
-        if (r === 'cancel') {
+        const otherForm = formKey(form, input, key);
+        if (otherForm === 'cancel') {
           setForm(null);
           return setPending(null);
         }
-        if (r !== 'submit') return setForm(r);
-        const v = formValues(form);
-        const p = pending;
+        if (otherForm !== 'submit') return setForm(otherForm);
+        const value = formValues(form);
+        const pick = pending;
         setForm(null);
         setPending(null);
-        if (p?.kind === 'reply') {
-          void state.replyTelegram(p.id, v.text ?? '').then(async (ok) => {
+        if (pick?.kind === 'reply') {
+          void state.replyTelegram(pick.id, value.text ?? '').then(async (ok) => {
             if (!ok) return;
-            const t = await state.openTelegram(p.id);
-            if (t) setOpened({ kind: 'telegram', telegram: t });
+            const openedTelegram = await state.openTelegram(pick.id);
+            if (openedTelegram) setOpened({ kind: 'telegram', telegram: openedTelegram });
           });
-        } else if (p?.kind === 'new') void state.sendTelegram(v.to ?? '', v.subject ?? '', v.text ?? '');
+        } else if (pick?.kind === 'new') void state.sendTelegram(value.to ?? '', value.subject ?? '', value.text ?? '');
         return;
       }
       if (confirmDelete) {
@@ -109,12 +109,12 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
         setSel(0);
         setOpened(null);
         setDetail(false);
-        return setTab((t) => (t === 'reports' ? 'telegrams' : 'reports'));
+        return setTab((target) => (target === 'reports' ? 'telegrams' : 'reports'));
       }
       const step = key.pageUp || key.pageDown ? 10 : 1;
       if (detail) {
-        if (key.upArrow || input === 'k' || key.pageUp) return setScroll((s) => Math.max(0, s - step));
-        if (key.downArrow || input === 'j' || key.pageDown) return setScroll((s) => s + step);
+        if (key.upArrow || input === 'k' || key.pageUp) return setScroll((value) => Math.max(0, value - step));
+        if (key.downArrow || input === 'j' || key.pageDown) return setScroll((value) => value + step);
       }
       if (key.upArrow || input === 'k' || key.pageUp) {
         setSel(Math.max(0, idx - step));
@@ -142,10 +142,10 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
         return void (tab === 'reports' ? state.loadReports(page) : state.loadTelegrams(page));
       }
       if (input === 'f' && tab === 'reports') {
-        const i = REPORT_FOLDERS.findIndex((f) => f.key === state.reportFolder);
+        const index = REPORT_FOLDERS.findIndex((value) => value.key === state.reportFolder);
         setSel(0);
         setOpened(null);
-        return void state.loadReports(1, REPORT_FOLDERS[(i + 1) % REPORT_FOLDERS.length]?.key);
+        return void state.loadReports(1, REPORT_FOLDERS[(index + 1) % REPORT_FOLDERS.length]?.key);
       }
       if (input === 'd' && count) return setConfirmDelete(true);
       if (input === 'n') return newTelegram();
@@ -168,15 +168,20 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
   const rightW = width - leftW;
   const listRows = Math.max(2, height - 4);
   const [start, end] = scrollWindow(idx, count, listRows);
-  const tabs = (['reports', 'telegrams'] as Tab[]).map((t) => {
-    const unread = t === 'reports' ? state.unread.reports : state.unread.messages;
-    return h(
+  const tabs = (['reports', 'telegrams'] as Tab[]).map((target) => {
+    const unread = target === 'reports' ? state.unread.reports : state.unread.messages;
+    return createElement(
       Text,
-      defined({ key: t, inverse: tab === t, bold: tab === t, color: tab === t ? 'cyan' : undefined }),
-      ` ${t === 'reports' ? 'Reports' : 'Telegrams'}${unread ? ' •' : ''} `,
+      defined({
+        key: target,
+        inverse: tab === target,
+        bold: tab === target,
+        color: tab === target ? 'cyan' : undefined,
+      }),
+      ` ${target === 'reports' ? 'Reports' : 'Telegrams'}${unread ? ' •' : ''} `,
     );
   });
-  const folder = REPORT_FOLDERS.find((f) => f.key === state.reportFolder)?.label ?? 'All';
+  const folder = REPORT_FOLDERS.find((value) => value.key === state.reportFolder)?.label ?? 'All';
   const sub =
     tab === 'reports'
       ? `${folder} (f) · page ${list?.page ?? 1}/${list?.pages ?? 1} (< >)`
@@ -185,27 +190,31 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
     tab === 'reports'
       ? reports
           .slice(start, end)
-          .map((r, i) =>
-            h(
+          .map((reportInfo, index) =>
+            createElement(
               Text,
-              { key: r.id, inverse: start + i === idx, bold: !r.read, wrap: 'truncate' },
-              `${r.read ? ' ' : '•'} ${truncate(r.title, leftW - 19)} `,
-              h(Text, { dimColor: true }, truncate(r.date, 12)),
+              { key: reportInfo.id, inverse: start + index === idx, bold: !reportInfo.read, wrap: 'truncate' },
+              `${reportInfo.read ? ' ' : '•'} ${truncate(reportInfo.title, leftW - 19)} `,
+              createElement(Text, { dimColor: true }, truncate(reportInfo.date, 12)),
             ),
           )
       : telegrams
           .slice(start, end)
-          .map((t, i) =>
-            h(
+          .map((target, index) =>
+            createElement(
               Text,
-              { key: t.id, inverse: start + i === idx, bold: t.unread, wrap: 'truncate' },
-              `${t.unread ? '•' : t.answered ? '↩' : ' '} ${truncate(t.subject, leftW - 30)} `,
-              h(Text, { color: 'magenta' }, truncate(t.partners.length ? t.partners.join(', ') : 'System', 12)),
+              { key: target.id, inverse: start + index === idx, bold: target.unread, wrap: 'truncate' },
+              `${target.unread ? '•' : target.answered ? '↩' : ' '} ${truncate(target.subject, leftW - 30)} `,
+              createElement(
+                Text,
+                { color: 'magenta' },
+                truncate(target.partners.length ? target.partners.join(', ') : 'System', 12),
+              ),
               ' ',
-              h(Text, { dimColor: true }, truncate(t.date, 10)),
+              createElement(Text, { dimColor: true }, truncate(target.date, 10)),
             ),
           );
-  const left = h(
+  const left = createElement(
     Box,
     {
       flexDirection: 'column',
@@ -215,52 +224,62 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
       height,
       paddingX: 1,
     },
-    h(Text, { wrap: 'truncate' }, ...tabs, h(Text, { dimColor: true }, ' Tab')),
-    h(Text, { dimColor: true, wrap: 'truncate' }, sub),
+    createElement(Text, { wrap: 'truncate' }, ...tabs, createElement(Text, { dimColor: true }, ' Tab')),
+    createElement(Text, { dimColor: true, wrap: 'truncate' }, sub),
     ...rows,
-    count === 0 ? h(Text, { dimColor: true }, list ? 'Nothing here.' : 'Loading…') : null,
+    count === 0 ? createElement(Text, { dimColor: true }, list ? 'Nothing here.' : 'Loading…') : null,
   );
 
   const dw = Math.max(10, rightW - 4);
   let lines: React.ReactNode[] = [];
   let maxTop = 0;
-  if (form) lines = [h(FormView, { key: 'form', form, width: rightW - 2 })];
+  if (form) lines = [createElement(FormView, { key: 'form', form, width: rightW - 2 })];
   else if (opened?.kind === 'report') {
-    const r = opened.report;
-    const body = wrap(r.text, dw);
+    const reportInfo = opened.report;
+    const body = wrap(reportInfo.text, dw);
     const room = Math.max(1, height - 6);
     maxTop = Math.max(0, body.length - room);
     const top = Math.min(scroll, maxTop);
     lines = [
-      h(Text, { key: 't', bold: true, wrap: 'truncate' }, r.title),
-      h(Text, { key: 'd', dimColor: true, wrap: 'truncate' }, `${r.date}${r.type ? ` · ${r.type}` : ''}`),
-      ...body.slice(top, top + room).map((l, i) => h(Text, { key: i }, l || ' ')),
-    ];
-  } else if (opened?.kind === 'telegram') {
-    const t = opened.telegram;
-    const body = t.posts.flatMap((p) => [`▸ ${p.from} · ${p.date}`, ...wrap(p.text, dw), '']);
-    const room = Math.max(1, height - 6);
-    maxTop = Math.max(0, body.length - room);
-    const top = Math.min(scroll, maxTop);
-    lines = [
-      h(Text, { key: 't', bold: true, wrap: 'truncate' }, t.subject),
-      h(
+      createElement(Text, { key: 't', bold: true, wrap: 'truncate' }, reportInfo.title),
+      createElement(
         Text,
         { key: 'd', dimColor: true, wrap: 'truncate' },
-        `${t.posts.length} post(s)${t.pages > 1 ? ` · page ${t.page + 1}/${t.pages}` : ''}`,
+        `${reportInfo.date}${reportInfo.type ? ` · ${reportInfo.type}` : ''}`,
+      ),
+      ...body.slice(top, top + room).map((text, index) => createElement(Text, { key: index }, text || ' ')),
+    ];
+  } else if (opened?.kind === 'telegram') {
+    const openedTelegram = opened.telegram;
+    const body = openedTelegram.posts.flatMap((pick) => [`▸ ${pick.from} · ${pick.date}`, ...wrap(pick.text, dw), '']);
+    const room = Math.max(1, height - 6);
+    maxTop = Math.max(0, body.length - room);
+    const top = Math.min(scroll, maxTop);
+    lines = [
+      createElement(Text, { key: 't', bold: true, wrap: 'truncate' }, openedTelegram.subject),
+      createElement(
+        Text,
+        { key: 'd', dimColor: true, wrap: 'truncate' },
+        `${openedTelegram.posts.length} post(s)${openedTelegram.pages > 1 ? ` · page ${openedTelegram.page + 1}/${openedTelegram.pages}` : ''}`,
       ),
       ...body
         .slice(top, top + room)
-        .map((l, i) => h(Text, defined({ key: i, color: l.startsWith('▸ ') ? 'magenta' : undefined }), l || ' ')),
+        .map((text, index) =>
+          createElement(
+            Text,
+            defined({ key: index, color: text.startsWith('▸ ') ? 'magenta' : undefined }),
+            text || ' ',
+          ),
+        ),
     ];
   } else {
     const cur = tab === 'reports' ? reports[idx] : null;
-    lines = [h(Text, { key: 'h', dimColor: true }, count ? 'Enter: read' : '')];
+    lines = [createElement(Text, { key: 'h', dimColor: true }, count ? 'Enter: read' : '')];
     if (cur?.summary)
       lines.push(
         ...wrap(cur.summary, dw)
           .slice(0, height - 6)
-          .map((l, i) => h(Text, { key: `s${i}`, dimColor: true }, l)),
+          .map((text, index) => createElement(Text, { key: `s${index}`, dimColor: true }, text)),
       );
   }
   // Scrolling past the end would leave j/k with nothing to undo.
@@ -268,13 +287,17 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
     if (scroll > maxTop) setScroll(maxTop);
   });
   const keys = confirmDelete
-    ? h(Text, { color: 'red', wrap: 'truncate' }, `Delete this ${tab === 'reports' ? 'report' : 'telegram'}? y / n`)
-    : h(
+    ? createElement(
+        Text,
+        { color: 'red', wrap: 'truncate' },
+        `Delete this ${tab === 'reports' ? 'report' : 'telegram'}? y / n`,
+      )
+    : createElement(
         Text,
         { dimColor: true, wrap: 'truncate' },
         `${detail ? 'j k scroll · h list' : 'Enter read'} · d delete${tab === 'telegrams' ? ' · R reply' : ''} · n new telegram · Esc back`,
       );
-  const right = h(
+  const right = createElement(
     Box,
     {
       flexDirection: 'column',
@@ -285,8 +308,8 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
       paddingX: 1,
     },
     ...lines,
-    h(Box, { flexGrow: 1 }),
+    createElement(Box, { flexGrow: 1 }),
     keys,
   );
-  return h(Box, { width, height }, left, right);
+  return createElement(Box, { width, height }, left, right);
 }

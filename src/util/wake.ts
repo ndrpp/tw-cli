@@ -28,9 +28,9 @@ export class WakeDetector {
 
   /** One check; returns the gap when it counted as a wake (exposed for tests). */
   check(): number | null {
-    const t = this.now();
-    const gap = t - this.last;
-    this.last = t;
+    const time = this.now();
+    const gap = time - this.last;
+    this.last = time;
     if (gap > this.gapMs) {
       this.onWake(gap);
       return gap;

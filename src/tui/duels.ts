@@ -7,7 +7,7 @@ import { defined } from '../util/defined.ts';
 import type { ScreenProps } from './character.ts';
 import { formatDuration, scrollWindow, truncate } from './format.ts';
 
-const h = React.createElement;
+const createElement = React.createElement;
 
 type Row = { kind: 'npc'; npc: DuelNpc } | { kind: 'player'; o: DuelOpponent } | { kind: 'head'; text: string };
 
@@ -25,20 +25,20 @@ export function DuelsScreen({ state, width, height, onCapture, onExit, active = 
     onCapture(!!confirm);
   }, [confirm]);
 
-  const d = state.duels;
+  const duels = state.duels;
   const rows: Row[] = [
-    { kind: 'head', text: `NPC duels${d?.difficulty ? ` · difficulty ${d.difficulty}` : ''}` },
-    ...(d?.npcs ?? []).map((npc) => ({ kind: 'npc', npc }) as Row),
+    { kind: 'head', text: `NPC duels${duels?.difficulty ? ` · difficulty ${duels.difficulty}` : ''}` },
+    ...(duels?.npcs ?? []).map((npc) => ({ kind: 'npc', npc }) as Row),
     { kind: 'head', text: 'Players in range (2 h walk)' },
-    ...state.duelOpponents.map((o) => ({ kind: 'player', o }) as Row),
+    ...state.duelOpponents.map((opponent) => ({ kind: 'player', o: opponent }) as Row),
   ];
-  const selectable = (i: number) => rows[i] !== undefined && rows[i]?.kind !== 'head';
-  const move = (from: number, dir: 1 | -1) => {
-    for (let j = from; j >= 0 && j < rows.length; j += dir) if (selectable(j)) return j;
+  const selectable = (index: number) => rows[index] !== undefined && rows[index]?.kind !== 'head';
+  const move = (from: number, direction: 1 | -1) => {
+    for (let index = from; index >= 0 && index < rows.length; index += direction) if (selectable(index)) return index;
     return sel;
   };
   const idx = selectable(sel) ? sel : move(Math.min(sel, rows.length - 1), 1);
-  const cur = rows[idx];
+  const selected = rows[idx];
 
   useInput(
     (input, key) => {
@@ -50,20 +50,21 @@ export function DuelsScreen({ state, width, height, onCapture, onExit, active = 
       if (key.escape) return onExit();
       if (key.upArrow || input === 'k') return setSel(move(idx - 1, -1));
       if (key.downArrow || input === 'j') return setSel(move(idx + 1, 1));
-      if (!cur || !key.return) return;
-      if (cur.kind === 'npc') {
-        if (cur.npc.readyIn > 0) return state.error(`${cur.npc.name} is ready in ${formatDuration(cur.npc.readyIn)}.`);
+      if (!selected || !key.return) return;
+      if (selected.kind === 'npc') {
+        if (selected.npc.readyIn > 0)
+          return state.error(`${selected.npc.name} is ready in ${formatDuration(selected.npc.readyIn)}.`);
         return setConfirm({
-          text: `Duel ${cur.npc.name} (level ${cur.npc.level}) now?`,
-          run: () => void state.fightNpc(cur.npc.id),
+          text: `Duel ${selected.npc.name} (level ${selected.npc.level}) now?`,
+          run: () => void state.fightNpc(selected.npc.id),
         });
       }
-      if (cur.kind === 'player') {
-        const c = state.character;
-        const ally = cur.o.allianceId && c.homeTown ? ' (check: may be an alliance member)' : '';
+      if (selected.kind === 'player') {
+        const character = state.character;
+        const allianceHint = selected.o.allianceId && character.homeTown ? ' (check: may be an alliance member)' : '';
         return setConfirm({
-          text: `Queue a duel against ${cur.o.name} (duel level ${cur.o.duelLevel})${ally}?`,
-          run: () => void state.duelPlayer(cur.o),
+          text: `Queue a duel against ${selected.o.name} (duel level ${selected.o.duelLevel})${allianceHint}?`,
+          run: () => void state.duelPlayer(selected.o),
         });
       }
     },
@@ -73,79 +74,89 @@ export function DuelsScreen({ state, width, height, onCapture, onExit, active = 
   const leftW = Math.max(30, Math.floor(width * 0.45));
   const rightW = width - leftW;
   const [start, end] = scrollWindow(idx, rows.length, Math.max(2, height - 4));
-  const left = h(
+  const left = createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width: leftW, height, paddingX: 1 },
-    h(
+    createElement(
       Text,
       { bold: true, wrap: 'truncate' },
-      `Duels · motivation ${Math.round((d?.motivation ?? 0) * 100)}% · NPC ${Math.round((d?.npcMotivation ?? 0) * 100)}%`,
+      `Duels · motivation ${Math.round((duels?.motivation ?? 0) * 100)}% · NPC ${Math.round((duels?.npcMotivation ?? 0) * 100)}%`,
     ),
-    ...rows.slice(start, end).map((r, i) => {
-      const n = start + i;
-      if (r.kind === 'head') return h(Text, { key: `h${n}`, bold: true, color: 'yellow', wrap: 'truncate' }, r.text);
-      if (r.kind === 'npc') {
-        return h(
+    ...rows.slice(start, end).map((result, innerIndex) => {
+      const count = start + innerIndex;
+      if (result.kind === 'head')
+        return createElement(Text, { key: `h${count}`, bold: true, color: 'yellow', wrap: 'truncate' }, result.text);
+      if (result.kind === 'npc') {
+        return createElement(
           Text,
           defined({
-            key: `n${r.npc.id}`,
-            inverse: n === idx,
-            color: r.npc.readyIn > 0 ? 'gray' : undefined,
+            key: `n${result.npc.id}`,
+            inverse: count === idx,
+            color: result.npc.readyIn > 0 ? 'gray' : undefined,
             wrap: 'truncate',
           }),
-          `  ${truncate(r.npc.name, leftW - 22)} L${String(r.npc.level).padStart(3)} ${r.npc.readyIn > 0 ? formatDuration(r.npc.readyIn).padStart(8) : '   ready'}`,
+          `  ${truncate(result.npc.name, leftW - 22)} L${String(result.npc.level).padStart(3)} ${result.npc.readyIn > 0 ? formatDuration(result.npc.readyIn).padStart(8) : '   ready'}`,
         );
       }
-      return h(
+      return createElement(
         Text,
-        { key: `p${r.o.playerId}`, inverse: n === idx, wrap: 'truncate' },
-        `  ${truncate(r.o.name, leftW - 24)} L${String(r.o.duelLevel).padStart(3)} ${formatDuration(state.travelTo(r.o)).padStart(8)}`,
+        { key: `p${result.o.playerId}`, inverse: count === idx, wrap: 'truncate' },
+        `  ${truncate(result.o.name, leftW - 24)} L${String(result.o.duelLevel).padStart(3)} ${formatDuration(state.travelTo(result.o)).padStart(8)}`,
       );
     }),
-    !d ? h(Text, { dimColor: true }, 'Loading…') : null,
+    !duels ? createElement(Text, { dimColor: true }, 'Loading…') : null,
   );
 
   const lines: React.ReactNode[] = [];
-  if (cur?.kind === 'npc') {
-    const w = cur.npc.weaponId ? state.itemName(cur.npc.weaponId) : '—';
+  if (selected?.kind === 'npc') {
+    const weapon = selected.npc.weaponId ? state.itemName(selected.npc.weaponId) : '—';
     lines.push(
-      h(Text, { key: 'n', bold: true }, cur.npc.name),
-      h(Text, { key: 'l' }, `Level ${cur.npc.level} · weapon ${w}`),
+      createElement(Text, { key: 'n', bold: true }, selected.npc.name),
+      createElement(Text, { key: 'l' }, `Level ${selected.npc.level} · weapon ${weapon}`),
     );
-  } else if (cur?.kind === 'player') {
+  } else if (selected?.kind === 'player') {
     lines.push(
-      h(Text, { key: 'n', bold: true }, cur.o.name),
-      h(Text, { key: 'l', wrap: 'truncate' }, `Duel level ${cur.o.duelLevel}${cur.o.town ? ` · ${cur.o.town}` : ''}`),
-      h(
+      createElement(Text, { key: 'n', bold: true }, selected.o.name),
+      createElement(
+        Text,
+        { key: 'l', wrap: 'truncate' },
+        `Duel level ${selected.o.duelLevel}${selected.o.town ? ` · ${selected.o.town}` : ''}`,
+      ),
+      createElement(
         Text,
         { key: 'w', dimColor: true, wrap: 'truncate' },
-        `at ${cur.o.x},${cur.o.y} · ${formatDuration(state.travelTo(cur.o))} walk (the duel task walks there)`,
+        `at ${selected.o.x},${selected.o.y} · ${formatDuration(state.travelTo(selected.o))} walk (the duel task walks there)`,
       ),
     );
   }
   const last = state.lastNpcDuel;
   if (last) {
-    lines.push(h(Text, { key: 'sp' }, ' '), h(Text, { key: 'lr', bold: true }, 'Last NPC duel'));
-    last.rounds.slice(0, Math.max(0, height - 12)).forEach((r, i) => {
+    lines.push(
+      createElement(Text, { key: 'sp' }, ' '),
+      createElement(Text, { key: 'lr', bold: true }, 'Last NPC duel'),
+    );
+    last.rounds.slice(0, Math.max(0, height - 12)).forEach((result, innerIndex) => {
       lines.push(
-        h(
+        createElement(
           Text,
-          { key: `r${i}`, wrap: 'truncate' },
-          `  round ${i + 1}: you ${r.own !== null ? `-${r.own} HP` : 'no hit'} · them ${r.other !== null ? `-${r.other} HP` : 'no hit'}`,
+          { key: `r${innerIndex}`, wrap: 'truncate' },
+          `  round ${innerIndex + 1}: you ${result.own !== null ? `-${result.own} HP` : 'no hit'} · them ${result.other !== null ? `-${result.other} HP` : 'no hit'}`,
         ),
       );
     });
-    lines.push(h(Text, { key: 'res', color: last.died ? 'red' : 'green', wrap: 'wrap' }, last.result || '—'));
+    lines.push(
+      createElement(Text, { key: 'res', color: last.died ? 'red' : 'green', wrap: 'wrap' }, last.result || '—'),
+    );
   }
   const keys = confirm
-    ? h(Text, { color: 'yellow', wrap: 'truncate' }, `${confirm.text} y / n`)
-    : h(Text, { dimColor: true, wrap: 'truncate' }, 'Enter duel · u refresh · Esc back');
-  const right = h(
+    ? createElement(Text, { color: 'yellow', wrap: 'truncate' }, `${confirm.text} y / n`)
+    : createElement(Text, { dimColor: true, wrap: 'truncate' }, 'Enter duel · u refresh · Esc back');
+  const right = createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width: rightW, height, paddingX: 1 },
     ...lines,
-    h(Box, { flexGrow: 1 }),
+    createElement(Box, { flexGrow: 1 }),
     keys,
   );
-  return h(Box, { width, height }, left, right);
+  return createElement(Box, { width, height }, left, right);
 }

@@ -72,7 +72,7 @@ export const baseId = (itemId: number) => Math.floor(itemId / 1000);
 export const upgradeLevel = (itemId: number) => itemId % 1000;
 
 export function slimItem(raw: JsonObject): ItemDef {
-  const b = obj(raw.bonus);
+  const json = obj(raw.bonus);
   return {
     id: baseId(Number(raw.item_id)),
     name: String(raw.name ?? '?'),
@@ -81,14 +81,14 @@ export function slimItem(raw: JsonObject): ItemDef {
     price: Number(raw.price) || 0,
     sell: Number(raw.sell_price) || 0,
     set: strOrNull(raw.set),
-    attributes: nums(b.attributes),
-    skills: nums(b.skills),
-    extra: objs(b.item)
-      .map((i) => String(i.desc ?? ''))
+    attributes: nums(json.attributes),
+    skills: nums(json.skills),
+    extra: objs(json.item)
+      .map((extraItem) => String(extraItem.desc ?? ''))
       .filter(Boolean),
-    bonusItems: arr(b.item).map(parseRawBonus),
-    fortbattle: nums(b.fortbattle),
-    fortbattlesector: nums(b.fortbattlesector),
+    bonusItems: arr(json.item).map(parseRawBonus),
+    fortbattle: nums(json.fortbattle),
+    fortbattlesector: nums(json.fortbattlesector),
     damage: isObj(raw.damage)
       ? { min: Number(raw.damage.damage_min) || 0, max: Number(raw.damage.damage_max) || 0 }
       : null,
@@ -114,19 +114,19 @@ export class ItemCatalog {
   private items = new Map<number, ItemDef>();
 
   static fromRaw(list: JsonObject[]): ItemCatalog {
-    const c = new ItemCatalog();
-    for (const r of list) c.add(slimItem(r));
-    return c;
+    const candidate = new ItemCatalog();
+    for (const json of list) candidate.add(slimItem(json));
+    return candidate;
   }
 
   static fromSlim(list: ItemDef[]): ItemCatalog {
-    const c = new ItemCatalog();
-    for (const d of list) c.add(d);
-    return c;
+    const candidate = new ItemCatalog();
+    for (const item of list) candidate.add(item);
+    return candidate;
   }
 
-  add(d: ItemDef): void {
-    this.items.set(d.id, d);
+  add(item: ItemDef): void {
+    this.items.set(item.id, item);
   }
 
   get size(): number {
@@ -138,15 +138,15 @@ export class ItemCatalog {
   }
 
   name(itemId: number): string {
-    const d = this.get(itemId);
+    const entry = this.get(itemId);
     const up = upgradeLevel(itemId);
-    return (d?.name ?? `item ${itemId}`) + (up ? ` ☆${up}` : '');
+    return (entry?.name ?? `item ${itemId}`) + (up ? ` ☆${up}` : '');
   }
 
   /** Plain item id (`id · 1000`) of the item with this exact name (case-insensitive), if any. */
   findByName(name: string): number | undefined {
-    const n = name.trim().toLowerCase();
-    for (const d of this.items.values()) if (d.name.toLowerCase() === n) return d.id * 1000;
+    const otherName = name.trim().toLowerCase();
+    for (const item of this.items.values()) if (item.name.toLowerCase() === otherName) return item.id * 1000;
     return undefined;
   }
 
@@ -161,30 +161,30 @@ export class ItemCatalog {
 }
 
 /** Stats as the web popup shows them for this instance (upgrade level from the id, per-level values for ctx). */
-export function statsOf(d: ItemDef, itemId: number, ctx: StatContext = {}): ItemStats {
-  return itemStats(d, itemId, ctx);
+export function statsOf(item: ItemDef, itemId: number, ctx: StatContext = {}): ItemStats {
+  return itemStats(item, itemId, ctx);
 }
 
 /** "+ 2 Strength, + 5 Construction, …" — computed like the web when ctx.charLevel is given. */
-export function bonusText(d: ItemDef | undefined, itemId?: number, ctx?: StatContext): string {
-  if (!d) return '';
+export function bonusText(item: ItemDef | undefined, itemId?: number, ctx?: StatContext): string {
+  if (!item) return '';
   if (ctx)
-    return itemStats(d, itemId ?? d.id * 1000, ctx)
-      .lines.map((l) => l.text.trim())
+    return itemStats(item, itemId ?? item.id * 1000, ctx)
+      .lines.map((line) => line.text.trim())
       .join(', ');
   const parts = [
-    ...Object.entries(d.attributes).map(([k, v]) => `+${v} ${NAMES[k] ?? k}`),
-    ...Object.entries(d.skills).map(([k, v]) => `+${v} ${NAMES[k] ?? k}`),
-    ...d.extra,
+    ...Object.entries(item.attributes).map(([entryKey, value]) => `+${value} ${NAMES[entryKey] ?? entryKey}`),
+    ...Object.entries(item.skills).map(([entryKey, value]) => `+${value} ${NAMES[entryKey] ?? entryKey}`),
+    ...item.extra,
   ];
-  if (d.speed) parts.push(`speed ×${d.speed}`);
+  if (item.speed) parts.push(`speed ×${item.speed}`);
   return parts.join(', ');
 }
 
 /** Bonus a single skill gets from this item (fixed values only; attribute bonus counts for its skills). */
-export function skillBonusOf(d: ItemDef | undefined, skill: string, attributeOf: Record<string, string>): number {
-  if (!d) return 0;
-  return (d.skills[skill] ?? 0) + (d.attributes[attributeOf[skill] ?? ''] ?? 0);
+export function skillBonusOf(item: ItemDef | undefined, skill: string, attributeOf: Record<string, string>): number {
+  if (!item) return 0;
+  return (item.skills[skill] ?? 0) + (item.attributes[attributeOf[skill] ?? ''] ?? 0);
 }
 
 /** Bump when ItemDef changes so old slim caches are rebuilt. */
@@ -207,18 +207,18 @@ const cacheFile = (itemsFile: string) => {
  * Static game data file: disk cache for this version, else a local copy from `envVar`, else a GET from
  * the world host like the browser. `slim` keeps only what we use.
  */
-async function loadStatic<T>(
+async function loadStatic<Value>(
   client: GameClient,
   file: string,
   envVar: string,
   label: string,
-  slim: (raw: unknown[]) => T[],
-  log?: (m: string) => void,
-): Promise<T[]> {
+  slim: (raw: unknown[]) => Value[],
+  log?: (message: string) => void,
+): Promise<Value[]> {
   const cached = cacheFile(file);
   if (existsSync(cached) && Date.now() - statSync(cached).mtimeMs < STATIC_CACHE_MS) {
     try {
-      return JSON.parse(readFileSync(cached, 'utf8')) as T[];
+      return JSON.parse(readFileSync(cached, 'utf8')) as Value[];
     } catch {
       /* re-fetch */
     }
@@ -254,7 +254,7 @@ async function loadStatic<T>(
 export async function loadItemCatalog(
   client: GameClient,
   itemsFile: string | undefined,
-  log?: (m: string) => void,
+  log?: (message: string) => void,
 ): Promise<ItemCatalog> {
   const list = await loadStatic(
     client,
@@ -270,25 +270,25 @@ export async function loadItemCatalog(
 export class ItemSetCatalog {
   sets = new Map<string, ItemSetDef>();
   constructor(list: ItemSetDef[] = []) {
-    for (const s of list) this.sets.set(s.key, s);
+    for (const source of list) this.sets.set(source.key, source);
   }
   get(key: string | null | undefined): ItemSetDef | undefined {
     return key ? this.sets.get(key) : undefined;
   }
 }
 
-export const slimItemSet = (r: JsonObject): ItemSetDef => ({
-  key: String(r.key),
-  name: String(r.name ?? r.key),
-  items: arr(r.items).map(Number),
-  bonus: Object.fromEntries(entries(obj(r.bonus)).map(([stage, list]) => [stage, vals(list).map(parseRawBonus)])),
+export const slimItemSet = (json: JsonObject): ItemSetDef => ({
+  key: String(json.key),
+  name: String(json.name ?? json.key),
+  items: arr(json.items).map(Number),
+  bonus: Object.fromEntries(entries(obj(json.bonus)).map(([stage, list]) => [stage, vals(list).map(parseRawBonus)])),
 });
 
 /** Item sets (Game.init.itemSetsFile; local override TW_ITEMSETS_FILE). */
 export async function loadItemSets(
   client: GameClient,
   file: string | undefined,
-  log?: (m: string) => void,
+  log?: (message: string) => void,
 ): Promise<ItemSetCatalog> {
   return new ItemSetCatalog(
     await loadStatic(

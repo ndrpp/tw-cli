@@ -1,5 +1,5 @@
 // The local setup page. Self-contained: inline CSS/JS plus /fingerprint2.js from this server.
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const esc = (text: string) => text.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
 
 export function page({
   token,
@@ -53,12 +53,12 @@ Use the browser you normally play in, so the CLI reports the same device.</p>
 <script>
 (function(){
   var token=${JSON.stringify(token)}, profile=null;
-  var $=function(id){return document.getElementById(id)};
+  var byId=function(id){return document.getElementById(id)};
   function post(path, body){
     return fetch(path+'?t='+encodeURIComponent(token),{method:'POST',headers:{'content-type':'application/json','x-tw-token':token},body:JSON.stringify(body)})
-      .then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||r.status);return j;});});
+      .then(function(response){return response.json().then(function(json){if(!response.ok)throw new Error(json.error||response.status);return json;});});
   }
-  function status(id, cls, text){var el=$(id);el.className='status '+cls;el.textContent=text;}
+  function status(id, className, text){var element=byId(id);element.className='status '+className;element.textContent=text;}
   // Exactly the options game.php passes (fp-script).
   var options={excludeDoNotTrack:true,excludeUserAgent:true,excludeHasLiedOs:true,excludePlugins:true};
   function run(){
@@ -66,27 +66,27 @@ Use the browser you normally play in, so the CLI reports the same device.</p>
       profile={capturedAt:new Date().toISOString(),userAgent:navigator.userAgent,
         languages:Array.from(navigator.languages||[navigator.language]),
         webdriver:navigator.webdriver===undefined?null:navigator.webdriver,fp:fp,components:components};
-      $('fp').textContent=fp+'  ('+components.length+' components)';
-      var saved=$('saved').textContent.trim();
+      byId('fp').textContent=fp+'  ('+components.length+' components)';
+      var saved=byId('saved').textContent.trim();
       if(saved===fp) status('fpStatus','ok','Matches the saved fingerprint.');
       else if(/^[0-9a-f]{32}$/.test(saved)) status('fpStatus','bad','Differs from the saved one. Different browser or settings? Save to replace it.');
-      $('saveFp').disabled=false;
+      byId('saveFp').disabled=false;
     });
   }
   // Like the game: run when the browser is idle.
-  (window.requestIdleCallback||function(f){setTimeout(f,100)})(run);
-  $('saveFp').addEventListener('click',function(){
-    $('saveFp').disabled=true;
-    post('/api/fingerprint',profile).then(function(j){
-      $('saved').textContent=j.fp;status('fpStatus','ok','Saved. The server re-checked the hash.');
-    }).catch(function(e){status('fpStatus','bad',e.message);}).then(function(){$('saveFp').disabled=false;});
+  (window.requestIdleCallback||function(callback){setTimeout(callback,100)})(run);
+  byId('saveFp').addEventListener('click',function(){
+    byId('saveFp').disabled=true;
+    post('/api/fingerprint',profile).then(function(json){
+      byId('saved').textContent=json.fp;status('fpStatus','ok','Saved. The server re-checked the hash.');
+    }).catch(function(error){status('fpStatus','bad',error.message);}).then(function(){byId('saveFp').disabled=false;});
   });
-  $('login').addEventListener('submit',function(ev){
-    ev.preventDefault();$('loginBtn').disabled=true;status('loginStatus','mut','Logging in… (requests are paced, this takes a few seconds)');
-    post('/api/login',{name:$('name').value,password:$('password').value}).then(function(j){
-      $('password').value='';
-      status('loginStatus','ok','Logged in as '+j.name+' (level '+j.level+') on '+j.world+'. Session saved. You can close this page and run: tw');
-    }).catch(function(e){status('loginStatus','bad',e.message);}).then(function(){$('loginBtn').disabled=false;});
+  byId('login').addEventListener('submit',function(event){
+    event.preventDefault();byId('loginBtn').disabled=true;status('loginStatus','mut','Logging in… (requests are paced, this takes a few seconds)');
+    post('/api/login',{name:byId('name').value,password:byId('password').value}).then(function(json){
+      byId('password').value='';
+      status('loginStatus','ok','Logged in as '+json.name+' (level '+json.level+') on '+json.world+'. Session saved. You can close this page and run: tw');
+    }).catch(function(error){status('loginStatus','bad',error.message);}).then(function(){byId('loginBtn').disabled=false;});
   });
 })();
 </script></body></html>`;

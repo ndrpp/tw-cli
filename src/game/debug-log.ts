@@ -24,25 +24,32 @@ const SIM_WITH_DATA = 50;
 export const DEBUG_RETENTION_MS = 24 * 3600_000;
 
 /** Plain data for JSON: Maps → objects, Sets → arrays, Infinity / bigint → strings; only true cycles are cut. */
-function plain(x: unknown, ancestors: Set<object>): unknown {
-  if (typeof x === 'number') return Number.isFinite(x) ? x : String(x);
-  if (typeof x === 'bigint') return String(x);
-  if (!x || typeof x !== 'object') return x;
-  if (ancestors.has(x)) return '[cycle]';
-  ancestors.add(x);
+function plain(xCoord: unknown, ancestors: Set<object>): unknown {
+  if (typeof xCoord === 'number') return Number.isFinite(xCoord) ? xCoord : String(xCoord);
+  if (typeof xCoord === 'bigint') return String(xCoord);
+  if (!xCoord || typeof xCoord !== 'object') return xCoord;
+  if (ancestors.has(xCoord)) return '[cycle]';
+  ancestors.add(xCoord);
   try {
-    if (typeof (x as { toJSON?: unknown }).toJSON === 'function') return (x as { toJSON(): unknown }).toJSON();
-    if (x instanceof Map) return Object.fromEntries([...x].map(([k, v]) => [String(k), plain(v, ancestors)]));
-    if (x instanceof Set || Array.isArray(x)) return [...x].map((v) => plain(v, ancestors));
-    return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, plain(v, ancestors)]));
+    if (typeof (xCoord as { toJSON?: unknown }).toJSON === 'function')
+      return (xCoord as { toJSON(): unknown }).toJSON();
+    if (xCoord instanceof Map)
+      return Object.fromEntries(
+        [...xCoord].map(([entryKey, currentValue]) => [String(entryKey), plain(currentValue, ancestors)]),
+      );
+    if (xCoord instanceof Set || Array.isArray(xCoord))
+      return [...xCoord].map((currentValue) => plain(currentValue, ancestors));
+    return Object.fromEntries(
+      Object.entries(xCoord).map(([entryKey, currentValue]) => [entryKey, plain(currentValue, ancestors)]),
+    );
   } finally {
-    ancestors.delete(x);
+    ancestors.delete(xCoord);
   }
 }
 
 /** JSON that survives Maps, Sets, cycles and Infinity; an object seen twice (not a cycle) is written twice. */
-export function debugJson(v: unknown, indent?: number): string {
-  return JSON.stringify(plain(v, new Set()), null, indent) ?? 'undefined';
+export function debugJson(currentValue: unknown, indent?: number): string {
+  return JSON.stringify(plain(currentValue, new Set()), null, indent) ?? 'undefined';
 }
 
 export class DebugLog {
@@ -60,18 +67,18 @@ export class DebugLog {
   }
 
   add(cat: DebugCategory, title: string, data?: unknown): void {
-    const e: DebugEntry = { id: this.nextId++, at: Date.now(), cat, title, data };
-    this.entries.push(e);
+    const currentTime: DebugEntry = { id: this.nextId++, at: Date.now(), cat, title, data };
+    this.entries.push(currentTime);
     if (this.entries.length > MAX_ENTRIES) this.entries.splice(0, this.entries.length - MAX_ENTRIES);
-    if (this.dir) this.write(e);
+    if (this.dir) this.write(currentTime);
     if (cat === 'sim') {
-      let n = 0;
-      for (let i = this.entries.length - 1; i >= 0; i--) {
-        const x = this.entries[i];
-        if (!x) continue;
-        if (x.cat !== 'sim' || x.data === undefined || typeof x.data === 'string') continue;
-        if (++n > SIM_WITH_DATA)
-          x.data = this.dir
+      let count = 0;
+      for (let index = this.entries.length - 1; index >= 0; index--) {
+        const entry = this.entries[index];
+        if (!entry) continue;
+        if (entry.cat !== 'sim' || entry.data === undefined || typeof entry.data === 'string') continue;
+        if (++count > SIM_WITH_DATA)
+          entry.data = this.dir
             ? '(dropped from memory; full data in the debug file of that hour)'
             : '(dropped from memory)';
       }
@@ -97,17 +104,17 @@ export class DebugLog {
     return this.dir ? join(this.dir, `${new Date().toISOString().slice(0, 13)}.jsonl`) : null;
   }
 
-  private write(e: DebugEntry): void {
+  private write(entry: DebugEntry): void {
     const dir = this.dir;
     if (!dir) return;
     try {
-      const hour = new Date(e.at).toISOString().slice(0, 13);
+      const hour = new Date(entry.at).toISOString().slice(0, 13);
       if (hour !== this.hour) {
         this.hour = hour;
         mkdirSync(dir, { recursive: true, mode: 0o700 });
-        pruneDebugDir(dir, e.at);
+        pruneDebugDir(dir, entry.at);
       }
-      appendFileSync(join(dir, `${hour}.jsonl`), `${debugJson({ ...e, at: new Date(e.at).toISOString() })}\n`, {
+      appendFileSync(join(dir, `${hour}.jsonl`), `${debugJson({ ...entry, at: new Date(entry.at).toISOString() })}\n`, {
         mode: 0o600,
       });
     } catch {
@@ -119,39 +126,39 @@ export class DebugLog {
 /** Deletes hourly files whose hour ended more than the retention ago. */
 export function pruneDebugDir(dir: string, now = Date.now()): string[] {
   const gone: string[] = [];
-  for (const f of readdirSync(dir)) {
-    const m = f.match(/^(\d{4}-\d{2}-\d{2}T\d{2})\.jsonl$/);
-    if (!m) continue;
-    const hourEnd = Date.parse(`${m[1]}:00:00Z`) + 3600_000;
+  for (const text of readdirSync(dir)) {
+    const match = text.match(/^(\d{4}-\d{2}-\d{2}T\d{2})\.jsonl$/);
+    if (!match) continue;
+    const hourEnd = Date.parse(`${match[1]}:00:00Z`) + 3600_000;
     if (now - hourEnd > DEBUG_RETENTION_MS) {
-      unlinkSync(join(dir, f));
-      gone.push(f);
+      unlinkSync(join(dir, text));
+      gone.push(text);
     }
   }
   return gone;
 }
 
 /** Field-by-field differences between two flat snapshots: [from, to], or { added, removed } for lists. */
-export function diffSnapshots(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
+export function diffSnapshots(from: Record<string, unknown>, to: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
-    const x = a[k];
-    const y = b[k];
-    if (debugJson(x) === debugJson(y)) continue;
-    if (Array.isArray(x) && Array.isArray(y)) {
-      const xs = x.map((v) => debugJson(v));
-      const ys = y.map((v) => debugJson(v));
-      out[k] = {
-        added: y.filter((_, i) => {
-          const value = ys[i];
-          return value === undefined || !xs.includes(value);
+  for (const key of new Set([...Object.keys(from), ...Object.keys(to)])) {
+    const fromValue = from[key];
+    const toValue = to[key];
+    if (debugJson(fromValue) === debugJson(toValue)) continue;
+    if (Array.isArray(fromValue) && Array.isArray(toValue)) {
+      const fromItems = fromValue.map((currentValue) => debugJson(currentValue));
+      const toItems = toValue.map((currentValue) => debugJson(currentValue));
+      out[key] = {
+        added: toValue.filter((_, index) => {
+          const value = toItems[index];
+          return value === undefined || !fromItems.includes(value);
         }),
-        removed: x.filter((_, i) => {
-          const value = xs[i];
-          return value === undefined || !ys.includes(value);
+        removed: fromValue.filter((_, index) => {
+          const value = fromItems[index];
+          return value === undefined || !toItems.includes(value);
         }),
       };
-    } else out[k] = [x, y];
+    } else out[key] = [fromValue, toValue];
   }
   return out;
 }

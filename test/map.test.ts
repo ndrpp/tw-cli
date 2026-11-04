@@ -77,50 +77,54 @@ afterEach(() => {
 });
 
 function bootstrap(): Bootstrap {
-  const b: any = parseBootstrap(readFileSync(GAME_PHP, 'utf8'));
-  const shift = Math.floor(Date.now() / 1000) - b.game!.sincepoch;
-  b.game!.sincepoch += shift;
-  for (const t of b.character!.taskQueue) {
-    t.date_start += shift;
-    t.date_done += shift;
+  const second: any = parseBootstrap(readFileSync(GAME_PHP, 'utf8'));
+  const shift = Math.floor(Date.now() / 1000) - second.game!.sincepoch;
+  second.game!.sincepoch += shift;
+  for (const target of second.character!.taskQueue) {
+    target.date_start += shift;
+    target.date_done += shift;
   }
-  b.premium = { premiumBoni: { automation: { expiration: Math.floor(Date.now() / 1000) + 3600 } } };
-  return b;
+  second.premium = { premiumBoni: { automation: { expiration: Math.floor(Date.now() / 1000) + 3600 } } };
+  return second;
 }
 
 async function makeState(): Promise<GameState> {
-  const b = bootstrap();
+  const second = bootstrap();
   const client = new GameClient({
     worldUrl: WORLD,
-    h: b.h,
+    h: second.h,
     jar: new CookieJar(),
     identity: { userAgent: 'UA', acceptLanguage: 'en' },
     policy: FAST,
   });
-  const st = new GameState({ client, bootstrap: b }, async () => ({ client, bootstrap: b }));
+  const st = new GameState({ client, bootstrap: second }, async () => ({ client, bootstrap: second }));
   await st.loadJobs();
   return st;
 }
 
 test('minimap (live shape) parses towns, forts, job groups, counties', () => {
-  const w = WorldMap.fromMinimap(obj(JSON.parse(fixture('minimap'))));
-  assert.equal(w.towns.length, 3);
-  assert.ok(w.towns.some((t) => t.name === 'Slobozia' && t.id === 1421));
-  assert.ok(w.towns.some((t) => t.name === null)); // empty town site
-  assert.equal(w.forts.length >= 1, true);
-  assert.ok(w.forts.some((f) => f.name && f.name !== 'Fort site'));
-  assert.ok(w.jobGroups.get(12)!.length > 10);
-  assert.equal(w.counties.length, 15);
-  assert.equal(w.countyAt({ x: 29888, y: 15564 })?.id, 12);
-  assert.equal(w.fair, null);
+  const width = WorldMap.fromMinimap(obj(JSON.parse(fixture('minimap'))));
+  assert.equal(width.towns.length, 3);
+  assert.ok(width.towns.some((town) => town.name === 'Slobozia' && town.id === 1421));
+  assert.ok(width.towns.some((town) => town.name === null)); // empty town site
+  assert.equal(width.forts.length >= 1, true);
+  assert.ok(width.forts.some((value) => value.name && value.name !== 'Fort site'));
+  assert.ok(width.jobGroups.get(12)!.length > 10);
+  assert.equal(width.counties.length, 15);
+  assert.equal(width.countyAt({ x: 29888, y: 15564 })?.id, 12);
+  assert.equal(width.fair, null);
 });
 
 test('tile data (live shape) yields the silver job and crowds', () => {
-  const t = new TileCache();
-  t.ingest(obj(JSON.parse(fixture('complete_data'))), [[116, 60]]);
-  const silver = [...t.specialJobs.values()];
+  const target = new TileCache();
+  target.ingest(obj(JSON.parse(fixture('complete_data'))), [[116, 60]]);
+  const silver = [...target.specialJobs.values()];
   assert.deepEqual(silver, [{ x: 30380, y: 16308, jobId: 5, groupId: 7, gold: false, silver: true }]);
-  assert.ok([...t.crowds.values()].some((c) => c.x === 29888 && c.y === 15564 && c.count === 2));
+  assert.ok(
+    [...target.crowds.values()].some(
+      (candidate) => candidate.x === 29888 && candidate.y === 15564 && candidate.count === 2,
+    ),
+  );
 });
 
 const TILE_SAMPLE = fileURLToPath(
@@ -130,29 +134,29 @@ test('quest giver names come from tile quests (saved sample)', {
   skip: !existsSync(TILE_SAMPLE) && 'saved tile sample missing',
 }, () => {
   const sample = obj(JSON.parse(readFileSync(TILE_SAMPLE, 'utf8')));
-  const t = new TileCache();
-  t.ingest(sample, [[109, 65]]);
-  const q = t.questGivers.get('28002,16658');
-  assert.ok(q);
-  assert.ok(q.names.includes("Waupee's Indian village"), q.names.join('|'));
-  assert.ok(!q.names.includes('Chief Mistawasis')); // visible:false employers are hidden, as in the client
+  const target = new TileCache();
+  target.ingest(sample, [[109, 65]]);
+  const entry = target.questGivers.get('28002,16658');
+  assert.ok(entry);
+  assert.ok(entry.names.includes("Waupee's Indian village"), entry.names.join('|'));
+  assert.ok(!entry.names.includes('Chief Mistawasis')); // visible:false employers are hidden, as in the client
 });
 
 test('map grid places you, home, queue and county border', { skip: !HAVE_GAME && 'game.php missing' }, async () => {
   const st = await makeState();
   const view = { ...st.character.position, zoom: 128 };
-  const grid = buildGrid(st, view, 61, 21).map((row) => row.map((s) => s.text).join(''));
+  const grid = buildGrid(st, view, 61, 21).map((row) => row.map((source) => source.text).join(''));
   assert.equal(grid[10]![30], '@'); // cursor cell is the centre and holds you
   assert.ok(
-    grid.some((r) => r.includes('H')),
+    grid.some((text) => text.includes('H')),
     'home town visible',
   );
   assert.ok(
-    grid.some((r) => r.includes('┊') || r.includes('┄')),
+    grid.some((text) => text.includes('┊') || text.includes('┄')),
     'county border visible',
   );
   assert.ok(
-    grid.some((r) => r.includes('j')),
+    grid.some((text) => text.includes('j')),
     'job locations visible',
   );
   const rect = cursorRect(view, 61, 21);
@@ -165,7 +169,11 @@ test('entries under the cursor list jobs there; find jumps to nearest job/town',
   const st = await makeState();
   const pigs = st.world.jobGroups.get(12)![0]!;
   const entries = entriesAt(st, { ...pigs, zoom: 32 }, 41, 11);
-  assert.ok(entries.some((e) => e.kind === 'job' && e.option.job.name === 'Tending pigs' && e.option.at === pigs));
+  assert.ok(
+    entries.some(
+      (entry) => entry.kind === 'job' && entry.option.job.name === 'Tending pigs' && entry.option.at === pigs,
+    ),
+  );
   const hit = findNearest(st, 'wroc', st.character.position)!;
   assert.equal(hit.label, 'Wrocław');
 });
@@ -175,11 +183,11 @@ test('points of interest include towns, fort, quest givers, silver job, markets;
 }, async () => {
   const st = await makeState();
   st.tiles.ingest(obj(JSON.parse(fixture('complete_data'))), [[116, 60]]);
-  const kinds = new Set(collectPois(st).map((p) => p.kind));
-  for (const k of ['me', 'queue', 'home', 'town', 'fort', 'quest', 'silver', 'market', 'friend', 'crowd'] as const)
-    assert.ok(kinds.has(k), k);
+  const kinds = new Set(collectPois(st).map((pick) => pick.kind));
+  for (const key of ['me', 'queue', 'home', 'town', 'fort', 'quest', 'silver', 'market', 'friend', 'crowd'] as const)
+    assert.ok(kinds.has(key), key);
   const near = poisNear(st, st.character.position);
-  assert.ok(near.every((p, i) => i === 0 || near[i - 1]!.dist <= p.dist));
+  assert.ok(near.every((pick, index) => index === 0 || near[index - 1]!.dist <= pick.dist));
   assert.equal(poisNear(st, st.character.position, 'silver')[0]!.label, `Silver job: ${st.catalog.get(5)!.name}`);
 });
 
@@ -187,12 +195,12 @@ test('walk to town sends TaskWalk(unitId, "town") like Guidepost.start_walk', {
   skip: !HAVE_GAME && 'game.php missing',
 }, async () => {
   const st = await makeState();
-  const n = st.queue.length;
-  await st.walkToTown(st.world.towns.find((t) => t.name === 'Wrocław')!);
-  const add = calls.find((c) => c.url.includes('action=add'))!;
+  const count = st.queue.length;
+  await st.walkToTown(st.world.towns.find((town) => town.name === 'Wrocław')!);
+  const add = calls.find((candidate) => candidate.url.includes('action=add'))!;
   assert.equal(
     decodeURIComponent(add.body),
-    `tasks[${n}][unitId]=1458&tasks[${n}][type]=town&tasks[${n}][x]=&tasks[${n}][y]=&tasks[${n}][taskType]=walk`,
+    `tasks[${count}][unitId]=1458&tasks[${count}][type]=town&tasks[${count}][x]=&tasks[${count}][y]=&tasks[${count}][taskType]=walk`,
   );
 });
 
@@ -204,19 +212,19 @@ test('TUI: ? help, m map, p points of interest, map select + start job', {
   Object.assign(stdout, { columns: 120, rows: 36, isTTY: true });
   const stdin = new PassThrough() as PassThrough & {
     isTTY: boolean;
-    setRawMode: (m: boolean) => void;
+    setRawMode: (flag: boolean) => void;
     ref: () => void;
     unref: () => void;
   };
   Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
   let out = '';
-  stdout.on('data', (d) => (out += d.toString()));
+  stdout.on('data', (data) => (out += data.toString()));
   const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
-  const settle = () => new Promise((r) => setTimeout(r, 120));
+  const settle = () => new Promise((transform) => setTimeout(transform, 120));
   const press = async (...keys: string[]) => {
-    for (const k of keys) {
+    for (const key of keys) {
       out = '';
-      stdin.write(k);
+      stdin.write(key);
       await settle();
     }
   };
@@ -243,18 +251,18 @@ test('TUI: ? help, m map, p points of interest, map select + start job', {
     await press('g', 'p');
     assert.match(plain(), /Points of interest/);
     await press('w', 'r', 'o', 'c', '\r');
-    const wroclaw = st.world.towns.find((t) => t.name === 'Wrocław')!;
+    const wroclaw = st.world.towns.find((town) => town.name === 'Wrocław')!;
     assert.match(plain(), new RegExp(`cursor ${wroclaw.x - (wroclaw.x % 128)}|Wrocław`));
 
     // Find Tending pigs with /, select it under the cursor and start the long version.
     await press('/', 'p', 'i', 'g', 's', '\r', '+', '+');
     await press('\r');
     assert.match(plain(), /Tending pigs/);
-    const before = calls.filter((c) => c.url.includes('action=add')).length;
+    const before = calls.filter((candidate) => candidate.url.includes('action=add')).length;
     // Move selection to the Tending pigs entry, then start.
-    for (let i = 0; i < 10 && !/\x1b\[7m[^\x1b]*Tending pigs/.test(out); i++) await press('j');
+    for (let index = 0; index < 10 && !/\x1b\[7m[^\x1b]*Tending pigs/.test(out); index++) await press('j');
     await press('3');
-    const adds = calls.filter((c) => c.url.includes('action=add'));
+    const adds = calls.filter((candidate) => candidate.url.includes('action=add'));
     assert.equal(adds.length, before + 1);
     assert.match(decodeURIComponent(adds.at(-1)!.body), /\[jobId\]=1&.*\[duration\]=3600/);
   } finally {

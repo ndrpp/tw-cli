@@ -2,13 +2,17 @@
 
 import { Box, Text, useInput } from 'ink';
 import React, { useEffect, useState } from 'react';
-import type { TownBuilding } from '../game/townhall.ts';
+import type { BuildDuration, TownBuilding } from '../game/townhall.ts';
 import { defined } from '../util/defined.ts';
 import type { ScreenProps } from './character.ts';
 import { type FormState, FormView, formKey, formValues, makeForm } from './form.ts';
 import { bar, formatDuration, scrollWindow, truncate } from './format.ts';
 
-const h = React.createElement;
+const createElement = React.createElement;
+
+const durationLabel = (duration: BuildDuration): string => duration.formatted || formatDuration(duration.seconds);
+const durationFor = (durations: readonly BuildDuration[], label: string): BuildDuration | undefined =>
+  durations.find((duration) => durationLabel(duration) === label);
 
 export function TownScreen({ state, width, height, onCapture, onExit, active = true }: ScreenProps) {
   const [sel, setSel] = useState(0);
@@ -26,19 +30,21 @@ export function TownScreen({ state, width, height, onCapture, onExit, active = t
     onCapture(!!form);
   }, [form, onCapture]);
 
-  const openConstruction = (b: TownBuilding) => {
-    void state.openConstruction(b).then((c) => {
-      if (!c) return;
-      const labels = c.durations.map((d) => d.formatted || formatDuration(d.seconds));
-      if (!labels.length) return state.error(`${c.name} has no construction durations.`);
-      const def = c.durations.find((d) => d.seconds === c.defaultDuration) ?? c.durations[0];
-      if (!def) return;
-      const defLabel = def.formatted || formatDuration(def.seconds);
+  const openConstruction = (buildingB: TownBuilding) => {
+    void state.openConstruction(buildingB).then((candidate) => {
+      if (!candidate) return;
+      const labels = candidate.durations.map(durationLabel);
+      if (!labels.length) return state.error(`${candidate.name} has no construction durations.`);
+      const defaultDuration =
+        candidate.durations.find((duration) => duration.seconds === candidate.defaultDuration) ??
+        candidate.durations[0];
+      if (!defaultDuration) return;
+      const defaultLabel = durationLabel(defaultDuration);
       setForm(
         makeForm(
-          `Construction: ${c.name}`,
+          `Construction: ${candidate.name}`,
           [
-            { key: 'duration', label: 'Duration', value: defLabel, kind: 'choice', options: labels },
+            { key: 'duration', label: 'Duration', value: defaultLabel, kind: 'choice', options: labels },
             {
               key: 'paid',
               label: 'Paid by',
@@ -47,9 +53,9 @@ export function TownScreen({ state, width, height, onCapture, onExit, active = t
               options: ['Town treasury', 'Private treasury'],
             },
           ],
-          (v) => {
-            const d = c.durations.find((x) => (x.formatted || formatDuration(x.seconds)) === v.duration) ?? def;
-            return `${d.xpMin}-${d.xpMax} XP · ${d.formatted} · ${v.paid?.startsWith('Town') ? `town treasury $${c.deposit}` : 'your cash / bank'}`;
+          (values) => {
+            const duration = durationFor(candidate.durations, values.duration ?? '') ?? defaultDuration;
+            return `${duration.xpMin}-${duration.xpMax} XP · ${duration.formatted} · ${values.paid?.startsWith('Town') ? `town treasury $${candidate.deposit}` : 'your cash / bank'}`;
           },
         ),
       );
@@ -59,15 +65,14 @@ export function TownScreen({ state, width, height, onCapture, onExit, active = t
   useInput(
     (input, key) => {
       if (form && construction) {
-        const r = formKey(form, input, key);
-        if (r === 'cancel') return setForm(null);
-        if (r !== 'submit') return setForm(r);
-        const v = formValues(form);
-        const d =
-          construction.durations.find((x) => (x.formatted || formatDuration(x.seconds)) === v.duration) ??
-          construction.durations[0];
+        const otherForm = formKey(form, input, key);
+        if (otherForm === 'cancel') return setForm(null);
+        if (otherForm !== 'submit') return setForm(otherForm);
+        const values = formValues(form);
+        const duration = durationFor(construction.durations, values.duration ?? '') ?? construction.durations[0];
         setForm(null);
-        if (d) void state.queueConstruction(d.seconds, v.paid === 'Private treasury' ? 'player' : 'town');
+        if (duration)
+          void state.queueConstruction(duration.seconds, values.paid === 'Private treasury' ? 'player' : 'town');
         return;
       }
       if (key.escape) return onExit();
@@ -86,73 +91,86 @@ export function TownScreen({ state, width, height, onCapture, onExit, active = t
   const listRows = Math.max(2, height - 4);
   const [start, end] = scrollWindow(idx, buildings.length, listRows);
   const bodyH = height;
-  const list = h(
+  const list = createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width: leftW, height: bodyH, paddingX: 1 },
-    h(
+    createElement(
       Text,
       { bold: true, wrap: 'truncate' },
       `City hall · ${hall?.townName ?? (state.character.homeTown ? 'home town' : 'no home town')}`,
     ),
-    h(
+    createElement(
       Text,
       { dimColor: true, wrap: 'truncate' },
       hall ? `${buildings.length} building(s) · u refresh · Enter build` : 'Loading buildings…',
     ),
-    ...buildings.slice(start, end).map((b, i) => {
-      const stage = b.infinite ? `${b.stage}/∞` : `${b.stage}/${b.maxStage}`;
-      const full = !b.infinite && b.stage >= b.maxStage;
-      const prog = b.infinite || full ? '' : bar(b.buildPoints, b.nextStagePoints, 8);
-      return h(
+    ...buildings.slice(start, end).map((buildingB, index) => {
+      const stage = buildingB.infinite ? `${buildingB.stage}/∞` : `${buildingB.stage}/${buildingB.maxStage}`;
+      const full = !buildingB.infinite && buildingB.stage >= buildingB.maxStage;
+      const prog = buildingB.infinite || full ? '' : bar(buildingB.buildPoints, buildingB.nextStagePoints, 8);
+      return createElement(
         Text,
-        defined({ key: b.key, inverse: start + i === idx, color: full ? 'green' : undefined, wrap: 'truncate' }),
-        `${truncate(b.name, Math.max(12, leftW - 25)).padEnd(Math.max(12, leftW - 25))} ${stage.padStart(6)} ${prog}`,
+        defined({
+          key: buildingB.key,
+          inverse: start + index === idx,
+          color: full ? 'green' : undefined,
+          wrap: 'truncate',
+        }),
+        `${truncate(buildingB.name, Math.max(12, leftW - 25)).padEnd(Math.max(12, leftW - 25))} ${stage.padStart(6)} ${prog}`,
       );
     }),
-    buildings.length === 0 && hall ? h(Text, { dimColor: true }, 'No buildings returned.') : null,
+    buildings.length === 0 && hall ? createElement(Text, { dimColor: true }, 'No buildings returned.') : null,
   );
 
-  const detail = h(
+  const detail = createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width: rightW, height: bodyH, paddingX: 1 },
     building
-      ? h(
+      ? createElement(
           Text,
           { bold: true, wrap: 'truncate' },
           `${building.name} · level ${building.stage}${building.infinite ? '' : ` / ${building.maxStage}`}`,
         )
-      : h(Text, { bold: true }, 'No building selected'),
+      : createElement(Text, { bold: true }, 'No building selected'),
     construction
-      ? h(
+      ? createElement(
           Text,
           { wrap: 'truncate' },
           `Labor points ${construction.jobPoints} · motivation ${Math.round(construction.motivation * 100)}% · build points ${construction.buildPoints}/${construction.buildPointLimit}`,
         )
       : building
-        ? h(Text, { dimColor: true, wrap: 'truncate' }, 'Enter loads its construction detail.')
+        ? createElement(Text, { dimColor: true, wrap: 'truncate' }, 'Enter loads its construction detail.')
         : null,
     construction
-      ? h(
+      ? createElement(
           Text,
           { wrap: 'truncate' },
           `Town treasury $${construction.deposit}${construction.singleDuration ? ' · single duration' : ''}`,
         )
       : null,
-    construction?.description ? h(Text, { dimColor: true, wrap: 'wrap' }, construction.description) : null,
+    construction?.description ? createElement(Text, { dimColor: true, wrap: 'wrap' }, construction.description) : null,
     construction
-      ? h(
+      ? createElement(
           Text,
           { wrap: 'truncate' },
-          `Skills: ${construction.skills.map((s) => `${s.skill} ×${s.coefficient}`).join(', ') || '—'} · malus ${construction.malus}`,
+          `Skills: ${construction.skills.map((source) => `${source.skill} ×${source.coefficient}`).join(', ') || '—'} · malus ${construction.malus}`,
         )
       : null,
     construction
-      ? h(Text, { wrap: 'truncate' }, `Durations: ${construction.durations.map((d) => d.formatted).join(' · ')}`)
+      ? createElement(
+          Text,
+          { wrap: 'truncate' },
+          `Durations: ${construction.durations.map((data) => data.formatted).join(' · ')}`,
+        )
       : null,
-    h(Box, { flexGrow: 1 }),
+    createElement(Box, { flexGrow: 1 }),
     form
-      ? h(FormView, { form, width: rightW - 4 })
-      : h(Text, { dimColor: true, wrap: 'truncate' }, 'Enter start construction · ↑↓ building · u refresh · Esc back'),
+      ? createElement(FormView, { form, width: rightW - 4 })
+      : createElement(
+          Text,
+          { dimColor: true, wrap: 'truncate' },
+          'Enter start construction · ↑↓ building · u refresh · Esc back',
+        ),
   );
-  return h(Box, { width, height }, list, detail);
+  return createElement(Box, { width, height }, list, detail);
 }

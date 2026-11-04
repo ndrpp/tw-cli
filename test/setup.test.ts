@@ -55,22 +55,22 @@ function http(
   opts: { method?: string; body?: string; host?: string; type?: string } = {},
 ): Promise<{ status: number; body: string; headers: Record<string, any> }> {
   return new Promise((resolve, reject) => {
-    const u = new URL(url);
+    const urlValue = new URL(url);
     const req = request(
       {
-        host: u.hostname,
-        port: u.port,
-        path: u.pathname + u.search,
+        host: urlValue.hostname,
+        port: urlValue.port,
+        path: urlValue.pathname + urlValue.search,
         method: opts.method ?? 'GET',
         headers: {
-          host: opts.host ?? u.host,
+          host: opts.host ?? urlValue.host,
           ...(opts.body ? { 'content-type': opts.type ?? 'application/json' } : {}),
         },
       },
       (res) => {
-        let b = '';
-        res.on('data', (d) => (b += d));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: b, headers: res.headers }));
+        let textValue = '';
+        res.on('data', (data) => (textValue += data));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: textValue, headers: res.headers }));
       },
     );
     req.on('error', reject);
@@ -97,8 +97,8 @@ test('web page: token + host checks, no external assets, fingerprint save, login
     port: 0,
     log: () => {},
     onFingerprint: (fp) => saved.push(fp),
-    login: async (name, password, p) => {
-      logins.push(`${name}:${password}:${p.fp}`);
+    login: async (name, password, profileValue) => {
+      logins.push(`${name}:${password}:${profileValue.fp}`);
       if (password !== 'secret') throw new Error('Login rejected: Wrong name or password');
       return { name: 'shallax', level: 30, world: 'Quebec' };
     },
@@ -123,42 +123,42 @@ test('web page: token + host checks, no external assets, fingerprint save, login
     assert.match(lib.body, /t\.VERSION="1\.8\.0"/);
 
     // Login before a fingerprint exists is refused.
-    let r = await http(`${base}/api/login?t=${srv.token}`, {
+    let result = await http(`${base}/api/login?t=${srv.token}`, {
       method: 'POST',
       body: JSON.stringify({ name: 'Tester', password: 'secret' }),
     });
-    assert.equal(r.status, 400);
-    assert.match(r.body, /fingerprint first/);
+    assert.equal(result.status, 400);
+    assert.match(result.body, /fingerprint first/);
 
     // A tampered profile is rejected; a real one is saved 0600.
-    r = await http(`${base}/api/fingerprint?t=${srv.token}`, {
+    result = await http(`${base}/api/fingerprint?t=${srv.token}`, {
       method: 'POST',
       body: JSON.stringify({ ...profile, fp: '0'.repeat(32) }),
     });
-    assert.equal(r.status, 400);
-    r = await http(`${base}/api/fingerprint?t=${srv.token}`, { method: 'POST', body: JSON.stringify(profile) });
-    assert.equal(r.status, 200);
+    assert.equal(result.status, 400);
+    result = await http(`${base}/api/fingerprint?t=${srv.token}`, { method: 'POST', body: JSON.stringify(profile) });
+    assert.equal(result.status, 200);
     assert.deepEqual(saved, [profile.fp]);
     assert.equal(statSync(PROFILE_FILE).mode & 0o777, 0o600);
     assert.equal((JSON.parse(readFileSync(PROFILE_FILE, 'utf8')) as { fp: string }).fp, profile.fp);
 
-    r = await http(`${base}/api/login?t=${srv.token}`, {
+    result = await http(`${base}/api/login?t=${srv.token}`, {
       method: 'POST',
       body: 'name=x',
       type: 'application/x-www-form-urlencoded',
     });
-    assert.equal(r.status, 415);
-    r = await http(`${base}/api/login?t=${srv.token}`, {
+    assert.equal(result.status, 415);
+    result = await http(`${base}/api/login?t=${srv.token}`, {
       method: 'POST',
       body: JSON.stringify({ name: 'Tester', password: 'nope' }),
     });
-    assert.equal(r.status, 401);
-    r = await http(`${base}/api/login?t=${srv.token}`, {
+    assert.equal(result.status, 401);
+    result = await http(`${base}/api/login?t=${srv.token}`, {
       method: 'POST',
       body: JSON.stringify({ name: 'Tester', password: 'secret' }),
     });
-    assert.equal(r.status, 200);
-    assert.deepEqual(JSON.parse(r.body), { ok: true, name: 'shallax', level: 30, world: 'Quebec' });
+    assert.equal(result.status, 200);
+    assert.deepEqual(JSON.parse(result.body), { ok: true, name: 'shallax', level: 30, world: 'Quebec' });
     assert.deepEqual(logins.at(-1), `Tester:secret:${profile.fp}`);
   } finally {
     await srv.close();
@@ -186,12 +186,12 @@ test('TUI setup: type fingerprint + User-Agent, log in with name/password', asyn
     const body = typeof init.body === 'string' ? init.body : '';
     seen.push({ url, body, ua: headers.get('user-agent') });
     const cookie = headers.get('cookie') ?? '';
-    const res = (status: number, h: [string, string][] = [], text: string | null = null) =>
-      new Response(text, { status, headers: h });
+    const res = (status: number, items: [string, string][] = [], text: string | null = null) =>
+      new Response(text, { status, headers: items });
     if (url === `${PORTAL}/`) return res(200, [['set-cookie', 'PHPSESSID=p; path=/']], '<html>');
     if (url.includes('check_login')) {
-      const f = new URLSearchParams(body);
-      if (f.get('password') !== 'secret') return Response.json({ error: 'Wrong name or password' });
+      const urlValue = new URLSearchParams(body);
+      if (urlValue.get('password') !== 'secret') return Response.json({ error: 'Wrong name or password' });
       return Response.json({ player_id: 42, password: 'tok', playerWorlds: { 38: [38, 1] } });
     }
     if (url.endsWith('action=login')) return res(302, [['location', `${GAME}/game.php?sid=s1`]]);
@@ -216,17 +216,17 @@ test('TUI setup: type fingerprint + User-Agent, log in with name/password', asyn
   Object.assign(stdout, { columns: 110, rows: 34, isTTY: true });
   const stdin = new PassThrough() as PassThrough & {
     isTTY: boolean;
-    setRawMode: (m: boolean) => void;
+    setRawMode: (flag: boolean) => void;
     ref: () => void;
     unref: () => void;
   };
   Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
   let out = '';
-  stdout.on('data', (d) => (out += d.toString()));
+  stdout.on('data', (data) => (out += data.toString()));
   const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
-  const settle = (ms = 60) => new Promise((r) => setTimeout(r, ms));
-  const type = async (s: string) => {
-    for (const ch of s) {
+  const settle = (ms = 60) => new Promise((transform) => setTimeout(transform, ms));
+  const type = async (textValue: string) => {
+    for (const ch of textValue) {
       stdin.write(ch);
       await settle(15);
     }
@@ -235,7 +235,7 @@ test('TUI setup: type fingerprint + User-Agent, log in with name/password', asyn
   let ready: any = null;
   const app = render(
     React.createElement(SetupScreen, {
-      onReady: (g: any) => (ready = g),
+      onReady: (group: any) => (ready = group),
       onQuit: () => {},
       policy: {
         concurrency: 1,
@@ -274,11 +274,11 @@ test('TUI setup: type fingerprint + User-Agent, log in with name/password', asyn
     assert.match(plain(), /Password: ••••••/);
     assert.doesNotMatch(plain(), /secret/);
     await type('\r');
-    for (let i = 0; i < 50 && !ready; i++) await settle(50);
+    for (let index = 0; index < 50 && !ready; index++) await settle(50);
     assert.ok(ready, 'login finished');
     assert.equal(ready.bootstrap.character.name, 'shallax');
-    assert.ok(seen.every((s) => s.ua === 'Mozilla/5.0 Test'));
-    assert.equal(seen.find((s) => s.url.includes('record_fp'))!.body, `fp=${profile.fp}&gv=&wd=false`);
+    assert.ok(seen.every((source) => source.ua === 'Mozilla/5.0 Test'));
+    assert.equal(seen.find((source) => source.url.includes('record_fp'))!.body, `fp=${profile.fp}&gv=&wd=false`);
     assert.ok(existsSync(SESSION_FILE));
   } finally {
     app.unmount();

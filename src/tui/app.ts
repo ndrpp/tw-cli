@@ -34,7 +34,7 @@ import { QueuePane } from './queue.ts';
 import { TownScreen } from './town.ts';
 import { TradeScreen } from './trade.ts';
 
-const h = React.createElement;
+const createElement = React.createElement;
 const QUEUE_POLL_MS = 60_000;
 /** danger is only in job/job and motivation changes as jobs repeat; refresh the selected job. */
 const JOB_DETAIL_POLL_MS = 60_000;
@@ -47,7 +47,7 @@ const LIVE_COLOR = { off: 'gray', connecting: 'yellow', on: 'green', error: 'red
 function useGameState(state: GameState): number {
   const [version, setVersion] = useState(0);
   useEffect(() => {
-    const onChange = () => setVersion((v) => v + 1);
+    const onChange = () => setVersion((value) => value + 1);
     state.on('change', onChange);
     return () => {
       state.off('change', onChange);
@@ -57,52 +57,57 @@ function useGameState(state: GameState): number {
 }
 
 function Header({ state }: { state: GameState }) {
-  const c = state.character;
+  const character = state.character;
   const now = state.clock.now();
   const automation = state.hasAutomation
     ? `automation ${formatDuration(state.automationUntil - now)}`
     : 'no automation';
-  return h(
+  const finishableQuests = state.quests.filter((quest) => quest.finishable).length;
+  return createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'yellow', paddingX: 1 },
-    h(
+    createElement(
       Box,
       { justifyContent: 'space-between' },
-      h(Text, { bold: true, color: 'yellow', wrap: 'truncate' }, `${c.name}  lvl ${c.level} ${c.charClass}`),
-      h(
+      createElement(
+        Text,
+        { bold: true, color: 'yellow', wrap: 'truncate' },
+        `${character.name}  lvl ${character.level} ${character.charClass}`,
+      ),
+      createElement(
         Text,
         { dimColor: true, wrap: 'truncate' },
         `${state.worldName} · ${automation} · `,
-        h(Text, { color: LIVE_COLOR[state.liveStatus], dimColor: false }, `● live ${state.liveStatus}`),
-        state.unread.reports ? h(Text, { color: 'yellow' }, ` · ${ICON.mail} new report (g r)`) : '',
-        state.unread.messages ? h(Text, { color: 'yellow' }, ` · ${ICON.mail} new telegram (g r)`) : '',
-        state.live?.unreadRooms.size ? h(Text, { color: 'cyan' }, ` · chat ${state.live.unreadRooms.size} (g c)`) : '',
-        state.quests.some((q) => q.finishable)
-          ? h(
-              Text,
-              { color: 'green' },
-              ` · ${ICON.quest} ${state.quests.filter((q) => q.finishable).length} quest(s) to finish`,
-            )
+        createElement(Text, { color: LIVE_COLOR[state.liveStatus], dimColor: false }, `● live ${state.liveStatus}`),
+        state.unread.reports ? createElement(Text, { color: 'yellow' }, ` · ${ICON.mail} new report (g r)`) : '',
+        state.unread.messages ? createElement(Text, { color: 'yellow' }, ` · ${ICON.mail} new telegram (g r)`) : '',
+        state.live?.unreadRooms.size
+          ? createElement(Text, { color: 'cyan' }, ` · chat ${state.live.unreadRooms.size} (g c)`)
           : '',
-        state.autoRoute ? h(Text, { color: 'magenta' }, ` · auto-route ${state.autoRoute.runs.length} left`) : '',
-        state.autopilot.config.running ? h(Text, { color: 'green' }, ' · autopilot ●') : '',
+        finishableQuests
+          ? createElement(Text, { color: 'green' }, ` · ${ICON.quest} ${finishableQuests} quest(s) to finish`)
+          : '',
+        state.autoRoute
+          ? createElement(Text, { color: 'magenta' }, ` · auto-route ${state.autoRoute.runs.length} left`)
+          : '',
+        state.autopilot.config.running ? createElement(Text, { color: 'green' }, ' · autopilot ●') : '',
         state.busy ? ' · working…' : '',
       ),
     ),
-    h(
+    createElement(
       Text,
       { wrap: 'truncate' },
-      h(Text, { color: 'red' }, 'HP '),
-      `${bar(c.health, c.maxHealth, 10)} ${c.health}/${c.maxHealth}   `,
-      h(Text, { color: 'cyan' }, 'EN '),
-      `${bar(c.energy, c.maxEnergy, 10)} ${c.energy}/${c.maxEnergy}   `,
-      h(Text, { color: 'green' }, 'XP '),
-      xpText(c),
-      h(Text, { color: 'green' }, money(c.cash)),
-      ` bank ${money(c.deposit)}   `,
-      h(Text, { dimColor: true }, `pos ${c.position.x},${c.position.y}`),
+      createElement(Text, { color: 'red' }, 'HP '),
+      `${bar(character.health, character.maxHealth, 10)} ${character.health}/${character.maxHealth}   `,
+      createElement(Text, { color: 'cyan' }, 'EN '),
+      `${bar(character.energy, character.maxEnergy, 10)} ${character.energy}/${character.maxEnergy}   `,
+      createElement(Text, { color: 'green' }, 'XP '),
+      xpText(character),
+      createElement(Text, { color: 'green' }, money(character.cash)),
+      ` bank ${money(character.deposit)}   `,
+      createElement(Text, { dimColor: true }, `pos ${character.position.x},${character.position.y}`),
       state.lastSync
-        ? h(
+        ? createElement(
             Text,
             { dimColor: true },
             ` · synced ${formatDuration(Math.floor((Date.now() - state.lastSync) / 1000))} ago`,
@@ -113,26 +118,56 @@ function Header({ state }: { state: GameState }) {
 }
 
 /** XP within the level: bar, have/need and percent (the web's XP bar, Character.getExperience4Level). */
-function xpText(c: GameState['character']): string {
-  const p = c.progress;
-  if (p.maxed) return `${c.experience} (max level)   `;
-  return `${bar(p.have, p.need, 10)} ${p.have}/${p.need} ${Math.floor(p.ratio * 100)}%   `;
+function xpText(character: GameState['character']): string {
+  const progress = character.progress;
+  if (progress.maxed) return `${character.experience} (max level)   `;
+  return `${bar(progress.have, progress.need, 10)} ${progress.have}/${progress.need} ${Math.floor(progress.ratio * 100)}%   `;
 }
 
 const SORT_LABEL: Record<JobSort, string> = { name: 'name', xp: 'XP', money: '$', luck: 'luck', distance: 'distance' };
 
+/** The footer's key hints for the current screen, in priority order. */
+function helpFor(context: {
+  leader: boolean;
+  filtering: boolean;
+  searching: boolean;
+  mode: Mode;
+  mapPanel: boolean;
+  hasMapHighlight: boolean;
+  onScreen: boolean;
+}): string {
+  if (context.leader)
+    return `go to: a letter above · ${GOTO.filter((goTo) => !goTo.mode)
+      .map((goTo) => `${goTo.key} ${goTo.label}`)
+      .join(' · ')} · Esc cancel`;
+  if (context.filtering) return 'type to filter · Enter keep · Esc clear';
+  if (context.searching) return 'type a job or town name · Enter jump to nearest · Esc cancel';
+  if (context.mode === 'map')
+    return context.mapPanel
+      ? '↑↓ select · 1/2/3 start job · w walk · o quests · s hotel · Esc back · ? help'
+      : `arrows pan · +/- zoom · . me · / find · v layers · Enter select${context.hasMapHighlight ? ' · x clear !' : ''}`;
+  if (context.mode === 'char')
+    return '← → tab · Tab pane · l/h detail · Enter wear/use/take off · U use · +/- skills · Esc back · ? help';
+  if (context.mode === 'quests')
+    return 'Tab log/givers · l/h detail · Enter finish/accept · x cancel · w walk · Esc back · ? help';
+  if (context.mode === 'town') return '↑↓ building · Enter construction · u refresh · Esc back · ? help';
+  if (context.mode === 'home') return 'Enter chat · ←/→ room · c cancel current · +/- minimap · g go to · ? help';
+  if (context.onScreen) return 'g go to · Esc back · ? help';
+  return 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel · Esc back';
+}
+
 /** Columns after the name: XP and $ of the longest duration (when wide enough), luck when sorted by it, LP, travel. */
-function jobCells(o: JobOption, wide: boolean, luck: boolean): string {
-  const v = o.job.values.long ?? o.job.values.middle ?? o.job.values.short;
-  const way = o.way === null ? '—' : formatDuration(o.way);
+function jobCells(option: JobOption, columns: { wide: boolean; sortedByLuck: boolean }): string {
+  const values = option.job.values.long ?? option.job.values.middle ?? option.job.values.short;
+  const travel = option.way === null ? '—' : formatDuration(option.way);
   return [
-    wide ? (v ? `${v.experience}xp` : '').padStart(6) : null,
-    wide ? (v ? money(v.money) : '').padStart(7) : null,
-    luck ? money(o.job.luckValue[1]).padStart(7) : null,
-    String(o.job.laborPoints).padStart(5),
-    way.padStart(7),
+    columns.wide ? (values ? `${values.experience}xp` : '').padStart(6) : null,
+    columns.wide ? (values ? money(values.money) : '').padStart(7) : null,
+    columns.sortedByLuck ? money(option.job.luckValue[1]).padStart(7) : null,
+    String(option.job.laborPoints).padStart(5),
+    travel.padStart(7),
   ]
-    .filter((c) => c !== null)
+    .filter((column) => column !== null)
     .join(' ');
 }
 
@@ -155,11 +190,11 @@ function JobsPane(props: {
   // Inner width − marker − LP and travel (with spaces) − luck − xp and $.
   const fixed = 4 + 2 + 14 + (luck ? 8 : 0);
   const wide = width - fixed - 15 >= 14;
-  const nameW = Math.max(8, width - fixed - (wide ? 15 : 0));
+  const otherName = Math.max(8, width - fixed - (wide ? 15 : 0));
   const quest = state.mapHighlight?.jobIds;
   const title = filtering ? `Jobs  /${filter}▏` : filter ? `Jobs  (filter: ${filter})` : 'Jobs';
-  const head = `  ${'job'.padEnd(nameW)} ${[wide ? 'xp'.padStart(6) : null, wide ? '$'.padStart(7) : null, luck ? 'luck'.padStart(7) : null, 'LP'.padStart(5), 'travel'.padStart(7)].filter(Boolean).join(' ')}`;
-  return h(
+  const head = `  ${'job'.padEnd(otherName)} ${[wide ? 'xp'.padStart(6) : null, wide ? '$'.padStart(7) : null, luck ? 'luck'.padStart(7) : null, 'LP'.padStart(5), 'travel'.padStart(7)].filter(Boolean).join(' ')}`;
+  return createElement(
     Box,
     {
       flexDirection: 'column',
@@ -169,107 +204,120 @@ function JobsPane(props: {
       height,
       paddingX: 1,
     },
-    h(Text, { bold: true, wrap: 'truncate' }, `${title}  ${options.length ? `${selected + 1}/${options.length}` : ''}`),
-    h(
+    createElement(
+      Text,
+      { bold: true, wrap: 'truncate' },
+      `${title}  ${options.length ? `${selected + 1}/${options.length}` : ''}`,
+    ),
+    createElement(
       Text,
       { dimColor: true, wrap: 'truncate' },
       `sort: ${SORT_LABEL[sort]} (S) · ${showAll ? 'all jobs' : 'enough LP only'} (a) · xp/$ for the longest run${quest?.size ? ` · ! ${state.mapHighlight?.label ?? ''}` : ''}`,
     ),
-    h(Text, { dimColor: true, wrap: 'truncate' }, head),
-    ...options.slice(start, end).map((o, i) => {
-      const idx = start + i;
+    createElement(Text, { dimColor: true, wrap: 'truncate' }, head),
+    ...options.slice(start, end).map((optionsValue, index) => {
+      const idx = start + index;
       const sel = idx === selected;
-      const doable = o.job.jobPoints >= o.job.workPoints;
-      const mark = quest?.has(o.job.id) ? h(Text, { color: 'magentaBright', bold: true }, '! ') : '  ';
-      return h(
+      const doable = optionsValue.job.jobPoints >= optionsValue.job.workPoints;
+      const mark = quest?.has(optionsValue.job.id)
+        ? createElement(Text, { color: 'magentaBright', bold: true }, '! ')
+        : '  ';
+      return createElement(
         Text,
-        defined({ key: o.job.id, inverse: sel && focused, color: doable ? undefined : 'gray', wrap: 'truncate' }),
+        defined({
+          key: optionsValue.job.id,
+          inverse: sel && focused,
+          color: doable ? undefined : 'gray',
+          wrap: 'truncate',
+        }),
         mark,
-        `${truncate(o.job.name, nameW).padEnd(nameW)} ${jobCells(o, wide, luck)}`,
+        `${truncate(optionsValue.job.name, otherName).padEnd(otherName)} ${jobCells(optionsValue, { wide, sortedByLuck: luck })}`,
       );
     }),
-    options.length === 0 ? h(Text, { dimColor: true }, state0(filter, showAll)) : null,
+    options.length === 0 ? createElement(Text, { dimColor: true }, emptyJobsMessage(filter, showAll)) : null,
   );
 }
 
-function state0(filter: string, showAll: boolean): string {
+function emptyJobsMessage(filter: string, showAll: boolean): string {
   return filter ? `No job matches the filter${showAll ? '' : ' (a shows jobs without enough LP)'}.` : 'Loading jobs…';
 }
 
 function JobDetail({ option, state }: { option: JobOption | undefined; state: GameState }) {
   if (!option)
-    return h(
+    return createElement(
       Box,
       { borderStyle: 'round', borderColor: 'gray', paddingX: 1 },
-      h(Text, { dimColor: true }, 'No job selected'),
+      createElement(Text, { dimColor: true }, 'No job selected'),
     );
   const { job, at, way } = option;
   const danger = job.danger === null ? '—' : `${job.danger}%`;
-  const durRows = DURATION_KEYS.map((k, i) => {
-    const v = job.values[k];
-    if (!v) return null;
-    return h(
+  const durRows = DURATION_KEYS.map((entryKey, index) => {
+    const jobInfo = job.values[entryKey];
+    if (!jobInfo) return null;
+    return createElement(
       Text,
-      { key: k, wrap: 'truncate' },
-      h(Text, { color: 'yellow' }, `[${i + 1}] `),
-      `${formatDuration(v.duration).padStart(7)} ${String(v.energy).padStart(3)}en ${money(v.money).padStart(6)} ${String(v.experience).padStart(4)}xp`,
-      v.energy ? h(Text, { dimColor: true }, `  ${(v.experience / v.energy).toFixed(1)} xp/en`) : '',
+      { key: entryKey, wrap: 'truncate' },
+      createElement(Text, { color: 'yellow' }, `[${index + 1}] `),
+      `${formatDuration(jobInfo.duration).padStart(7)} ${String(jobInfo.energy).padStart(3)}en ${money(jobInfo.money).padStart(6)} ${String(jobInfo.experience).padStart(4)}xp`,
+      jobInfo.energy
+        ? createElement(Text, { dimColor: true }, `  ${(jobInfo.experience / jobInfo.energy).toFixed(1)} xp/en`)
+        : '',
     );
   });
   const quest = state.mapHighlight?.jobIds.has(job.id) ? state.mapHighlight.label : '';
-  return h(
+  return createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', paddingX: 1, flexShrink: 0 },
-    h(Text, { bold: true, wrap: 'truncate' }, `${job.name}  (lvl ${job.level})`),
-    h(
+    createElement(Text, { bold: true, wrap: 'truncate' }, `${job.name}  (lvl ${job.level})`),
+    createElement(
       Text,
       { wrap: 'truncate' },
       `${job.laborPoints} LP · motiv ${Math.round((job.motivation ?? 0) * 100)}% · danger ${danger}`,
     ),
-    h(
+    createElement(
       Text,
       { wrap: 'truncate' },
-      h(Text, { color: 'yellow' }, 'Luck '),
+      createElement(Text, { color: 'yellow' }, 'Luck '),
       job.luckValue[1] > 0 ? money(job.luckValue[1]) : '—',
     ),
-    h(
+    createElement(
       Text,
       { dimColor: true, wrap: 'truncate' },
       at ? `at ${at.x},${at.y} · travel ${formatDuration(way ?? 0)}` : 'No location known',
     ),
     ...durRows,
-    h(
+    createElement(
       Text,
       { color: 'magenta', wrap: 'truncate' },
       `Drops: ${
         state
           .jobProducts(job)
-          .map((p) => `${p.name}${p.percent !== null ? ` ${p.percent}%` : ''}`)
+          .map((pick) => `${pick.name}${pick.percent !== null ? ` ${pick.percent}%` : ''}`)
           .join(' · ') || '—'
       }`,
     ),
-    quest ? h(Text, { color: 'magentaBright', wrap: 'truncate' }, `! needed for ${quest}`) : null,
+    quest ? createElement(Text, { color: 'magentaBright', wrap: 'truncate' }, `! needed for ${quest}`) : null,
     state.queue.length >= state.taskLimit
-      ? h(Text, { color: 'red', wrap: 'truncate' }, `Queue full (${state.queue.length}/${state.taskLimit})`)
+      ? createElement(Text, { color: 'red', wrap: 'truncate' }, `Queue full (${state.queue.length}/${state.taskLimit})`)
       : null,
   );
 }
 
 function LogPane({ state, lines }: { state: GameState; lines: number }) {
   const entries = state.log.slice(-lines);
-  return h(
+  return createElement(
     Box,
     { flexDirection: 'column', paddingX: 1 },
-    ...entries.map((e, i) =>
-      h(
+    ...entries.map((entry, index) =>
+      createElement(
         Text,
         defined({
-          key: i,
-          color: e.level === 'error' ? 'red' : undefined,
-          dimColor: e.level === 'info',
+          key: index,
+          color: entry.level === 'error' ? 'red' : undefined,
+          dimColor: entry.level === 'info',
           wrap: 'truncate',
         }),
-        `${e.at.toLocaleTimeString()}  ${e.msg}`,
+        `${entry.at.toLocaleTimeString()}  ${entry.msg}`,
       ),
     ),
   );
@@ -339,7 +387,7 @@ export function App({
         void state.autoRouteStep();
       }
       void state.runner.step(); // replans on change (also while paused); acts only when running
-      setTick((t) => t + 1);
+      setTick((time) => time + 1);
     }, 1000);
     return () => clearInterval(timer);
   }, [state]);
@@ -348,8 +396,8 @@ export function App({
   // for the visible area) when zoomed in far enough for them to matter.
   useEffect(() => {
     if (mode !== 'map' || view.zoom > 256) return;
-    const t = setTimeout(() => void state.loadTilesAround(view), 1000);
-    return () => clearTimeout(t);
+    const target = setTimeout(() => void state.loadTilesAround(view), 1000);
+    return () => clearTimeout(target);
   }, [state, mode, view.x, view.y, view.zoom]);
 
   const width = columns || 100;
@@ -393,14 +441,14 @@ export function App({
   const pois = overlay === 'poi' ? poisNear(state, view, poiFilter) : [];
   const poiIdx = Math.min(poiSel, Math.max(0, pois.length - 1));
 
-  const go = (m: Mode) => {
+  const go = (match: Mode) => {
     capture.current = false;
     setMapPanel(false);
-    if (m === mode) return;
-    const i = history.current.indexOf(m);
-    if (i >= 0) history.current.length = i;
+    if (match === mode) return;
+    const index = history.current.indexOf(match);
+    if (index >= 0) history.current.length = index;
     else history.current.push(mode);
-    setMode(m);
+    setMode(match);
   };
   const back = () => {
     capture.current = false;
@@ -408,7 +456,7 @@ export function App({
     setMode(history.current.pop() ?? 'home');
   };
   const jumpTo = (at: { x: number; y: number }) => {
-    setView((v) => clampView({ ...v, x: at.x, y: at.y, zoom: Math.min(v.zoom, 128) }));
+    setView((value) => clampView({ ...value, x: at.x, y: at.y, zoom: Math.min(value.zoom, 128) }));
     go('map');
     setMapSel(0);
   };
@@ -421,8 +469,8 @@ export function App({
     setOverlay('hotel');
     void state.openHotel(townId).then((hotel) => {
       if (!hotel) return setOverlay(null);
-      const d = defaultRoom(hotel);
-      setHotelSel(Math.max(0, d ? hotel.rooms.indexOf(d) : 0));
+      const roomInfo = defaultRoom(hotel);
+      setHotelSel(Math.max(0, roomInfo ? hotel.rooms.indexOf(roomInfo) : 0));
     });
   };
 
@@ -438,8 +486,8 @@ export function App({
     if (overlay === 'hotel') {
       const rooms = state.hotel?.rooms ?? [];
       if (key.escape) return setOverlay(null);
-      if (key.upArrow || input === 'k') return setHotelSel((i) => Math.max(0, i - 1));
-      if (key.downArrow || input === 'j') return setHotelSel((i) => Math.min(rooms.length - 1, i + 1));
+      if (key.upArrow || input === 'k') return setHotelSel((index) => Math.max(0, index - 1));
+      if (key.downArrow || input === 'j') return setHotelSel((index) => Math.min(rooms.length - 1, index + 1));
       if (key.return && state.hotel) {
         const room = rooms[hotelSel];
         if (!room) return;
@@ -451,30 +499,30 @@ export function App({
     }
     if (overlay === 'layers') {
       if (key.escape || input === 'v') return setOverlay(null);
-      if (key.upArrow || input === 'k') return setLayerSel((i) => Math.max(0, i - 1));
-      if (key.downArrow || input === 'j') return setLayerSel((i) => Math.min(MAP_LAYERS.length - 1, i + 1));
-      const l = MAP_LAYERS[layerSel];
-      if (!l) return;
-      if (input === ' ' || key.return) return state.setMapLayer(l.key, state.mapLayers[l.key] === false);
-      if (input === 'a' || input === 'n') for (const x of MAP_LAYERS) state.setMapLayer(x.key, input === 'a');
+      if (key.upArrow || input === 'k') return setLayerSel((index) => Math.max(0, index - 1));
+      if (key.downArrow || input === 'j') return setLayerSel((index) => Math.min(MAP_LAYERS.length - 1, index + 1));
+      const line = MAP_LAYERS[layerSel];
+      if (!line) return;
+      if (input === ' ' || key.return) return state.setMapLayer(line.key, state.mapLayers[line.key] === false);
+      if (input === 'a' || input === 'n') for (const xCoord of MAP_LAYERS) state.setMapLayer(xCoord.key, input === 'a');
       return;
     }
     if (onScreen && capture.current && overlay !== 'help') return;
     if (overlay === 'poi') {
       if (key.escape) return setOverlay(null);
       if (key.return) {
-        const p = pois[poiIdx];
+        const pick = pois[poiIdx];
         setOverlay(null);
-        if (p) jumpTo(p);
+        if (pick) jumpTo(pick);
         return;
       }
       if (key.upArrow) return setPoiSel(Math.max(0, poiIdx - 1));
       if (key.downArrow) return setPoiSel(Math.min(pois.length - 1, poiIdx + 1));
       if (key.pageUp) return setPoiSel(Math.max(0, poiIdx - 10));
       if (key.pageDown) return setPoiSel(Math.min(pois.length - 1, poiIdx + 10));
-      if (key.backspace || key.delete) return setPoiFilter((f) => f.slice(0, -1));
+      if (key.backspace || key.delete) return setPoiFilter((text) => text.slice(0, -1));
       if (input && !key.ctrl && !key.meta) {
-        setPoiFilter((f) => f + input);
+        setPoiFilter((text) => text + input);
         setPoiSel(0);
       }
       return;
@@ -483,8 +531,8 @@ export function App({
     if (filtering) {
       if (key.return || key.escape) setFiltering(false);
       if (key.escape) setFilter('');
-      else if (key.backspace || key.delete) setFilter((f) => f.slice(0, -1));
-      else if (input && !key.ctrl && !key.meta && !key.return) setFilter((f) => f + input);
+      else if (key.backspace || key.delete) setFilter((text) => text.slice(0, -1));
+      else if (input && !key.ctrl && !key.meta && !key.return) setFilter((text) => text + input);
       setJobSel(0);
       return;
     }
@@ -499,8 +547,8 @@ export function App({
           jumpTo(hit.at);
           state.info(`Found ${hit.label} at ${hit.at.x},${hit.at.y}`);
         } else state.error(`Nothing on the map matches "${search}"`);
-      } else if (key.backspace || key.delete) setSearch((f) => f.slice(0, -1));
-      else if (input && !key.ctrl && !key.meta) setSearch((f) => f + input);
+      } else if (key.backspace || key.delete) setSearch((text) => text.slice(0, -1));
+      else if (input && !key.ctrl && !key.meta) setSearch((text) => text + input);
       return;
     }
     if (confirmCancel) {
@@ -511,18 +559,18 @@ export function App({
 
     if (leader) {
       setLeader(false);
-      const g = GOTO.find((x) => x.key === input);
-      if (g?.mode === 'quests') setQuestsOnGivers(false);
-      if (g?.mode) return go(g.mode);
-      if (g?.key === 's') return openHotel(state.character.homeTown?.id);
-      if (g?.key === 'p') {
+      const found = GOTO.find((xCoord) => xCoord.key === input);
+      if (found?.mode === 'quests') setQuestsOnGivers(false);
+      if (found?.mode) return go(found.mode);
+      if (found?.key === 's') return openHotel(state.character.homeTown?.id);
+      if (found?.key === 'p') {
         setPoiFilter('');
         setPoiSel(0);
         return setOverlay('poi');
       }
-      if (g?.key === 'L') return state.live?.active ? state.stopLive() : state.startLive();
-      if (g?.key === 'R') return void state.reload();
-      if (g?.key === 'A' && onAccount) return onAccount();
+      if (found?.key === 'L') return state.live?.active ? state.stopLive() : state.startLive();
+      if (found?.key === 'R') return void state.reload();
+      if (found?.key === 'A' && onAccount) return onAccount();
       return; // Esc or an unknown key cancels
     }
 
@@ -555,15 +603,16 @@ export function App({
         if (key.escape) return setMapPanel(false);
         if (key.upArrow || input === 'k') return setMapSel(Math.max(0, mapIdx - 1));
         if (key.downArrow || input === 'j') return setMapSel(Math.min(entries.length - 1, mapIdx + 1));
-        const e = entries[mapIdx];
-        if (duration && e?.kind === 'job') return void state.startJob(e.option, duration);
-        if (input === 'w' && e?.kind === 'town') return void state.walkToTown(e.town);
-        if (input === 'w' && e?.kind === 'fort') return void state.walkToFort(e.fort);
-        if (input === 'w' && e?.kind === 'quest') return void state.walkToQuestGiver(e.key, e.name, e.at);
+        const entry = entries[mapIdx];
+        if (duration && entry?.kind === 'job') return void state.startJob(entry.option, duration);
+        if (input === 'w' && entry?.kind === 'town') return void state.walkToTown(entry.town);
+        if (input === 'w' && entry?.kind === 'fort') return void state.walkToFort(entry.fort);
+        if (input === 'w' && entry?.kind === 'quest')
+          return void state.walkToQuestGiver(entry.key, entry.name, entry.at);
         if (input === 's')
-          return openHotel(e?.kind === 'town' && e.town.name ? e.town.id : state.character.homeTown?.id);
-        if (input === 'o' && e?.kind === 'quest') {
-          return void state.openEmployer(e.key, e.at).then((ok) => {
+          return openHotel(entry?.kind === 'town' && entry.town.name ? entry.town.id : state.character.homeTown?.id);
+        if (input === 'o' && entry?.kind === 'quest') {
+          return void state.openEmployer(entry.key, entry.at).then((ok) => {
             if (!ok) return;
             setQuestsOnGivers(true);
             go('quests');
@@ -574,17 +623,25 @@ export function App({
       if (key.escape) return back();
       const big = key.shift || key.pageUp || key.pageDown ? 10 : 1;
       const pan = (dc: number, dr: number) =>
-        setView((v) => clampView({ ...v, x: v.x + dc * big * v.zoom, y: v.y + dr * big * v.zoom * 2 }));
+        setView((value) =>
+          clampView({ ...value, x: value.x + dc * big * value.zoom, y: value.y + dr * big * value.zoom * 2 }),
+        );
       if (key.leftArrow || input === 'h' || input === 'H') return pan(-1, 0);
       if (key.rightArrow || input === 'l' || input === 'L') return pan(1, 0);
       if (key.upArrow || key.pageUp || input === 'k' || input === 'K') return pan(0, -1);
       if (key.downArrow || key.pageDown || input === 'j' || input === 'J') return pan(0, 1);
       if (input === '+' || input === '=')
-        return setView((v) => ({ ...v, zoom: ZOOMS[Math.max(0, ZOOMS.indexOf(v.zoom) - 1)] ?? v.zoom }));
+        return setView((value) => ({
+          ...value,
+          zoom: ZOOMS[Math.max(0, ZOOMS.indexOf(value.zoom) - 1)] ?? value.zoom,
+        }));
       if (input === '-' || input === '_')
-        return setView((v) => ({ ...v, zoom: ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(v.zoom) + 1)] ?? v.zoom }));
-      if (input === '.' || input === 'c') return setView((v) => ({ ...v, ...state.character.position }));
-      if (input === 'e') return setView((v) => ({ ...v, ...state.queueEndPosition }));
+        return setView((value) => ({
+          ...value,
+          zoom: ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(value.zoom) + 1)] ?? value.zoom,
+        }));
+      if (input === '.' || input === 'c') return setView((value) => ({ ...value, ...state.character.position }));
+      if (input === 'e') return setView((value) => ({ ...value, ...state.queueEndPosition }));
       if (input === 'v') return setOverlay('layers');
       if (input === '/') {
         setSearch('');
@@ -602,10 +659,10 @@ export function App({
     }
 
     if (key.escape) return back();
-    if (key.tab) return setFocus((f) => (f === 'jobs' ? 'queue' : 'jobs'));
-    const move = (d: number) => {
-      if (focus === 'jobs') setJobSel(Math.max(0, Math.min(options.length - 1, jobIdx + d)));
-      else setQueueSel(Math.max(0, Math.min(state.queue.length - 1, queueIdx + d)));
+    if (key.tab) return setFocus((value) => (value === 'jobs' ? 'queue' : 'jobs'));
+    const move = (value: number) => {
+      if (focus === 'jobs') setJobSel(Math.max(0, Math.min(options.length - 1, jobIdx + value)));
+      else setQueueSel(Math.max(0, Math.min(state.queue.length - 1, queueIdx + value)));
     };
     if (key.upArrow || input === 'k') return move(-1);
     if (key.downArrow || input === 'j') return move(1);
@@ -619,7 +676,7 @@ export function App({
       }
       if (input === 'a') {
         setJobSel(0);
-        return setShowAllJobs((v) => !v);
+        return setShowAllJobs((flag) => !flag);
       }
       const option = options[jobIdx];
       if (duration && option) return void state.startJob(option, duration);
@@ -636,37 +693,23 @@ export function App({
     10 +
     (state.queue.length >= state.taskLimit ? 1 : 0) +
     (highlighted && state.mapHighlight?.jobIds.has(highlighted.job.id) ? 1 : 0);
-  const help = leader
-    ? `go to: a letter above · ${GOTO.filter((g) => !g.mode)
-        .map((g) => `${g.key} ${g.label}`)
-        .join(' · ')} · Esc cancel`
-    : filtering
-      ? 'type to filter · Enter keep · Esc clear'
-      : searching
-        ? 'type a job or town name · Enter jump to nearest · Esc cancel'
-        : mode === 'map'
-          ? mapPanel
-            ? '↑↓ select · 1/2/3 start job · w walk · o quests · s hotel · Esc back · ? help'
-            : `arrows pan · +/- zoom · . me · / find · v layers · Enter select${state.mapHighlight ? ' · x clear !' : ''}`
-          : mode === 'char'
-            ? '← → tab · Tab pane · l/h detail · Enter wear/use/take off · U use · +/- skills · Esc back · ? help'
-            : mode === 'quests'
-              ? 'Tab log/givers · l/h detail · Enter finish/accept · x cancel · w walk · Esc back · ? help'
-              : mode === 'town'
-                ? '↑↓ building · Enter construction · u refresh · Esc back · ? help'
-                : mode === 'home'
-                  ? 'Enter chat · ←/→ room · c cancel current · +/- minimap · g go to · ? help'
-                  : onScreen
-                    ? 'g go to · Esc back · ? help'
-                    : 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel · Esc back';
+  const help = helpFor({
+    leader,
+    filtering,
+    searching,
+    mode,
+    mapPanel,
+    hasMapHighlight: !!state.mapHighlight,
+    onScreen,
+  });
 
   let body: React.ReactElement | null;
-  if (overlay === 'help') body = h(HelpOverlay, { mode, width, height: bodyH });
+  if (overlay === 'help') body = createElement(HelpOverlay, { mode, width, height: bodyH });
   else if (overlay === 'layers')
-    body = h(
+    body = createElement(
       Box,
       { height: bodyH },
-      h(MapScreen, {
+      createElement(MapScreen, {
         state,
         view,
         width: width - Math.min(52, width),
@@ -677,15 +720,15 @@ export function App({
         search: '',
         searching: false,
       }),
-      h(LayersOverlay, { state, selected: layerSel, width, height: bodyH }),
+      createElement(LayersOverlay, { state, selected: layerSel, width, height: bodyH }),
     );
   else if (overlay === 'poi')
-    body = h(PoiOverlay, { state, pois, selected: poiIdx, filter: poiFilter, width, height: bodyH });
+    body = createElement(PoiOverlay, { state, pois, selected: poiIdx, filter: poiFilter, width, height: bodyH });
   else if (overlay === 'hotel')
-    body = h(HotelOverlay, { state, hotel: state.hotel, selected: hotelSel, width, height: bodyH });
-  else if (SCREEN_MODES.includes(mode)) body = null;
+    body = createElement(HotelOverlay, { state, hotel: state.hotel, selected: hotelSel, width, height: bodyH });
+  else if (onScreen) body = null;
   else if (mode === 'map') {
-    body = h(MapScreen, {
+    body = createElement(MapScreen, {
       state,
       view,
       width,
@@ -697,10 +740,10 @@ export function App({
       searching,
     });
   } else {
-    body = h(
+    body = createElement(
       Box,
       { height: bodyH },
-      h(JobsPane, {
+      createElement(JobsPane, {
         state,
         options,
         selected: jobIdx,
@@ -712,11 +755,11 @@ export function App({
         sort: jobSort,
         showAll: showAllJobs,
       }),
-      h(
+      createElement(
         Box,
         { flexDirection: 'column', width: rightW },
-        h(JobDetail, { option: options[jobIdx], state }),
-        h(QueuePane, {
+        createElement(JobDetail, { option: options[jobIdx], state }),
+        createElement(QueuePane, {
           state,
           selected: queueIdx,
           focused: focus === 'queue',
@@ -730,49 +773,49 @@ export function App({
 
   // Character/quest screens stay mounted under overlays so planned points or selections survive '?'.
   let screen = null;
-  if (SCREEN_MODES.includes(mode)) {
+  if (onScreen) {
     const props = {
       state,
       width,
       height: bodyH,
       active: !overlay,
-      onCapture: (c: boolean) => (capture.current = c),
+      onCapture: (flag: boolean) => (capture.current = flag),
       onExit: back,
     };
     const el =
       mode === 'home'
-        ? h(HomeScreen, props)
+        ? createElement(HomeScreen, props)
         : mode === 'char'
-          ? h(CharacterScreen, props)
+          ? createElement(CharacterScreen, props)
           : mode === 'quests'
-            ? h(QuestsScreen, { ...props, startOnGivers: questsOnGivers, onShowOnMap: jumpTo })
+            ? createElement(QuestsScreen, { ...props, startOnGivers: questsOnGivers, onShowOnMap: jumpTo })
             : mode === 'mail'
-              ? h(MailScreen, props)
+              ? createElement(MailScreen, props)
               : mode === 'trade'
-                ? h(TradeScreen, props)
+                ? createElement(TradeScreen, props)
                 : mode === 'duels'
-                  ? h(DuelsScreen, props)
+                  ? createElement(DuelsScreen, props)
                   : mode === 'autopilot'
-                    ? h(AutopilotScreen, props)
+                    ? createElement(AutopilotScreen, props)
                     : mode === 'debug'
-                      ? h(DebugScreen, props)
+                      ? createElement(DebugScreen, props)
                       : mode === 'town'
-                        ? h(TownScreen, props)
-                        : h(ChatScreen, props);
-    screen = h(Box, { display: overlay ? 'none' : 'flex' }, el);
+                        ? createElement(TownScreen, props)
+                        : createElement(ChatScreen, props);
+    screen = createElement(Box, { display: overlay ? 'none' : 'flex' }, el);
   }
 
-  if (state.startup && !state.startup.done) return h(LoadingScreen, { state, width, height });
+  if (state.startup && !state.startup.done) return createElement(LoadingScreen, { state, width, height });
 
-  return h(
+  return createElement(
     Box,
     { flexDirection: 'column', width, height },
-    h(Header, { state }),
-    h(NavBar, { mode, overlay, leader, width }),
+    createElement(Header, { state }),
+    createElement(NavBar, { mode, overlay, leader, width }),
     body,
     screen,
-    h(LogPane, { state, lines: logLines }),
-    h(Text, { dimColor: true, wrap: 'truncate' }, ` ${help}`),
+    createElement(LogPane, { state, lines: logLines }),
+    createElement(Text, { dimColor: true, wrap: 'truncate' }, ` ${help}`),
   );
 }
 
@@ -788,29 +831,29 @@ function NavBar({
   leader: boolean;
   width: number;
 }) {
-  const items = GOTO.filter((g) => g.mode || g.overlay).map((g) => ({
-    ...g,
-    active: overlay ? g.overlay === overlay : g.mode === mode,
+  const items = GOTO.filter((group) => group.mode || group.overlay).map((group) => ({
+    ...group,
+    active: overlay ? group.overlay === overlay : group.mode === mode,
   }));
-  return h(
+  return createElement(
     Box,
     { width, paddingX: 1 },
-    h(
+    createElement(
       Text,
       { wrap: 'truncate' },
-      h(Text, { bold: true, inverse: leader, color: 'yellow' }, leader ? ' go to › ' : 'g›'),
-      ...items.flatMap((n, i) => [
-        h(Text, { key: `s${i}` }, '  '),
-        h(
+      createElement(Text, { bold: true, inverse: leader, color: 'yellow' }, leader ? ' go to › ' : 'g›'),
+      ...items.flatMap((count, index) => [
+        createElement(Text, { key: `s${index}` }, '  '),
+        createElement(
           Text,
-          defined({ key: n.label, inverse: n.active, color: n.active ? 'cyan' : undefined }),
-          h(Text, defined({ bold: true, color: n.active ? undefined : 'yellow' }), `${n.key} `),
-          h(Text, { dimColor: !n.active && !leader }, n.label),
+          defined({ key: count.label, inverse: count.active, color: count.active ? 'cyan' : undefined }),
+          createElement(Text, defined({ bold: true, color: count.active ? undefined : 'yellow' }), `${count.key} `),
+          createElement(Text, { dimColor: !count.active && !leader }, count.label),
         ),
       ]),
-      h(Text, { dimColor: true }, '   '),
-      h(Text, { bold: true, color: 'yellow', inverse: overlay === 'help' }, '?'),
-      h(Text, { dimColor: true }, ' help'),
+      createElement(Text, { dimColor: true }, '   '),
+      createElement(Text, { bold: true, color: 'yellow', inverse: overlay === 'help' }, '?'),
+      createElement(Text, { dimColor: true }, ' help'),
     ),
   );
 }
@@ -819,17 +862,17 @@ const SPINNER = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
 
 /** First start: what is being loaded, until the major requests are done (Esc skips, q quits). */
 function LoadingScreen({ state, width, height }: { state: GameState; width: number; height: number }) {
-  const c = state.character;
-  return h(LoadingFrame, {
+  const character = state.character;
+  return createElement(LoadingFrame, {
     width,
     height,
-    subtitle: `${c.name ?? ''}${state.worldName ? ` · ${state.worldName}` : ''}${c.level ? ` · level ${c.level}` : ''}`,
+    subtitle: `${character.name ?? ''}${state.worldName ? ` · ${state.worldName}` : ''}${character.level ? ` · level ${character.level}` : ''}`,
     steps: state.startup?.steps ?? [],
-    latest: state.log.filter((l) => l.level === 'info').slice(-1)[0]?.msg,
+    latest: state.log.filter((line) => line.level === 'info').slice(-1)[0]?.msg,
     errors: state.log
-      .filter((l) => l.level === 'error')
+      .filter((line) => line.level === 'error')
       .slice(-3)
-      .map((e) => e.msg),
+      .map((entry) => entry.msg),
     keys: 'Esc skip · q quit',
   });
 }
@@ -853,10 +896,10 @@ export function LoadingFrame({
   keys: string;
 }) {
   const frame = SPINNER[Math.floor(Date.now() / 120) % SPINNER.length];
-  return h(
+  return createElement(
     Box,
     { width, height, flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
-    h(
+    createElement(
       Box,
       {
         flexDirection: 'column',
@@ -866,35 +909,39 @@ export function LoadingFrame({
         paddingY: 1,
         width: Math.min(60, width - 2),
       },
-      h(Text, { bold: true, color: 'yellow' }, 'The West'),
-      h(Text, { dimColor: true, wrap: 'truncate' }, subtitle ?? ''),
-      h(Text, null, ' '),
-      ...steps.map((s, i) =>
-        h(
+      createElement(Text, { bold: true, color: 'yellow' }, 'The West'),
+      createElement(Text, { dimColor: true, wrap: 'truncate' }, subtitle ?? ''),
+      createElement(Text, null, ' '),
+      ...steps.map((source, index) =>
+        createElement(
           Text,
-          { key: i, wrap: 'truncate', color: s.status === 'error' ? 'red' : s.status === 'done' ? 'green' : 'cyan' },
-          `${s.status === 'running' ? frame : s.status === 'done' ? '✔' : '✘'} ${s.label}`,
-          h(
+          {
+            key: index,
+            wrap: 'truncate',
+            color: source.status === 'error' ? 'red' : source.status === 'done' ? 'green' : 'cyan',
+          },
+          `${source.status === 'running' ? frame : source.status === 'done' ? '✔' : '✘'} ${source.label}`,
+          createElement(
             Text,
             { dimColor: true },
-            s.endedAt
-              ? `  ${((s.endedAt - s.startedAt) / 1000).toFixed(1)} s`
-              : s.status === 'running'
-                ? `  ${Math.floor((Date.now() - s.startedAt) / 1000)} s`
+            source.endedAt
+              ? `  ${((source.endedAt - source.startedAt) / 1000).toFixed(1)} s`
+              : source.status === 'running'
+                ? `  ${Math.floor((Date.now() - source.startedAt) / 1000)} s`
                 : '',
           ),
         ),
       ),
-      h(Text, null, ' '),
-      latest ? h(Text, { dimColor: true, wrap: 'truncate' }, latest) : null,
-      ...errors.map((e, i) => h(Text, { key: `e${i}`, color: 'red', wrap: 'truncate' }, e)),
-      h(Text, { dimColor: true }, keys),
+      createElement(Text, null, ' '),
+      latest ? createElement(Text, { dimColor: true, wrap: 'truncate' }, latest) : null,
+      ...errors.map((text, index) => createElement(Text, { key: `e${index}`, color: 'red', wrap: 'truncate' }, text)),
+      createElement(Text, { dimColor: true }, keys),
     ),
   );
 }
 
 export async function runTui(state: GameState): Promise<void> {
-  const app = render(h(App, { state }), { alternateScreen: true, exitOnCtrlC: true });
+  const app = render(createElement(App, { state }), { alternateScreen: true, exitOnCtrlC: true });
   void state.start();
   await app.waitUntilExit();
 }

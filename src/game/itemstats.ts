@@ -23,18 +23,18 @@ export interface RawBonus {
 }
 
 /** A bonus entry from the item or item-set JSON (unknown fields dropped). */
-export function parseRawBonus(v: unknown): RawBonus {
-  const r = obj(v);
-  const b: RawBonus = { type: String(r.type ?? '') };
-  if (typeof r.key === 'string') b.key = r.key;
-  if (typeof r.name === 'string') b.name = r.name;
-  if (r.value !== undefined && r.value !== null) b.value = Number(r.value);
-  if (typeof r.job === 'string' || typeof r.job === 'number') b.job = r.job;
-  if (typeof r.desc === 'string') b.desc = r.desc;
-  if (typeof r.roundingMethod === 'string') b.roundingMethod = r.roundingMethod;
-  if (r.isSector !== undefined) b.isSector = !!r.isSector;
-  if (isObj(r.bonus)) b.bonus = parseRawBonus(r.bonus);
-  return b;
+export function parseRawBonus(currentValue: unknown): RawBonus {
+  const json = obj(currentValue);
+  const second: RawBonus = { type: String(json.type ?? '') };
+  if (typeof json.key === 'string') second.key = json.key;
+  if (typeof json.name === 'string') second.name = json.name;
+  if (json.value !== undefined && json.value !== null) second.value = Number(json.value);
+  if (typeof json.job === 'string' || typeof json.job === 'number') second.job = json.job;
+  if (typeof json.desc === 'string') second.desc = json.desc;
+  if (typeof json.roundingMethod === 'string') second.roundingMethod = json.roundingMethod;
+  if (json.isSector !== undefined) second.isSector = !!json.isSector;
+  if (isObj(json.bonus)) second.bonus = parseRawBonus(json.bonus);
+  return second;
 }
 
 /** The fields of an item the popup needs (kept in the slim item cache). */
@@ -96,7 +96,7 @@ export function roundBy(value: number, method?: string): number {
 }
 
 /** Float noise from the arithmetic (0.1+0.2) — the browser shows it too, but nobody wants to read it. */
-const tidy = (v: number) => Math.round(v * 10000) / 10000;
+const tidy = (currentValue: number) => Math.round(currentValue * 10000) / 10000;
 
 const PERCENT_DESC: Record<string, string> = {
   luck: '+ %1% Increased Luck',
@@ -114,7 +114,7 @@ const FORT_NAMES: Record<string, string> = {
 };
 const BUILD_JOB_ID = 1000; // west.job.Build().id: construction
 
-type Modifier = (v: number) => number;
+type Modifier = (currentValue: number) => number;
 
 /** west.item.BonusExtractor */
 export class BonusExtractor {
@@ -128,58 +128,63 @@ export class BonusExtractor {
     this.jobName = ctx.jobName;
   }
 
-  private perLevel(b: RawBonus): Modifier {
-    return (v) => roundBy(v * (this.charLevel ?? 0), b.roundingMethod);
+  private perLevel(second: RawBonus): Modifier {
+    return (currentValue) => roundBy(currentValue * (this.charLevel ?? 0), second.roundingMethod);
   }
 
-  value(b: RawBonus, mod?: Modifier, rounding?: string): number {
-    let v = mod ? mod(b.value ?? 0) : (b.value ?? 0);
-    if (this.itemLevel && b.type !== 'speed') v += calculateItemLevelBonus(this.itemLevel, v);
-    else if (this.itemLevel && b.type === 'speed') v += Math.round(((v * this.itemLevel) / 10) * 100) / 100;
-    if (rounding) v = roundBy(v, rounding);
-    return tidy(v);
+  value(second: RawBonus, mod?: Modifier, rounding?: string): number {
+    let currentValue = mod ? mod(second.value ?? 0) : (second.value ?? 0);
+    if (this.itemLevel && second.type !== 'speed')
+      currentValue += calculateItemLevelBonus(this.itemLevel, currentValue);
+    else if (this.itemLevel && second.type === 'speed')
+      currentValue += Math.round(((currentValue * this.itemLevel) / 10) * 100) / 100;
+    if (rounding) currentValue = roundBy(currentValue, rounding);
+    return tidy(currentValue);
   }
 
-  desc(b: RawBonus, mod?: Modifier, rounding?: string): string {
-    switch (b.type) {
+  desc(second: RawBonus, mod?: Modifier, rounding?: string): string {
+    switch (second.type) {
       case 'character':
-        if (this.charLevel === undefined || b.key !== 'level' || !b.bonus) return b.desc ?? '';
-        return this.desc(b.bonus, this.perLevel(b), b.roundingMethod);
+        if (this.charLevel === undefined || second.key !== 'level' || !second.bonus) return second.desc ?? '';
+        return this.desc(second.bonus, this.perLevel(second), second.roundingMethod);
       case 'attribute':
       case 'skill':
-        return `+ ${this.value(b, mod, rounding)} ${NAMES[b.name ?? ''] ?? b.name}`;
+        return `+ ${this.value(second, mod, rounding)} ${NAMES[second.name ?? ''] ?? second.name}`;
       case 'job': {
-        const v = this.value(b, mod, rounding);
-        const lp = v === 1 ? 'Labor point' : 'labor points';
-        if (Number(b.job) === BUILD_JOB_ID && b.job !== 'all') return `+ ${v} ${lp} towards Construction`;
-        if (b.job !== 'all' && b.job !== undefined)
-          return `+ ${v} ${lp} towards ${this.jobName?.(Number(b.job)) ?? `job ${b.job}`}`;
-        return `+ ${v} ${lp}`;
+        const currentValue = this.value(second, mod, rounding);
+        const lp = currentValue === 1 ? 'Labor point' : 'labor points';
+        if (Number(second.job) === BUILD_JOB_ID && second.job !== 'all')
+          return `+ ${currentValue} ${lp} towards Construction`;
+        if (second.job !== 'all' && second.job !== undefined)
+          return `+ ${currentValue} ${lp} towards ${this.jobName?.(Number(second.job)) ?? `job ${second.job}`}`;
+        return `+ ${currentValue} ${lp}`;
       }
       case 'pray':
-        return `+${this.value(b, mod, rounding)} Praying`;
+        return `+${this.value(second, mod, rounding)} Praying`;
       case 'damage':
-        return `+${this.value(b, mod, rounding)} Damage`;
+        return `+${this.value(second, mod, rounding)} Damage`;
       case 'fortbattle':
-        return `+${this.value(b, mod, rounding)} ${FORT_NAMES[b.name ?? ''] ?? ''} (${b.isSector ? 'Fort battle sector bonus' : 'Fort battle bonus'})`;
+        return `+${this.value(second, mod, rounding)} ${FORT_NAMES[second.name ?? ''] ?? ''} (${second.isSector ? 'Fort battle sector bonus' : 'Fort battle bonus'})`;
       default:
-        if (b.type in PERCENT_DESC)
-          return PERCENT_DESC[b.type]?.replace('%1', String(Math.round(this.value(b, mod, rounding) * 100))) ?? '';
-        return b.desc ?? '';
+        if (second.type in PERCENT_DESC)
+          return (
+            PERCENT_DESC[second.type]?.replace('%1', String(Math.round(this.value(second, mod, rounding) * 100))) ?? ''
+          );
+        return second.desc ?? '';
     }
   }
 
   /** getExportValue: {key, value} as the server's validate_itemstats expects. */
-  exportValue(b: RawBonus): { key: string; value: number } {
+  exportValue(second: RawBonus): { key: string; value: number } {
     let value: number;
-    let inner = b;
-    if (b.type === 'character') {
+    let inner = second;
+    if (second.type === 'character') {
       value =
-        this.charLevel === undefined || b.key !== 'level' || !b.bonus
-          ? this.value(b.bonus ?? b)
-          : this.value(b.bonus, this.perLevel(b), b.roundingMethod);
-      inner = b.bonus ?? b;
-    } else value = this.value(b);
+        this.charLevel === undefined || second.key !== 'level' || !second.bonus
+          ? this.value(second.bonus ?? second)
+          : this.value(second.bonus, this.perLevel(second), second.roundingMethod);
+      inner = second.bonus ?? second;
+    } else value = this.value(second);
     switch (inner.type) {
       case 'skill':
       case 'attribute':
@@ -193,60 +198,65 @@ export class BonusExtractor {
 
   /** Skills this bonus raises (attributes raise their five skills). */
   affectedSkills(
-    b: RawBonus,
+    second: RawBonus,
     skillsOf: Record<string, string[]>,
     mod?: Modifier,
     rounding?: string,
   ): Record<string, number> {
-    if (b.type === 'skill') return { [String(b.name)]: this.value(b, mod, rounding) };
-    if (b.type === 'attribute') {
-      const v = this.value(b, mod, rounding);
-      return Object.fromEntries((skillsOf[String(b.name)] ?? []).map((s) => [s, v]));
+    if (second.type === 'skill') return { [String(second.name)]: this.value(second, mod, rounding) };
+    if (second.type === 'attribute') {
+      const currentValue = this.value(second, mod, rounding);
+      return Object.fromEntries((skillsOf[String(second.name)] ?? []).map((textValue) => [textValue, currentValue]));
     }
-    if (b.type === 'character' && b.key === 'level' && b.bonus)
-      return this.affectedSkills(b.bonus, skillsOf, this.perLevel(b), b.roundingMethod);
+    if (second.type === 'character' && second.key === 'level' && second.bonus)
+      return this.affectedSkills(second.bonus, skillsOf, this.perLevel(second), second.roundingMethod);
     return {};
   }
 }
 
 /** Item.handleItemUpgrade: every fixed number (attributes, skills, fort bonuses) gains the upgrade bonus. */
-function upgraded(o: Record<string, number>, level: number): Record<string, number> {
-  if (!level) return { ...o };
-  return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v + calculateItemLevelBonus(level, v)]));
+function upgraded(options: Record<string, number>, level: number): Record<string, number> {
+  if (!level) return { ...options };
+  return Object.fromEntries(
+    Object.entries(options).map(([key, currentValue]) => [
+      key,
+      currentValue + calculateItemLevelBonus(level, currentValue),
+    ]),
+  );
 }
 
 /** Item.parseSpeed */
 export function upgradedSpeed(speed: number | null, level: number): number | null {
   if (!speed || speed === 1 || !level) return speed;
-  let s = Math.round((1 / speed - 1) * 10000);
-  s += calculateItemLevelBonus(level, s);
-  return 1 / (s / 10000 + 1);
+  let currentValue = Math.round((1 / speed - 1) * 10000);
+  currentValue += calculateItemLevelBonus(level, currentValue);
+  return 1 / (currentValue / 10000 + 1);
 }
 
 /** The popup's "Speed: +N%". */
 export const speedPercent = (speed: number) => Math.round((1 / speed) * 100 - 100);
 
-const hasDamageBonus = (d: StatSource) =>
-  d.bonusItems.some((b) => b.type === 'character' && b.bonus?.type === 'damage');
+const hasDamageBonus = (data: StatSource) =>
+  data.bonusItems.some((second) => second.type === 'character' && second.bonus?.type === 'damage');
 
 /** Weapon.getDamage */
 function weaponDamage(
-  d: StatSource,
+  data: StatSource,
   level: number,
   charLevel: number | undefined,
 ): { min: number; max: number } | null {
-  if (!d.damage) return null;
-  let { min, max } = d.damage;
-  if (level && d.upgradeable) {
+  if (!data.damage) return null;
+  let { min, max } = data.damage;
+  if (level && data.upgradeable) {
     min += calculateItemLevelBonus(level, min);
     max += calculateItemLevelBonus(level, max);
   }
   let bonus = 0;
   if (charLevel !== undefined) {
-    for (const b of d.bonusItems) {
-      if (b.type === 'character' && b.bonus?.type === 'damage') {
-        const v = (b.bonus.value ?? 0) * charLevel;
-        bonus += Math.round(v) + calculateItemLevelBonus(level, v);
+    for (const second of data.bonusItems) {
+      if (second.type === 'character' && second.bonus?.type === 'damage') {
+        const currentValue = (second.bonus.value ?? 0) * charLevel;
+        bonus += Math.round(currentValue) + calculateItemLevelBonus(level, currentValue);
       }
     }
   }
@@ -257,72 +267,78 @@ function weaponDamage(
 const levelOf = (itemId: number) => itemId % 1000;
 
 /** All bonus lines of an item, in the popup's order, with upgrade and character level applied. */
-export function itemStats(d: StatSource, itemId: number, ctx: StatContext = {}): ItemStats {
+export function itemStats(data: StatSource, itemId: number, ctx: StatContext = {}): ItemStats {
   const level = levelOf(itemId);
-  const ex = new BonusExtractor(ctx, level);
+  const extractor = new BonusExtractor(ctx, level);
   const lines: StatLine[] = [];
   const totals: Record<string, number> = {};
-  const add = (k: string, v: number) => {
-    totals[k] = tidy((totals[k] ?? 0) + v);
+  const add = (key: string, currentValue: number) => {
+    totals[key] = tidy((totals[key] ?? 0) + currentValue);
   };
-  const isWeapon = d.type === 'right_arm' || d.type === 'left_arm';
+  const isWeapon = data.type === 'right_arm' || data.type === 'left_arm';
   const withChar = ctx.charLevel !== undefined;
 
-  const damage = isWeapon ? weaponDamage(d, level, ctx.charLevel) : null;
+  const damage = isWeapon ? weaponDamage(data, level, ctx.charLevel) : null;
   if (damage) {
     lines.push({
       kind: 'damage',
-      text: `${damage.min}-${damage.max} ${hasDamageBonus(d) && !withChar ? 'Base damage' : 'Damage'}`,
+      text: `${damage.min}-${damage.max} ${hasDamageBonus(data) && !withChar ? 'Base damage' : 'Damage'}`,
     });
     add('damage_min', damage.min);
     add('damage_max', damage.max);
   }
-  const attributes = upgraded(d.attributes, level);
-  for (const [k, v] of Object.entries(attributes)) {
-    if (!v) continue;
-    lines.push({ kind: 'attribute', text: `${v > 0 ? '+ ' : ''}${tidy(v)} ${NAMES[k] ?? k}` });
-    add(k, v);
+  const attributes = upgraded(data.attributes, level);
+  for (const [key, currentValue] of Object.entries(attributes)) {
+    if (!currentValue) continue;
+    lines.push({
+      kind: 'attribute',
+      text: `${currentValue > 0 ? '+ ' : ''}${tidy(currentValue)} ${NAMES[key] ?? key}`,
+    });
+    add(key, currentValue);
   }
-  const skills = upgraded(d.skills, level);
-  for (const [k, v] of Object.entries(skills)) {
-    if (!v) continue;
-    lines.push({ kind: 'skill', text: `${v > 0 ? '+ ' : ''}${tidy(v)} ${NAMES[k] ?? k}` });
-    add(k, v);
+  const skills = upgraded(data.skills, level);
+  for (const [entryKey, skillValue] of Object.entries(skills)) {
+    if (!skillValue) continue;
+    lines.push({
+      kind: 'skill',
+      text: `${skillValue > 0 ? '+ ' : ''}${tidy(skillValue)} ${NAMES[entryKey] ?? entryKey}`,
+    });
+    add(entryKey, skillValue);
   }
-  for (const b of d.bonusItems) {
-    const inner = b.type === 'character' ? b.bonus : b;
-    if (withChar && inner?.type === 'damage' && b.type === 'character') continue; // already in Damage
+  for (const second of data.bonusItems) {
+    const inner = second.type === 'character' ? second.bonus : second;
+    if (withChar && inner?.type === 'damage' && second.type === 'character') continue; // already in Damage
     const kind: StatKind = inner?.type === 'skill' ? 'skill' : inner?.type === 'attribute' ? 'attribute' : 'other';
-    const text = ex.desc(b);
+    const text = extractor.desc(second);
     if (text) lines.push({ kind, text });
-    const e = ex.exportValue(b);
-    if (isWeapon && e.key === 'damage') continue;
-    add(e.key, e.key === 'speed' ? e.value * 100 : e.value);
+    const entry = extractor.exportValue(second);
+    if (isWeapon && entry.key === 'damage') continue;
+    add(entry.key, entry.key === 'speed' ? entry.value * 100 : entry.value);
   }
-  const speed = upgradedSpeed(d.speed, level);
+  const speed = upgradedSpeed(data.speed, level);
   if (speed) {
     const pct = speedPercent(speed);
     lines.push({ kind: 'speed', text: `Speed: ${speed <= 1 ? '+' : ''}${pct}%` });
     add('speed', pct);
   }
-  const fb = upgraded(d.fortbattle, level);
+  const fb = upgraded(data.fortbattle, level);
   if (fb.offense || fb.defense || fb.resistance) {
     lines.push({ kind: 'fort', text: 'Fort battle bonus' });
-    for (const k of ['defense', 'offense', 'resistance']) {
-      const value = fb[k];
+    for (const fortField of ['defense', 'offense', 'resistance']) {
+      const value = fb[fortField];
       if (!value) continue;
-      lines.push({ kind: 'fort', text: `  +${tidy(value)} ${FORT_NAMES[k]}` });
-      add(`fort_${k}`, value);
+      lines.push({ kind: 'fort', text: `  +${tidy(value)} ${FORT_NAMES[fortField]}` });
+      add(`fort_${fortField}`, value);
     }
   }
-  const fs = upgraded(d.fortbattlesector, level);
+  const fs = upgraded(data.fortbattlesector, level);
   if (fs.damage || fs.offense || fs.defense) {
     lines.push({ kind: 'fort', text: 'Fort battle sector bonus' });
-    for (const k of ['defense', 'offense', 'damage']) {
-      const value = fs[k];
+    for (const sectorField of ['defense', 'offense', 'damage']) {
+      const value = fs[sectorField];
       if (!value) continue;
-      lines.push({ kind: 'fort', text: `  +${tidy(value)} ${FORT_NAMES[k]}` });
-      add(`fort_${k}_sector`, value);
+      lines.push({ kind: 'fort', text: `  +${tidy(value)} ${FORT_NAMES[sectorField]}` });
+      add(`fort_${sectorField}_sector`, value);
     }
   }
   return { lines, totals, damage, speed };
@@ -339,20 +355,30 @@ export interface ItemSetDef {
 
 /** ItemSet.getMergedStages(cnt): stage bonuses up to `cnt` worn items, same bonuses summed. */
 export function mergedStages(set: ItemSetDef, cnt: number): RawBonus[] {
-  const merge = (bb: RawBonus, b: RawBonus): boolean => {
-    if (bb.type !== b.type) return false;
-    if (b.type === 'character' && b.roundingMethod === bb.roundingMethod && b.key === bb.key && bb.bonus && b.bonus)
-      return merge(bb.bonus, b.bonus);
-    if (b.type === 'job' && b.job === bb.job) {
-      bb.value = (bb.value ?? 0) + (b.value ?? 0);
+  const merge = (bb: RawBonus, second: RawBonus): boolean => {
+    if (bb.type !== second.type) return false;
+    if (
+      second.type === 'character' &&
+      second.roundingMethod === bb.roundingMethod &&
+      second.key === bb.key &&
+      bb.bonus &&
+      second.bonus
+    )
+      return merge(bb.bonus, second.bonus);
+    if (second.type === 'job' && second.job === bb.job) {
+      bb.value = (bb.value ?? 0) + (second.value ?? 0);
       return true;
     }
-    if (['speed', 'regen', 'luck', 'pray', 'experience', 'dollar', 'damage', 'drop'].includes(b.type)) {
-      bb.value = (bb.value ?? 0) + (b.value ?? 0);
+    if (['speed', 'regen', 'luck', 'pray', 'experience', 'dollar', 'damage', 'drop'].includes(second.type)) {
+      bb.value = (bb.value ?? 0) + (second.value ?? 0);
       return true;
     }
-    if (['skill', 'attribute', 'fortbattle'].includes(b.type) && b.name === bb.name && b.isSector === bb.isSector) {
-      bb.value = (bb.value ?? 0) + (b.value ?? 0);
+    if (
+      ['skill', 'attribute', 'fortbattle'].includes(second.type) &&
+      second.name === bb.name &&
+      second.isSector === bb.isSector
+    ) {
+      bb.value = (bb.value ?? 0) + (second.value ?? 0);
       return true;
     }
     return false;
@@ -361,20 +387,20 @@ export function mergedStages(set: ItemSetDef, cnt: number): RawBonus[] {
   for (const [stage, list] of Object.entries(set.bonus ?? {})) {
     if (parseInt(stage, 10) > cnt || !Array.isArray(list)) continue;
     next: for (const sb of list) {
-      for (const m of out) if (merge(m, sb)) continue next;
+      for (const match of out) if (merge(match, sb)) continue next;
       out.push(structuredClone(sb));
     }
   }
   // The popup sorts: attributes (by name), then skills, then the rest.
-  const tag = (b: RawBonus, t: string) => {
-    const x = b.bonus ?? b;
-    return x.type === t ? String(x.name) : null;
+  const tag = (second: RawBonus, textValue: string) => {
+    const xCoord = second.bonus ?? second;
+    return xCoord.type === textValue ? String(xCoord.name) : null;
   };
-  return out.sort((a, b) => {
-    const aa = tag(a, 'attribute'),
-      ab = tag(b, 'attribute'),
-      sa = tag(a, 'skill'),
-      sb = tag(b, 'skill');
+  return out.sort((first, second) => {
+    const aa = tag(first, 'attribute'),
+      ab = tag(second, 'attribute'),
+      sa = tag(first, 'skill'),
+      sb = tag(second, 'skill');
     if (aa && ab) return aa < ab ? -1 : 1;
     if (aa) return -1;
     if (ab) return 1;
@@ -387,19 +413,19 @@ export function mergedStages(set: ItemSetDef, cnt: number): RawBonus[] {
 
 /** Set bonus lines for `worn` set items, as the popup shows them (per-level values for this character). */
 export function setBonusLines(set: ItemSetDef, worn: number, ctx: StatContext): string[] {
-  const ex = new BonusExtractor(ctx);
+  const extractor = new BonusExtractor(ctx);
   return mergedStages(set, worn)
-    .map((b) => ex.desc(b))
+    .map((second) => extractor.desc(second))
     .filter(Boolean);
 }
 
 /** Set bonus totals (same keys as ItemStats.totals). */
 export function setBonusTotals(set: ItemSetDef, worn: number, ctx: StatContext): Record<string, number> {
-  const ex = new BonusExtractor(ctx);
+  const extractor = new BonusExtractor(ctx);
   const totals: Record<string, number> = {};
-  for (const b of mergedStages(set, worn)) {
-    const e = ex.exportValue(b);
-    totals[e.key] = tidy((totals[e.key] ?? 0) + (e.key === 'speed' ? e.value * 100 : e.value));
+  for (const second of mergedStages(set, worn)) {
+    const entry = extractor.exportValue(second);
+    totals[entry.key] = tidy((totals[entry.key] ?? 0) + (entry.key === 'speed' ? entry.value * 100 : entry.value));
   }
   return totals;
 }

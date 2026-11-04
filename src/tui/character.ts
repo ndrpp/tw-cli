@@ -22,11 +22,17 @@ import { defined } from '../util/defined.ts';
 import { type FormState, FormView, formKey, formValues, makeForm } from './form.ts';
 import { money, scrollWindow, truncate } from './format.ts';
 
-const h = React.createElement;
+const createElement = React.createElement;
 
 export type CharTab = 'inventory' | 'sets' | 'skills';
 const CHAR_TABS: CharTab[] = ['inventory', 'sets', 'skills'];
+const TAB_LABEL: Record<CharTab, string> = { inventory: 'Inventory', sets: 'Sets', skills: 'Skills' };
 const TYPE_FILTERS = ['all', ...WEAR_SLOTS, 'collection', 'recipe'];
+/** Wear slots first, in the game's order; everything else after them. */
+const wearOrder = (type: string): number => {
+  const index = WEAR_SLOTS.indexOf(type);
+  return index < 0 ? WEAR_SLOTS.length : index;
+};
 
 export interface ScreenProps {
   state: GameState;
@@ -65,41 +71,40 @@ export function gearDelta(item: ItemStats | null | undefined, worn: ItemStats | 
   if (!item) return '';
   const keys = new Set([...Object.keys(item.totals), ...Object.keys(worn?.totals ?? {})]);
   const parts: string[] = [];
-  for (const k of keys) {
-    let diff = (item.totals[k] ?? 0) - (worn?.totals[k] ?? 0);
-    if (PERCENT_KEYS.has(k)) diff *= 100;
+  for (const entryKey of keys) {
+    let diff = (item.totals[entryKey] ?? 0) - (worn?.totals[entryKey] ?? 0);
+    if (PERCENT_KEYS.has(entryKey)) diff *= 100;
     diff = Math.round(diff * 100) / 100;
-    if (diff) parts.push(`${diff > 0 ? '+' : ''}${diff} ${NAMES[k] ?? TOTAL_LABEL[k] ?? k}`);
+    if (diff) parts.push(`${diff > 0 ? '+' : ''}${diff} ${NAMES[entryKey] ?? TOTAL_LABEL[entryKey] ?? entryKey}`);
   }
   return parts.join(', ');
 }
 
 /** What `/` matches: name, slot, set, "L<level>", and bonus texts ("trading", "+5 construction"). */
 function itemSearchText(state: GameState, it: BagItem): string {
-  const d = state.items?.get(it.itemId);
+  const entry = state.items?.get(it.itemId);
   return [
     state.itemName(it.itemId),
-    SLOT_NAMES[d?.type ?? it.type] ?? it.type,
-    d?.set ?? '',
-    d?.level ? `L${d.level}` : '',
-    d ? bonusText(d, it.itemId, state.statContext) : '',
+    SLOT_NAMES[entry?.type ?? it.type] ?? it.type,
+    entry?.set ?? '',
+    entry?.level ? `L${entry.level}` : '',
+    entry ? bonusText(entry, it.itemId, state.statContext) : '',
   ]
     .join(' | ')
     .toLowerCase();
 }
 
 function bagRows(state: GameState, typeFilter: string, filter: string): BagItem[] {
-  const f = filter.trim().toLowerCase();
+  const needle = filter.trim().toLowerCase();
   return state.inventory
     .items()
-    .filter((it) => typeFilter === 'all' || (state.items?.get(it.itemId)?.type ?? it.type) === typeFilter)
-    .filter((it) => !f || itemSearchText(state, it).includes(f))
-    .sort((a, b) => {
-      const ta = WEAR_SLOTS.indexOf(a.type),
-        tb = WEAR_SLOTS.indexOf(b.type);
-      if (ta !== tb) return (ta < 0 ? 99 : ta) - (tb < 0 ? 99 : tb);
-      return state.itemName(a.itemId).localeCompare(state.itemName(b.itemId));
-    });
+    .filter((item) => typeFilter === 'all' || (state.items?.get(item.itemId)?.type ?? item.type) === typeFilter)
+    .filter((item) => !needle || itemSearchText(state, item).includes(needle))
+    .sort(
+      (first, second) =>
+        wearOrder(first.type) - wearOrder(second.type) ||
+        state.itemName(first.itemId).localeCompare(state.itemName(second.itemId)),
+    );
 }
 
 export function CharacterScreen({ state, width, height, onCapture, onExit, active = true }: ScreenProps) {
@@ -141,13 +146,13 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
     [state, state.items, state.inventory, state.inventory.bag.size, typeFilter, filter, state.log.length],
   );
   const bagIdx = Math.min(bagSel, Math.max(0, rows.length - 1));
-  const skillRows = ATTRIBUTES.flatMap((a) => [a, ...SKILLS_OF[a]]);
+  const skillRows = ATTRIBUTES.flatMap((first) => [first, ...SKILLS_OF[first]]);
   const used = planUsed(plan);
 
   const askUse = (it: BagItem) => {
-    const d = state.items?.get(it.itemId);
-    if (d && d.usetype === 'none') return state.error(`${d.name} cannot be used.`);
-    const many = it.count > 1 && d?.usetype !== 'single';
+    const entry = state.items?.get(it.itemId);
+    if (entry && entry.usetype === 'none') return state.error(`${entry.name} cannot be used.`);
+    const many = it.count > 1 && entry?.usetype !== 'single';
     return setUseForm({
       itemId: it.itemId,
       form: makeForm(`Use ${state.itemName(it.itemId)}${it.count > 1 ? ` (you have ${it.count})` : ''}?`, [
@@ -161,13 +166,13 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
   useInput(
     (input, key) => {
       if (useForm) {
-        const r = formKey(useForm.form, input, key);
-        if (r === 'cancel') return setUseForm(null);
-        if (r !== 'submit') return setUseForm({ ...useForm, form: r });
-        const n = Math.max(1, Number(formValues(useForm.form).count) || 1);
+        const form = formKey(useForm.form, input, key);
+        if (form === 'cancel') return setUseForm(null);
+        if (form !== 'submit') return setUseForm({ ...useForm, form: form });
+        const countValue = Math.max(1, Number(formValues(useForm.form).count) || 1);
         setUseForm(null);
         // biome-ignore lint/correctness/useHookAtTopLevel: state.useItem is a game action, not a React hook
-        return void state.useItem(useForm.itemId, n);
+        return void state.useItem(useForm.itemId, countValue);
       }
       if (setSwitch) {
         const set = setSwitch;
@@ -178,8 +183,8 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       if (filtering) {
         if (key.return || key.escape) setFiltering(false);
         if (key.escape) setFilter('');
-        else if (key.backspace || key.delete) setFilter((f) => f.slice(0, -1));
-        else if (input && !key.ctrl && !key.meta && !key.return) setFilter((f) => f + input);
+        else if (key.backspace || key.delete) setFilter((textValue) => textValue.slice(0, -1));
+        else if (input && !key.ctrl && !key.meta && !key.return) setFilter((textValue) => textValue + input);
         setBagSel(0);
         return;
       }
@@ -191,8 +196,8 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       if (detail && (key.escape || input === 'h')) return setDetail(false);
       if (key.leftArrow || key.rightArrow) {
         setDetail(false);
-        const d = key.rightArrow ? 1 : CHAR_TABS.length - 1;
-        return setTab((t) => CHAR_TABS[(CHAR_TABS.indexOf(t) + d) % CHAR_TABS.length] ?? t);
+        const value = key.rightArrow ? 1 : CHAR_TABS.length - 1;
+        return setTab((target) => CHAR_TABS[(CHAR_TABS.indexOf(target) + value) % CHAR_TABS.length] ?? target);
       }
       if (key.escape) {
         if (tab === 'skills' && (used.attributes || used.skills)) {
@@ -206,19 +211,19 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       const down = key.downArrow || input === 'j';
       const step = key.pageUp || key.pageDown ? 10 : 1;
       if (tab === 'skills') {
-        if (up || key.pageUp) return setSkillSel((i) => Math.max(0, i - step));
-        if (down || key.pageDown) return setSkillSel((i) => Math.min(skillRows.length - 1, i + step));
-        const k = skillRows[skillSel];
-        if (!k) return;
+        if (up || key.pageUp) return setSkillSel((innerIndex) => Math.max(0, innerIndex - step));
+        if (down || key.pageDown) return setSkillSel((innerIndex) => Math.min(skillRows.length - 1, innerIndex + step));
+        const entryKey = skillRows[skillSel];
+        if (!entryKey) return;
         if (input === '+' || input === '=') {
-          const p = structuredClone(plan);
-          if (adjustPlan(p, state.skills, k, 1)) setPlan(p);
-          else state.error(k in SKILLS_OF ? 'No free attribute points.' : 'No free skill points.');
+          const pick = structuredClone(plan);
+          if (adjustPlan(pick, state.skills, entryKey, 1)) setPlan(pick);
+          else state.error(entryKey in SKILLS_OF ? 'No free attribute points.' : 'No free skill points.');
           return;
         }
         if (input === '-' || input === '_') {
-          const p = structuredClone(plan);
-          if (adjustPlan(p, state.skills, k, -1)) setPlan(p);
+          const pickInfo = structuredClone(plan);
+          if (adjustPlan(pickInfo, state.skills, entryKey, -1)) setPlan(pickInfo);
           return;
         }
         if (key.return && (used.attributes || used.skills)) return setConfirm(true);
@@ -234,13 +239,13 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
         return;
       }
       if (detail) {
-        if (up || key.pageUp) return setDetailScroll((n) => Math.max(0, n - step));
-        if (down || key.pageDown) return setDetailScroll((n) => n + step);
+        if (up || key.pageUp) return setDetailScroll((countValue) => Math.max(0, countValue - step));
+        if (down || key.pageDown) return setDetailScroll((countValue) => countValue + step);
       }
       if (input === 'l') return setDetail(true);
       if (key.tab) {
         setDetail(false);
-        return setPane((p) => (p === 'bag' ? 'wear' : 'bag'));
+        return setPane((pick) => (pick === 'bag' ? 'wear' : 'bag'));
       }
       if (input === '/') {
         setPane('bag');
@@ -250,15 +255,15 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       }
       if (input === 't') {
         setBagSel(0);
-        return setTypeIdx((i) => (i + 1) % TYPE_FILTERS.length);
+        return setTypeIdx((innerIndex) => (innerIndex + 1) % TYPE_FILTERS.length);
       }
       if (input === 'y') {
         setBagSel(0);
-        return setTypeIdx((i) => (i + TYPE_FILTERS.length - 1) % TYPE_FILTERS.length);
+        return setTypeIdx((innerIndex) => (innerIndex + TYPE_FILTERS.length - 1) % TYPE_FILTERS.length);
       }
       if (pane === 'wear') {
-        if (up || key.pageUp) return setWearSel((i) => Math.max(0, i - step));
-        if (down || key.pageDown) return setWearSel((i) => Math.min(WEAR_SLOTS.length - 1, i + step));
+        if (up || key.pageUp) return setWearSel((innerIndex) => Math.max(0, innerIndex - step));
+        if (down || key.pageDown) return setWearSel((innerIndex) => Math.min(WEAR_SLOTS.length - 1, innerIndex + step));
         const slot = WEAR_SLOTS[wearSel];
         if ((key.return || input === 'x') && slot && state.inventory.wear.has(slot)) return void state.unwear(slot);
         return;
@@ -268,10 +273,10 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       const it = rows[bagIdx];
       if (input === 'U' && it) return askUse(it);
       if ((key.return || input === 'e') && it) {
-        const d = state.items?.get(it.itemId);
-        const type = d?.type ?? it.type;
+        const entry = state.items?.get(it.itemId);
+        const type = entry?.type ?? it.type;
         // Usable products (coffee is a `yield` item) win over the wearable slot.
-        if (d && d.usetype !== 'none') return askUse(it);
+        if (entry && entry.usetype !== 'none') return askUse(it);
         if (WEAR_SLOTS.includes(type)) return void state.wear(it.itemId);
         return state.error(`${state.itemName(it.itemId)} can't be worn or used.`);
       }
@@ -279,28 +284,32 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
     { isActive: active },
   );
 
-  const TAB_LABEL: Record<CharTab, string> = { inventory: 'Inventory', sets: 'Sets', skills: 'Skills' };
-  const tabs = h(
+  const tabs = createElement(
     Text,
     { wrap: 'truncate' },
-    ...CHAR_TABS.map((t) =>
-      h(
+    ...CHAR_TABS.map((target) =>
+      createElement(
         Text,
-        defined({ key: t, inverse: tab === t, bold: tab === t, color: tab === t ? 'cyan' : undefined }),
-        ` ${TAB_LABEL[t]} `,
+        defined({
+          key: target,
+          inverse: tab === target,
+          bold: tab === target,
+          color: tab === target ? 'cyan' : undefined,
+        }),
+        ` ${TAB_LABEL[target]} `,
       ),
     ),
-    h(Text, { dimColor: true }, '   ← → switch · Esc back'),
-    state.items ? null : h(Text, { color: 'yellow' }, '   loading item data…'),
+    createElement(Text, { dimColor: true }, '   ← → switch · Esc back'),
+    state.items ? null : createElement(Text, { color: 'yellow' }, '   loading item data…'),
   );
 
-  const formH = useForm ? useForm.form.fields.length + 4 : 0;
+  const otherForm = useForm ? useForm.form.fields.length + 4 : 0;
   const body =
     tab === 'inventory'
-      ? h(InventoryTab, {
+      ? createElement(InventoryTab, {
           state,
           width,
-          height: height - 1 - formH,
+          height: height - 1 - otherForm,
           pane,
           wearSel,
           rows,
@@ -310,17 +319,25 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
           filtering,
           detailScroll,
           detail,
-          clampScroll: (max: number) => setDetailScroll((n) => Math.min(n, max)),
+          clampScroll: (max: number) => setDetailScroll((countValue) => Math.min(countValue, max)),
         })
       : tab === 'sets'
-        ? h(SetsTab, { state, width, height: height - 1, selected: setSel, confirm: setSwitch })
-        : h(SkillsTab, { state, width, height: height - 1, rows: skillRows, selected: skillSel, plan, confirm });
-  return h(
+        ? createElement(SetsTab, { state, width, height: height - 1, selected: setSel, confirm: setSwitch })
+        : createElement(SkillsTab, {
+            state,
+            width,
+            height: height - 1,
+            rows: skillRows,
+            selected: skillSel,
+            plan,
+            confirm,
+          });
+  return createElement(
     Box,
     { flexDirection: 'column', width, height },
     tabs,
     body,
-    useForm ? h(FormView, { form: useForm.form, width }) : null,
+    useForm ? createElement(FormView, { form: useForm.form, width }) : null,
   );
 }
 
@@ -372,11 +389,11 @@ const STAT_COLOR: Record<StatKind, Record<string, unknown>> = {
 
 /** Bonus lines as the web popup computes them (upgrade level, per-level values for this character). */
 export function bonusLines(stats: ItemStats | null | undefined): string[] {
-  return stats ? stats.lines.map((l) => l.text) : [];
+  return stats ? stats.lines.map((lineValue) => lineValue.text) : [];
 }
 
 /** `clampScroll` (character screen): the detail can take focus (l) and scroll; it reports how far. */
-export function ItemDetail(p: {
+export function ItemDetail(transform: {
   state: GameState;
   itemId: number | undefined;
   count: number;
@@ -389,16 +406,17 @@ export function ItemDetail(p: {
   focused?: boolean;
   clampScroll?: (max: number) => void;
 }) {
-  const { state, itemId, count, wornId, compare, pane, width, height, scroll, focused, clampScroll } = p;
+  const { state, itemId, count, wornId, compare, pane, width, height, scroll, focused, clampScroll } = transform;
   const def = itemId !== undefined ? state.items?.get(itemId) : undefined;
   const worn = wornId !== undefined ? state.items?.get(wornId) : undefined;
-  const w = Math.max(10, width - 4);
+  const fieldWidth = Math.max(10, width - 4);
   const lines: React.ReactNode[] = [];
   const add = (text: string, props: Record<string, unknown> = {}) => {
-    for (const l of wrapText(text, w)) lines.push(h(Text, { key: lines.length, ...props }, l || ' '));
+    for (const textValue of wrapText(text, fieldWidth))
+      lines.push(createElement(Text, { key: lines.length, ...props }, textValue || ' '));
   };
-  const gap = () => lines.push(h(Text, { key: lines.length }, ' '));
-  const c = state.character;
+  const gap = () => lines.push(createElement(Text, { key: lines.length }, ' '));
+  const character = state.character;
   if (itemId === undefined) add('Nothing selected', { dimColor: true });
   else if (!def) add(state.itemName(itemId), { bold: true });
   else {
@@ -417,38 +435,40 @@ export function ItemDetail(p: {
       add(`Requires ${def.profession} (${def.professionLevel ?? '?'})`, { color: 'green' });
     if (def.usebonus.length && def.type !== 'recipe') {
       add(def.usebonus.length > 1 ? 'Effects:' : 'Effect:', { bold: true });
-      for (const u of def.usebonus) add(`  ${u}`, { color: 'green' });
+      for (const url of def.usebonus) add(`  ${url}`, { color: 'green' });
     }
     gap();
     add('Bonuses', { bold: true });
-    if (stats?.lines.length) for (const l of stats.lines) add(`  ${l.text.trim()}`, STAT_COLOR[l.kind]);
+    if (stats?.lines.length)
+      for (const lineValue of stats.lines) add(`  ${lineValue.text.trim()}`, STAT_COLOR[lineValue.kind]);
     else add('  none', { dimColor: true });
     const set = state.itemSet(itemId);
     if (set) {
       gap();
       add(`${set.name} (${set.worn}/${set.items.length} worn)`, { bold: true, color: 'greenBright' });
-      for (const b of set.bonus) add(`  ${b}`, { color: 'green' });
-      for (const i of set.items) add(`  ${i.worn ? '●' : '○'} ${i.name}`, { dimColor: !i.worn });
+      for (const textValue of set.bonus) add(`  ${textValue}`, { color: 'green' });
+      for (const innerIndex of set.items)
+        add(`  ${innerIndex.worn ? '●' : '○'} ${innerIndex.name}`, { dimColor: !innerIndex.worn });
     }
     const req = state.requiredLevel(itemId);
     const reqs: [string, boolean][] = [];
     if (req)
       reqs.push([
         req.level !== req.base ? `Level ${req.level} (${req.base})` : `Level ${req.level}`,
-        c.level < req.level,
+        character.level < req.level,
       ]);
-    if (def.duelLevel) reqs.push([`Duel level ${def.duelLevel}`, c.duelLevel < def.duelLevel]);
+    if (def.duelLevel) reqs.push([`Duel level ${def.duelLevel}`, character.duelLevel < def.duelLevel]);
     if (def.charClass)
-      reqs.push([`Class: ${CLASS_TITLE[def.charClass] ?? def.charClass}`, c.charClass !== def.charClass]);
+      reqs.push([`Class: ${CLASS_TITLE[def.charClass] ?? def.charClass}`, character.charClass !== def.charClass]);
     if (def.charSex)
       reqs.push([
-        `Gender: ${def.charSex === 'male' ? 'Male' : 'Female'}${c.charClass === 'greenhorn' ? ' (No Greenhorn)' : ''}`,
-        c.charSex !== def.charSex || c.charClass === 'greenhorn',
+        `Gender: ${def.charSex === 'male' ? 'Male' : 'Female'}${character.charClass === 'greenhorn' ? ' (No Greenhorn)' : ''}`,
+        character.charSex !== def.charSex || character.charClass === 'greenhorn',
       ]);
     if (reqs.length) {
       gap();
       add('Requires', { bold: true });
-      for (const [t, bad] of reqs) add(`  ${t}`, bad ? { color: 'red' } : {});
+      for (const [requirementText, bad] of reqs) add(`  ${requirementText}`, bad ? { color: 'red' } : {});
     }
     gap();
     if (!def.sellable) add('Unsalable', { color: 'red' });
@@ -459,7 +479,8 @@ export function ItemDetail(p: {
       gap();
       add(`Instead of ${wornId !== undefined ? state.itemName(wornId) : 'nothing'}`, { bold: true });
       const diff = gearDelta(stats, wornId !== undefined && worn ? state.itemStats(wornId) : null);
-      if (diff) for (const d of diff.split(', ')) add(`  ${d}`, { color: d.startsWith('-') ? 'red' : 'green' });
+      if (diff)
+        for (const date of diff.split(', ')) add(`  ${date}`, { color: date.startsWith('-') ? 'red' : 'green' });
       else add('  no change', { dimColor: true });
     }
   }
@@ -477,7 +498,7 @@ export function ItemDetail(p: {
   useEffect(() => {
     if (scroll > maxTop) clampScroll?.(maxTop);
   });
-  return h(
+  return createElement(
     Box,
     {
       flexDirection: 'column',
@@ -489,12 +510,12 @@ export function ItemDetail(p: {
       flexShrink: 0,
     },
     ...lines.slice(top, top + room),
-    h(Box, { flexGrow: 1 }),
-    h(Text, { dimColor: true, wrap: 'truncate' }, more > 0 ? `↓ ${more} more · ${hint}` : hint),
+    createElement(Box, { flexGrow: 1 }),
+    createElement(Text, { dimColor: true, wrap: 'truncate' }, more > 0 ? `↓ ${more} more · ${hint}` : hint),
   );
 }
 
-function InventoryTab(p: {
+function InventoryTab(transform: {
   state: GameState;
   width: number;
   height: number;
@@ -523,7 +544,7 @@ function InventoryTab(p: {
     detailScroll,
     detail: detailFocus,
     clampScroll,
-  } = p;
+  } = transform;
   const inv = state.inventory;
   // Wide terminals: equipped | bag | details side by side. Narrow: details below, still tall.
   const side = width >= 100;
@@ -531,91 +552,91 @@ function InventoryTab(p: {
   const detailW = side ? Math.min(46, Math.max(32, Math.floor(width * 0.32))) : width;
   const bagW = side ? width - wearW - detailW : width - wearW;
   const detailH = side ? height : Math.max(8, Math.floor(height * 0.45));
-  const listH = side ? height : Math.max(6, height - detailH);
+  const itemList = side ? height : Math.max(6, height - detailH);
   const wearSlot = WEAR_SLOTS[wearSel];
   const sel = pane === 'wear' && wearSlot ? inv.wear.get(wearSlot) : rows[bagIdx]?.itemId;
   const def = sel !== undefined ? state.items?.get(sel) : undefined;
   const wornId = def && pane === 'bag' ? inv.wear.get(def.type) : undefined;
 
-  const wearPane = h(
+  const wearPane = createElement(
     Box,
     {
       flexDirection: 'column',
       borderStyle: 'round',
       borderColor: pane === 'wear' && !detailFocus ? 'cyan' : 'gray',
       width: wearW,
-      height: listH,
+      height: itemList,
       paddingX: 1,
       flexShrink: 0,
     },
-    h(Text, { bold: true }, 'Equipped'),
-    ...WEAR_SLOTS.map((slot, i) => {
+    createElement(Text, { bold: true }, 'Equipped'),
+    ...WEAR_SLOTS.map((slot, innerIndex) => {
       const id = inv.wear.get(slot);
-      return h(
+      return createElement(
         Box,
         { key: slot, flexDirection: 'column' },
-        h(
+        createElement(
           Text,
-          { color: 'yellow', dimColor: !(pane === 'wear' && i === wearSel), wrap: 'truncate' },
+          { color: 'yellow', dimColor: !(pane === 'wear' && innerIndex === wearSel), wrap: 'truncate' },
           SLOT_NAMES[slot] ?? slot,
         ),
-        h(
+        createElement(
           Text,
-          { inverse: pane === 'wear' && i === wearSel, wrap: 'truncate', dimColor: id === undefined },
+          { inverse: pane === 'wear' && innerIndex === wearSel, wrap: 'truncate', dimColor: id === undefined },
           `  ${id === undefined ? '—' : state.itemName(id)}`,
         ),
       );
-    }).slice(0, Math.max(1, Math.floor((listH - 4) / 2))),
-    h(Text, { dimColor: true, wrap: 'truncate' }, `speed ×${state.character.speed.toFixed(2)}`),
+    }).slice(0, Math.max(1, Math.floor((itemList - 4) / 2))),
+    createElement(Text, { dimColor: true, wrap: 'truncate' }, `speed ×${state.character.speed.toFixed(2)}`),
   );
 
-  const listRows = Math.max(1, listH - 4);
+  const listRows = Math.max(1, itemList - 4);
   const [start, end] = scrollWindow(bagIdx, rows.length, listRows);
-  const nameW = Math.max(10, bagW - 16);
+  const otherName = Math.max(10, bagW - 16);
   const typeLabel = typeFilter === 'all' ? 'all types' : (SLOT_NAMES[typeFilter] ?? typeFilter);
-  const bagPane = h(
+  const bagPane = createElement(
     Box,
     {
       flexDirection: 'column',
       borderStyle: 'round',
       borderColor: pane === 'bag' && !detailFocus ? 'cyan' : 'gray',
       width: bagW,
-      height: listH,
+      height: itemList,
       paddingX: 1,
       flexShrink: 0,
     },
-    h(
+    createElement(
       Text,
       { bold: true, wrap: 'truncate' },
       `Bag  ${rows.length ? `${bagIdx + 1}/${rows.length}` : '0'}${rows.length !== inv.bag.size ? ` of ${inv.bag.size}` : ''}`,
     ),
-    h(
+    createElement(
       Text,
       { wrap: 'truncate' },
-      h(
+      createElement(
         Text,
         { color: filtering ? 'cyan' : filter ? 'yellow' : 'gray' },
         filtering ? `/${filter}▏` : filter ? `/${filter}` : '/ filter',
       ),
-      h(Text, { dimColor: true }, '  ·  '),
-      h(Text, { color: typeFilter === 'all' ? 'gray' : 'yellow' }, `t ${typeLabel}`),
+      createElement(Text, { dimColor: true }, '  ·  '),
+      createElement(Text, { color: typeFilter === 'all' ? 'gray' : 'yellow' }, `t ${typeLabel}`),
     ),
-    ...rows.slice(start, end).map((it, i) => {
-      const idx = start + i;
-      const d = state.items?.get(it.itemId);
-      return h(
+    ...rows.slice(start, end).map((it, innerIndex) => {
+      const idx = start + innerIndex;
+      const entry = state.items?.get(it.itemId);
+      return createElement(
         Text,
         { key: it.itemId, inverse: pane === 'bag' && idx === bagIdx, wrap: 'truncate' },
-        `${truncate(state.itemName(it.itemId), nameW)} `,
-        h(
+        `${truncate(state.itemName(it.itemId), otherName)} `,
+        createElement(
           Text,
           { dimColor: true },
-          `${(it.count > 1 ? `×${it.count}` : '').padStart(5)} ${(d?.level ? `L${d.level}` : '').padStart(4)}`,
+          `${(it.count > 1 ? `×${it.count}` : '').padStart(5)} ${(entry?.level ? `L${entry.level}` : '').padStart(4)}`,
         ),
       );
     }),
     rows.length === 0
-      ? h(
+      ? createElement(
           Text,
           { dimColor: true },
           inv.bag.size ? 'Nothing matches. Esc clears the filter.' : 'Bag is empty (u refreshes).',
@@ -623,7 +644,7 @@ function InventoryTab(p: {
       : null,
   );
 
-  const detail = h(ItemDetail, {
+  const detail = createElement(ItemDetail, {
     state,
     itemId: sel,
     count: sel !== undefined ? inv.count(sel) : 0,
@@ -637,8 +658,8 @@ function InventoryTab(p: {
     clampScroll,
   });
   return side
-    ? h(Box, null, wearPane, bagPane, detail)
-    : h(Box, { flexDirection: 'column' }, h(Box, null, wearPane, bagPane), detail);
+    ? createElement(Box, null, wearPane, bagPane, detail)
+    : createElement(Box, { flexDirection: 'column' }, createElement(Box, null, wearPane, bagPane), detail);
 }
 
 const setFullyWorn = (state: GameState, set: EquipSet): boolean =>
@@ -660,69 +681,88 @@ function SetsTab({
   const sets = state.equipSets?.sets ?? [];
   const idx = Math.min(selected, Math.max(0, sets.length - 1));
   const set = sets[idx];
-  const listW = Math.max(30, Math.min(46, Math.floor(width * 0.35)));
-  const detailW = width - listW;
+  const itemList = Math.max(30, Math.min(46, Math.floor(width * 0.35)));
+  const detailW = width - itemList;
   const listRows = Math.max(2, height - 4);
   const [start, end] = scrollWindow(idx, sets.length, listRows);
   const owned = (id: number) => state.inventory.isWorn(id) || state.inventory.count(id) > 0;
   const worn = set
     ? WEAR_SLOTS.filter((slot) => (set.slots[slot] ?? null) === (state.inventory.wear.get(slot) ?? null)).length
     : 0;
-  const left = h(
+  const left = createElement(
     Box,
-    { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width: listW, height, paddingX: 1 },
-    h(Text, { bold: true, wrap: 'truncate' }, `Equipment sets  ${sets.length ? `${idx + 1}/${sets.length}` : '0'}`),
-    h(
+    { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width: itemList, height, paddingX: 1 },
+    createElement(
+      Text,
+      { bold: true, wrap: 'truncate' },
+      `Equipment sets  ${sets.length ? `${idx + 1}/${sets.length}` : '0'}`,
+    ),
+    createElement(
       Text,
       { dimColor: true, wrap: 'truncate' },
       state.equipSets
         ? `maximum ${state.equipSets.hasPremium ? state.equipSets.premiumMax : state.equipSets.max} · u refresh`
         : 'Loading…',
     ),
-    ...sets.slice(start, end).map((s, i) => {
-      const full = setFullyWorn(state, s);
-      return h(
+    ...sets.slice(start, end).map((source, innerIndex) => {
+      const full = setFullyWorn(state, source);
+      return createElement(
         Text,
-        defined({ key: s.id, inverse: start + i === idx, color: full ? 'green' : undefined, wrap: 'truncate' }),
-        `${full ? '●' : '○'} ${truncate(s.name, listW - 6)}`,
+        defined({
+          key: source.id,
+          inverse: start + innerIndex === idx,
+          color: full ? 'green' : undefined,
+          wrap: 'truncate',
+        }),
+        `${full ? '●' : '○'} ${truncate(source.name, itemList - 6)}`,
       );
     }),
     sets.length === 0 && state.equipSets
-      ? h(Text, { dimColor: true, wrap: 'wrap' }, 'No saved sets. Save them in the browser inventory for now.')
+      ? createElement(
+          Text,
+          { dimColor: true, wrap: 'wrap' },
+          'No saved sets. Save them in the browser inventory for now.',
+        )
       : null,
   );
-  const detail = h(
+  const detail = createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width: detailW, height, paddingX: 1 },
     set
-      ? h(Text, { bold: true, wrap: 'truncate' }, `${set.name} · ${worn}/${WEAR_SLOTS.length} worn`)
-      : h(Text, { bold: true }, 'No set selected'),
+      ? createElement(Text, { bold: true, wrap: 'truncate' }, `${set.name} · ${worn}/${WEAR_SLOTS.length} worn`)
+      : createElement(Text, { bold: true }, 'No set selected'),
     set
-      ? h(Text, { dimColor: true, wrap: 'truncate' }, 'Enter switches. Items you wear now go back to the bag.')
+      ? createElement(
+          Text,
+          { dimColor: true, wrap: 'truncate' },
+          'Enter switches. Items you wear now go back to the bag.',
+        )
       : null,
     ...(set
       ? WEAR_SLOTS.map((slot) => {
           const want = set.slots[slot] ?? null;
           const current = state.inventory.wear.get(slot) ?? null;
           const same = want === current;
-          return h(
+          return createElement(
             Text,
             defined({ key: slot, color: same ? 'green' : want && !owned(want) ? 'red' : undefined, wrap: 'truncate' }),
             `${(SLOT_NAMES[slot] ?? slot).padEnd(12)} ${want === null ? '—' : state.itemName(want)}`,
             want && !owned(want) ? '  (not in bag)' : '',
-            !same && current !== null ? h(Text, { dimColor: true }, `  now ${state.itemName(current)}`) : '',
+            !same && current !== null
+              ? createElement(Text, { dimColor: true }, `  now ${state.itemName(current)}`)
+              : '',
           );
         })
       : []),
-    h(Box, { flexGrow: 1 }),
+    createElement(Box, { flexGrow: 1 }),
     confirm
-      ? h(Text, { color: 'yellow', wrap: 'truncate' }, `Switch to ${confirm.name}? y / n`)
-      : h(Text, { dimColor: true, wrap: 'truncate' }, 'Enter switch · ↑↓ set · u refresh · Esc back'),
+      ? createElement(Text, { color: 'yellow', wrap: 'truncate' }, `Switch to ${confirm.name}? y / n`)
+      : createElement(Text, { dimColor: true, wrap: 'truncate' }, 'Enter switch · ↑↓ set · u refresh · Esc back'),
   );
-  return h(Box, null, left, detail);
+  return createElement(Box, null, left, detail);
 }
 
-function SkillsTab(p: {
+function SkillsTab(pick: {
   state: GameState;
   width: number;
   height: number;
@@ -731,56 +771,60 @@ function SkillsTab(p: {
   plan: SkillPlan;
   confirm: boolean;
 }) {
-  const { state, width, height, rows, selected, plan, confirm } = p;
-  const s = state.skills;
+  const { state, width, height, rows, selected, plan, confirm } = pick;
+  const source = state.skills;
   const used = planUsed(plan);
   const listRows = Math.max(3, height - 4);
   const [start, end] = scrollWindow(selected, rows.length, listRows);
-  return h(
+  return createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', paddingX: 1, width, height },
-    h(
+    createElement(
       Text,
       { wrap: 'truncate' },
       'Free: ',
-      h(
+      createElement(
         Text,
-        defined({ color: s.freeAttributes - used.attributes ? 'green' : undefined, bold: true }),
-        `${s.freeAttributes - used.attributes} attribute`,
+        defined({ color: source.freeAttributes - used.attributes ? 'green' : undefined, bold: true }),
+        `${source.freeAttributes - used.attributes} attribute`,
       ),
       ' · ',
-      h(
+      createElement(
         Text,
-        defined({ color: s.freeSkills - used.skills ? 'green' : undefined, bold: true }),
-        `${s.freeSkills - used.skills} skill`,
+        defined({ color: source.freeSkills - used.skills ? 'green' : undefined, bold: true }),
+        `${source.freeSkills - used.skills} skill`,
       ),
-      h(Text, { dimColor: true }, '   + / − plan a point · Enter save · Esc discard'),
+      createElement(Text, { dimColor: true }, '   + / − plan a point · Enter save · Esc discard'),
     ),
-    h(
+    createElement(
       Text,
       { dimColor: true, wrap: 'truncate' },
       `${''.padEnd(22)}${'own'.padStart(5)}${'bonus'.padStart(7)}${'total'.padStart(7)}`,
     ),
-    ...rows.slice(start, end).map((k, i) => {
-      const idx = start + i;
-      const isAttr = k in SKILLS_OF;
-      const attr = isAttr ? k : (ATTRIBUTE_OF[k] ?? k);
-      const delta = plannedDelta(plan, k);
-      const own = s.base(k);
-      const bonus = isAttr ? (s.attributeBonus[k] ?? 0) : (s.skillBonus[k] ?? 0);
-      const name = (isAttr ? '' : '  ') + (NAMES[k] ?? k);
-      return h(
+    ...rows.slice(start, end).map((entryKey, innerIndex) => {
+      const idx = start + innerIndex;
+      const isAttr = entryKey in SKILLS_OF;
+      const attr = isAttr ? entryKey : (ATTRIBUTE_OF[entryKey] ?? entryKey);
+      const delta = plannedDelta(plan, entryKey);
+      const own = source.base(entryKey);
+      const bonus = isAttr ? (source.attributeBonus[entryKey] ?? 0) : (source.skillBonus[entryKey] ?? 0);
+      const name = (isAttr ? '' : '  ') + (NAMES[entryKey] ?? entryKey);
+      return createElement(
         Text,
-        { key: k, inverse: idx === selected, wrap: 'truncate' },
-        h(Text, { color: ATTRIBUTE_COLOR[attr as keyof typeof ATTRIBUTE_COLOR], bold: isAttr }, name.padEnd(22)),
+        { key: entryKey, inverse: idx === selected, wrap: 'truncate' },
+        createElement(
+          Text,
+          { color: ATTRIBUTE_COLOR[attr as keyof typeof ATTRIBUTE_COLOR], bold: isAttr },
+          name.padEnd(22),
+        ),
         String(own).padStart(5),
-        h(Text, { dimColor: true }, `+${bonus}`.padStart(7)),
+        createElement(Text, { dimColor: true }, `+${bonus}`.padStart(7)),
         String(own + bonus + delta).padStart(7),
-        delta ? h(Text, { color: 'green', bold: true }, `  +${delta}`) : null,
+        delta ? createElement(Text, { color: 'green', bold: true }, `  +${delta}`) : null,
       );
     }),
     confirm
-      ? h(
+      ? createElement(
           Text,
           { color: 'yellow' },
           `Spend ${used.attributes} attribute and ${used.skills} skill point(s)? This is permanent. y / n`,

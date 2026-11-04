@@ -48,11 +48,11 @@ export interface SwitchEquipResult extends ClothChange {
   setItems: number[];
 }
 
-const toBagItem = (r: JsonObject): BagItem => ({
-  itemId: Number(r.item_id),
-  count: Number(r.count) || 0,
-  invId: Number(r.inv_id) || 0,
-  type: String(r.type ?? ''),
+const toBagItem = (jsonValue: JsonObject): BagItem => ({
+  itemId: Number(jsonValue.item_id),
+  count: Number(jsonValue.count) || 0,
+  invId: Number(jsonValue.inv_id) || 0,
+  type: String(jsonValue.type ?? ''),
 });
 
 export class Inventory {
@@ -65,7 +65,7 @@ export class Inventory {
   static fromInit(bagInit: JsonObject | null | undefined, catalog?: ItemCatalog): Inventory {
     const inv = new Inventory();
     for (const list of vals(bagInit?.bag)) {
-      for (const r of objs(list)) inv.put(toBagItem(r));
+      for (const jsonValue of objs(list)) inv.put(toBagItem(jsonValue));
     }
     for (const id of arr(bagInit?.wear).map(Number)) {
       const type = catalog?.get(id)?.type;
@@ -93,11 +93,16 @@ export class Inventory {
   }
 
   applyChanges(changes: unknown): void {
-    for (const r of objs(changes)) {
-      const c = toBagItem(r);
-      if (c.count <= 0) this.bag.delete(c.itemId);
-      else this.put({ ...this.bag.get(c.itemId), ...c, type: c.type || this.bag.get(c.itemId)?.type || '' });
-      if (c.invId > this.lastInvId) this.lastInvId = c.invId;
+    for (const jsonValue of objs(changes)) {
+      const candidate = toBagItem(jsonValue);
+      if (candidate.count <= 0) this.bag.delete(candidate.itemId);
+      else
+        this.put({
+          ...this.bag.get(candidate.itemId),
+          ...candidate,
+          type: candidate.type || this.bag.get(candidate.itemId)?.type || '',
+        });
+      if (candidate.invId > this.lastInvId) this.lastInvId = candidate.invId;
     }
   }
 
@@ -138,9 +143,9 @@ export class Inventory {
 
   /** Count of an item by base id across upgrade levels (quest requirements use base·1000). */
   countBase(itemId: number): number {
-    let n = 0;
-    for (const it of this.bag.values()) if (baseId(it.itemId) === baseId(itemId)) n += it.count;
-    return n;
+    let countValue = 0;
+    for (const it of this.bag.values()) if (baseId(it.itemId) === baseId(itemId)) countValue += it.count;
+    return countValue;
   }
 }
 
@@ -177,13 +182,13 @@ export class InventoryApi {
   async equipSets(): Promise<EquipSets> {
     const json = await this.client.remoteCallMode('inventory', 'show_equip', {});
     if (json.error) throw new Error(String(json.msg ?? json.error));
-    const sets: EquipSet[] = objs(json.data).map((r) => {
+    const sets: EquipSet[] = objs(json.data).map((jsonValue) => {
       const slots: Record<string, number | null> = {};
       for (const slot of WEAR_SLOTS) {
-        const id = Number(r[slot]);
+        const id = Number(jsonValue[slot]);
         slots[slot] = id > 0 ? id : null;
       }
-      return { id: Number(r.equip_manager_id) || 0, name: String(r.name ?? 'Set'), slots };
+      return { id: Number(jsonValue.equip_manager_id) || 0, name: String(jsonValue.name ?? 'Set'), slots };
     });
     return {
       sets,
@@ -198,9 +203,9 @@ export class InventoryApi {
   async switchEquip(id: number, lastInvId: number): Promise<SwitchEquipResult> {
     const json = await this.client.remoteCall('inventory', 'switch_equip', { id, last_inv_id: lastInvId });
     if (json.error) throw new Error(String(json.msg ?? json.error));
-    const r = this.cloth(json);
+    const result = this.cloth(json);
     return {
-      ...r,
+      ...result,
       wear: Array.isArray(json.wear) ? json.wear.map(Number) : [],
       setItems: Array.isArray(json.setItems) ? json.setItems.map(Number) : [],
     };

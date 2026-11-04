@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { CONFIG_DIR } from '../auth/session-store.ts';
 import type { FormValue } from '../http/form.ts';
 import { arr, isObj, mergeDefaults, obj, objs } from '../util/json.ts';
+import type { Quest } from './quests.ts';
 import type { TimelineStep } from './timeline.ts';
 
 export type Goal = 'quests' | 'xp' | 'money' | 'products';
@@ -95,6 +96,16 @@ export const DEFAULT_CONFIG: AutopilotConfig = {
   spend: { daily: 1000 },
 };
 
+/** Whether the rules let the autopilot work on this quest (scope, exclusions, repeatable option). */
+export function questInScope(quest: Quest, rules: AutopilotRules, config: AutopilotConfig): boolean {
+  return (
+    (!rules.onlyQuests.length || rules.onlyQuests.includes(quest.id)) &&
+    !rules.excludedQuests.includes(quest.id) &&
+    !config.quests.excludedChains.includes(quest.group) &&
+    (config.quests.repeatable || !/repeatable/i.test(quest.group))
+  );
+}
+
 /** One task the autopilot intends to do; `post` is the task/add body when it is a server task. */
 export interface PlannedTask {
   module: ModuleKey;
@@ -163,7 +174,7 @@ export function parseAutopilotFile(json: unknown): AutopilotFile {
   const raw = obj(json);
   const config = mergeDefaults(DEFAULT_CONFIG, raw.config);
   // The ranking must hold every goal once; drop unknowns, append missing ones.
-  const ranked = arr(obj(raw.config).priority).filter((g): g is Goal => GOALS.some((goal) => goal === g));
+  const ranked = arr(obj(raw.config).priority).filter((group): group is Goal => GOALS.some((goal) => goal === group));
   config.priority = [...new Set([...ranked, ...GOALS])];
   const rules = mergeDefaults(EMPTY_RULES, raw.rules);
   const plan =
@@ -179,29 +190,31 @@ export function parseAutopilotFile(json: unknown): AutopilotFile {
       ? { day: raw.spent.day, amount: Number(raw.spent.amount) || 0 }
       : { day: '', amount: 0 };
   const duels: DuelRecord[] = objs(raw.duels)
-    .filter((d) => Number.isFinite(d.level))
+    .filter((jsonValue) => Number.isFinite(jsonValue.level))
     .slice(-200)
-    .map((d) => ({
-      at: Number(d.at) || 0,
-      level: Number(d.level),
-      won: !!d.won,
-      xp: Number(d.xp) || 0,
-      energy: Number(d.energy) || 0,
+    .map((jsonValue) => ({
+      at: Number(jsonValue.at) || 0,
+      level: Number(jsonValue.level),
+      won: !!jsonValue.won,
+      xp: Number(jsonValue.xp) || 0,
+      energy: Number(jsonValue.energy) || 0,
     }));
   const bankWalk =
     isObj(raw.bankWalk) && Number.isFinite(raw.bankWalk.queueId) && Number.isFinite(raw.bankWalk.townId)
       ? { queueId: Number(raw.bankWalk.queueId), townId: Number(raw.bankWalk.townId) }
       : null;
   const pickups: MarketPickup[] = objs(raw.pickups)
-    .filter((p) => Number.isFinite(p.offerId) && Number.isFinite(p.townId) && isObj(p.at))
-    .map((p) => ({
-      offerId: Number(p.offerId),
-      itemId: Number(p.itemId) || 0,
-      count: Number(p.count) || 0,
-      townId: Number(p.townId),
-      townName: String(p.townName ?? ''),
-      at: { x: Number(obj(p.at).x) || 0, y: Number(obj(p.at).y) || 0 },
-      quest: String(p.quest ?? ''),
+    .filter(
+      (jsonValue) => Number.isFinite(jsonValue.offerId) && Number.isFinite(jsonValue.townId) && isObj(jsonValue.at),
+    )
+    .map((jsonValue) => ({
+      offerId: Number(jsonValue.offerId),
+      itemId: Number(jsonValue.itemId) || 0,
+      count: Number(jsonValue.count) || 0,
+      townId: Number(jsonValue.townId),
+      townName: String(jsonValue.townName ?? ''),
+      at: { x: Number(obj(jsonValue.at).x) || 0, y: Number(obj(jsonValue.at).y) || 0 },
+      quest: String(jsonValue.quest ?? ''),
     }));
   return { config, rules, plan, spent, duels, bankWalk, pickups };
 }
@@ -229,38 +242,42 @@ export function saveAutopilot(data: AutopilotFile, file = AUTOPILOT_FILE()): voi
  * A loss in the last 24 h at this level or below stops NPC duels (one loss stops them for the day).
  */
 export function duelOutlook(record: DuelRecord[], level: number, now: number): { xp: number; energy: number } | null {
-  if (record.some((d) => !d.won && d.at > now - 86400)) return null;
-  const near = record.filter((d) => Math.abs(d.level - level) <= 3);
-  const wins = near.filter((d) => d.won);
+  if (record.some((dataValue) => !dataValue.won && dataValue.at > now - 86400)) return null;
+  const near = record.filter((dataValue) => Math.abs(dataValue.level - level) <= 3);
+  const wins = near.filter((dataValue) => dataValue.won);
   if (near.length < 2 || wins.length < near.length * 0.9) return null;
-  const avg = (f: (d: DuelRecord) => number) => wins.reduce((a, d) => a + f(d), 0) / wins.length;
+  const avg = (transform: (dataValue: DuelRecord) => number) =>
+    wins.reduce((accumulator, current) => accumulator + transform(current), 0) / wins.length;
   return {
-    xp: avg((d) => d.xp),
+    xp: avg((dataValue) => dataValue.xp),
     energy: Math.max(
       1,
-      avg((d) => d.energy),
+      avg((dataValue) => dataValue.energy),
     ),
   };
 }
 
 export function goalWeights(config: AutopilotConfig): Record<Goal, number> {
   if (config.customWeights)
-    return Object.fromEntries(GOALS.map((g) => [g, Math.max(0, config.customWeights?.[g] ?? 0)])) as Record<
+    return Object.fromEntries(GOALS.map((group) => [group, Math.max(0, config.customWeights?.[group] ?? 0)])) as Record<
       Goal,
       number
     >;
-  return Object.fromEntries(config.priority.map((g, i) => [g, RANK_WEIGHTS[i] ?? 0])) as Record<Goal, number>;
+  return Object.fromEntries(config.priority.map((group, index) => [group, RANK_WEIGHTS[index] ?? 0])) as Record<
+    Goal,
+    number
+  >;
 }
 
-function stable(v: unknown): unknown {
-  if (Array.isArray(v)) return v.map(stable);
-  if (isObj(v))
+function stable(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stable);
+  if (isObj(value))
     return Object.fromEntries(
-      Object.keys(v)
+      Object.keys(value)
         .sort()
-        .map((k) => [k, stable(v[k])]),
+        .map((key) => [key, stable(value[key])]),
     );
-  return v;
+  return value;
 }
 
 /** Hash of the planner's inputs (key order does not matter); equal hashes mean no replan is needed. */

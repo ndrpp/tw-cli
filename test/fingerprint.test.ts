@@ -34,9 +34,9 @@ function loadOriginal(): any | null {
 const original = loadOriginal();
 
 function randomString(len: number, maxCode: number): string {
-  let s = '';
-  for (let i = 0; i < len; i++) s += String.fromCharCode(Math.floor(Math.random() * maxCode));
-  return s;
+  let text = '';
+  for (let index = 0; index < len; index++) text += String.fromCharCode(Math.floor(Math.random() * maxCode));
+  return text;
 }
 
 test("x64hash128 port matches the game's original implementation", { skip: !original && 'game.php not found' }, () => {
@@ -44,9 +44,13 @@ test("x64hash128 port matches the game's original implementation", { skip: !orig
   for (let len = 0; len < 80; len++) {
     cases.push(randomString(len, 128), randomString(len, 0x10000));
   }
-  for (const s of cases) {
+  for (const text of cases) {
     for (const seed of [0, 31]) {
-      assert.equal(x64hash128(s, seed), original.x64hash128(s, seed), `mismatch for ${JSON.stringify(s)} seed ${seed}`);
+      assert.equal(
+        x64hash128(text, seed),
+        original.x64hash128(text, seed),
+        `mismatch for ${JSON.stringify(text)} seed ${seed}`,
+      );
     }
   }
 });
@@ -78,8 +82,10 @@ const components = [
 
 test('component hashing matches the original get() reduction', { skip: !original && 'game.php not found' }, () => {
   // Same reduction as the library's get() callback, executed with the original hash function.
-  const n = components.map((c) => (Array.isArray(c.value) ? (c.value as unknown[]).join(';') : c.value));
-  assert.equal(hashComponents(components), original.x64hash128(n.join('~~~'), 31));
+  const mapped = components.map((candidate) =>
+    Array.isArray(candidate.value) ? (candidate.value as unknown[]).join(';') : candidate.value,
+  );
+  assert.equal(hashComponents(components), original.x64hash128(mapped.join('~~~'), 31));
 });
 
 function profile(overrides: Partial<FingerprintProfile> = {}): FingerprintProfile {
@@ -103,13 +109,13 @@ test('validateProfile rejects hash mismatch, wrong order and missing components'
   assert.throws(() => validateProfile(profile({ fp: '0'.repeat(32) })), FingerprintProfileError);
   const swapped = [components[1]!, components[0]!, ...components.slice(2)];
   assert.throws(() => validateProfile(profile({ components: swapped, fp: hashComponents(swapped) })), /out of order/);
-  const missing = components.filter((c) => c.key !== 'audio_fp');
+  const missing = components.filter((candidate) => candidate.key !== 'audio_fp');
   assert.throws(() => validateProfile(profile({ components: missing, fp: hashComponents(missing) })), /audio_fp/);
 });
 
 test('record_fp body matches jQuery serialisation of the browser call', () => {
-  const p = profile();
-  assert.equal(jqueryParam(recordFpPayload(p)), `fp=${p.fp}&gv=&wd=false`);
+  const profileValue = profile();
+  assert.equal(jqueryParam(recordFpPayload(profileValue)), `fp=${profileValue.fp}&gv=&wd=false`);
 });
 
 test('jqueryParam mirrors $.param for nested task payloads', () => {

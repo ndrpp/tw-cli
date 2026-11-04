@@ -8,7 +8,7 @@ import type { Segment } from '../game/chatlinks.ts';
 import { defined } from '../util/defined.ts';
 import { truncate } from './format.ts';
 
-const h = React.createElement;
+const createElement = React.createElement;
 
 export interface FormField {
   key: string;
@@ -43,73 +43,84 @@ export interface KeyLike {
   meta?: boolean;
 }
 
-export const formValues = (f: FormState): Record<string, string> =>
-  Object.fromEntries(f.fields.map((x) => [x.key, x.value]));
+export const formValues = (form: FormState): Record<string, string> =>
+  Object.fromEntries(form.fields.map((field) => [field.key, field.value]));
 
 export function makeForm(title: string, fields: FormField[], note?: FormState['note']): FormState {
   return { title, fields, focus: 0, note };
 }
 
 /** Applies one key press. Returns the new form, 'submit', or 'cancel'. */
-export function formKey(f: FormState, input: string, key: KeyLike): FormState | 'submit' | 'cancel' {
+export function formKey(form: FormState, input: string, key: KeyLike): FormState | 'submit' | 'cancel' {
   if (key.escape) return 'cancel';
-  const field = f.fields[f.focus];
+  const field = form.fields[form.focus];
   if (!field) return 'cancel';
   const set = (value: string): FormState => ({
-    ...f,
-    fields: f.fields.map((x, i) => (i === f.focus ? { ...x, value } : x)),
+    ...form,
+    fields: form.fields.map((candidate, innerIndex) =>
+      innerIndex === form.focus ? { ...candidate, value } : candidate,
+    ),
   });
-  if (key.return) return f.focus >= f.fields.length - 1 ? 'submit' : { ...f, focus: f.focus + 1 };
+  if (key.return) return form.focus >= form.fields.length - 1 ? 'submit' : { ...form, focus: form.focus + 1 };
   if (key.tab || key.downArrow)
     return {
-      ...f,
-      focus: key.shift ? (f.focus + f.fields.length - 1) % f.fields.length : (f.focus + 1) % f.fields.length,
+      ...form,
+      focus: key.shift
+        ? (form.focus + form.fields.length - 1) % form.fields.length
+        : (form.focus + 1) % form.fields.length,
     };
-  if (key.upArrow) return { ...f, focus: (f.focus + f.fields.length - 1) % f.fields.length };
+  if (key.upArrow) return { ...form, focus: (form.focus + form.fields.length - 1) % form.fields.length };
   if (field.kind === 'choice') {
-    const opts = field.options ?? [];
-    const i = Math.max(0, opts.indexOf(field.value));
-    if (key.leftArrow) return set(opts[(i + opts.length - 1) % opts.length] ?? field.value);
-    if (key.rightArrow || input === ' ') return set(opts[(i + 1) % opts.length] ?? field.value);
-    return f;
+    const options = field.options ?? [];
+    const index = Math.max(0, options.indexOf(field.value));
+    if (key.leftArrow) return set(options[(index + options.length - 1) % options.length] ?? field.value);
+    if (key.rightArrow || input === ' ') return set(options[(index + 1) % options.length] ?? field.value);
+    return form;
   }
   if (key.backspace || key.delete) return set(field.value.slice(0, -1));
-  if (!input || key.ctrl || key.meta) return f;
+  if (!input || key.ctrl || key.meta) return form;
   if (field.kind === 'number') {
     const digits = input.replace(/[^0-9]/g, '');
-    return digits ? set(field.value + digits) : f;
+    return digits ? set(field.value + digits) : form;
   }
   return set(field.value + input);
 }
 
 export function FormView({ form, width }: { form: FormState; width: number }) {
-  const labelW = Math.min(14, Math.max(...form.fields.map((x) => x.label.length)) + 1);
+  const labelW = Math.min(14, Math.max(...form.fields.map((xCoord) => xCoord.label.length)) + 1);
   const note = form.note?.(formValues(form));
-  return h(
+  return createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'yellow', paddingX: 1, width },
-    h(Text, { bold: true, color: 'yellow', wrap: 'truncate' }, form.title),
-    ...form.fields.map((x, i) => {
-      const focused = i === form.focus;
-      const shown = x.kind === 'choice' ? `‹ ${x.value} ›` : `${x.value}${focused ? '▏' : ''}`;
-      return h(
+    createElement(Text, { bold: true, color: 'yellow', wrap: 'truncate' }, form.title),
+    ...form.fields.map((xCoord, innerIndex) => {
+      const focused = innerIndex === form.focus;
+      const shown = xCoord.kind === 'choice' ? `‹ ${xCoord.value} ›` : `${xCoord.value}${focused ? '▏' : ''}`;
+      return createElement(
         Text,
-        { key: x.key, wrap: 'truncate' },
-        h(Text, defined({ color: focused ? 'cyan' : undefined, bold: focused }), `${x.label.padEnd(labelW)} `),
-        h(
+        { key: xCoord.key, wrap: 'truncate' },
+        createElement(
           Text,
-          { inverse: focused && x.kind === 'choice' },
+          defined({ color: focused ? 'cyan' : undefined, bold: focused }),
+          `${xCoord.label.padEnd(labelW)} `,
+        ),
+        createElement(
+          Text,
+          { inverse: focused && xCoord.kind === 'choice' },
           truncate(shown, Math.max(4, width - labelW - 5)).trimEnd(),
         ),
-        x.hint && focused ? h(Text, { dimColor: true }, `  ${x.hint}`) : '',
+        xCoord.hint && focused ? createElement(Text, { dimColor: true }, `  ${xCoord.hint}`) : '',
       );
     }),
-    note ? h(Text, { color: 'cyan', wrap: 'truncate' }, note) : null,
-    h(Text, { dimColor: true, wrap: 'truncate' }, 'Enter next/submit · Tab ↑↓ field · ← → choice · Esc cancel'),
+    note ? createElement(Text, { color: 'cyan', wrap: 'truncate' }, note) : null,
+    createElement(
+      Text,
+      { dimColor: true, wrap: 'truncate' },
+      'Enter next/submit · Tab ↑↓ field · ← → choice · Esc cancel',
+    ),
   );
 }
 
-/** Splits text into lines of at most `width` characters (words kept whole when possible). */
 /** wrap() for coloured runs: same word breaking, each word keeps its run's colour. */
 export function wrapSegments(segs: Segment[], width: number): Segment[][] {
   const out: Segment[][] = [];
@@ -121,15 +132,15 @@ export function wrapSegments(segs: Segment[], width: number): Segment[][] {
     else line.push({ text, color });
     len += text.length;
   };
-  const words = segs.flatMap((s) =>
-    s.text
+  const words = segs.flatMap((segment) =>
+    segment.text
       .split(/\s+/)
       .filter(Boolean)
-      .map((w) => ({ w, color: s.color })),
+      .map((textValue) => ({ w: textValue, color: segment.color })),
   );
-  for (const { w, color } of words) {
-    for (let i = 0; i < w.length; i += width) {
-      const piece = w.slice(i, i + width);
+  for (const { w: textValue, color } of words) {
+    for (let innerIndex = 0; innerIndex < textValue.length; innerIndex += width) {
+      const piece = textValue.slice(innerIndex, innerIndex + width);
       if (len && len + 1 + piece.length > width) {
         out.push(line);
         line = [];
@@ -143,6 +154,7 @@ export function wrapSegments(segs: Segment[], width: number): Segment[][] {
   return out;
 }
 
+/** Splits text into lines of at most `width` characters (words kept whole when possible). */
 export function wrap(text: string, width: number): string[] {
   const out: string[] = [];
   for (const para of text.split('\n')) {
@@ -151,7 +163,8 @@ export function wrap(text: string, width: number): string[] {
       if (!word) continue;
       if (word.length > width) {
         if (line) out.push(line);
-        for (let i = 0; i < word.length; i += width) out.push(word.slice(i, i + width));
+        for (let innerIndex = 0; innerIndex < word.length; innerIndex += width)
+          out.push(word.slice(innerIndex, innerIndex + width));
         line = out.pop() ?? '';
         continue;
       }

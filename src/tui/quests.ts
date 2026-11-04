@@ -9,7 +9,7 @@ import { defined } from '../util/defined.ts';
 import type { ScreenProps } from './character.ts';
 import { formatDuration, money, scrollWindow, shortDuration, truncate } from './format.ts';
 
-const h = React.createElement;
+const createElement = React.createElement;
 
 type List = 'log' | 'givers';
 type Confirm =
@@ -90,10 +90,10 @@ export function QuestsScreen({
   }, [confirm]);
 
   type AnyRow = GiverRow | Row | ChainRow;
-  const chained = (quests: Quest[], indent: boolean, tag?: (q: Quest) => string): AnyRow[] =>
+  const chained = (quests: Quest[], indent: boolean, tag?: (currentQuest: Quest) => string): AnyRow[] =>
     groupByChain(quests).flatMap((chain) => [
       { kind: 'chain', chain, indent } as ChainRow,
-      ...chain.quests.map((quest) => ({ kind: 'quest', quest, tag: tag?.(quest) }) as Row),
+      ...chain.quests.map((chainQuest) => ({ kind: 'quest', quest: chainQuest, tag: tag?.(chainQuest) }) as Row),
     ]);
   const logRows = chained(state.quests, false);
   const giverRows: AnyRow[] = [];
@@ -105,16 +105,23 @@ export function QuestsScreen({
       name: `▾ ${emp.name}`,
       at: emp.x !== null && emp.y !== null ? { x: emp.x, y: emp.y } : null,
     });
-    giverRows.push(...chained(emp.open, true, (q) => (q.accepted ? 'accepted' : q.acceptable ? 'new' : 'locked')));
+    giverRows.push(
+      ...chained(emp.open, true, (currentQuest) =>
+        currentQuest.accepted ? 'accepted' : currentQuest.acceptable ? 'new' : 'locked',
+      ),
+    );
   }
-  for (const s of state.saloon)
-    if (s.key !== emp?.key) giverRows.push({ kind: 'giver', key: s.key, name: `${s.name} (saloon)`, at: null });
+  for (const source of state.saloon)
+    if (source.key !== emp?.key)
+      giverRows.push({ kind: 'giver', key: source.key, name: `${source.name} (saloon)`, at: null });
   const rows: AnyRow[] = list === 'log' ? logRows : giverRows;
   // Chain headers are labels: the cursor always lands on a quest or giver row.
-  const selectable = (i: number) => rows[i] !== undefined && rows[i]?.kind !== 'chain';
-  const nearestSelectable = (i: number, dir: 1 | -1): number => {
-    for (let j = i; j >= 0 && j < rows.length; j += dir) if (selectable(j)) return j;
-    for (let j = i; j >= 0 && j < rows.length; j -= dir) if (selectable(j)) return j;
+  const selectable = (index: number) => rows[index] !== undefined && rows[index]?.kind !== 'chain';
+  const nearestSelectable = (index: number, dir: 1 | -1): number => {
+    for (let innerIndex = index; innerIndex >= 0 && innerIndex < rows.length; innerIndex += dir)
+      if (selectable(innerIndex)) return innerIndex;
+    for (let candidateIndex = index; candidateIndex >= 0 && candidateIndex < rows.length; candidateIndex -= dir)
+      if (selectable(candidateIndex)) return candidateIndex;
     return 0;
   };
   const idx = nearestSelectable(Math.min(sel, Math.max(0, rows.length - 1)), 1);
@@ -128,9 +135,14 @@ export function QuestsScreen({
     const byChain = new Map<string, RoutePlan>();
     if (!state.jobs.length) return { byQuest, byChain };
     const all = [...state.quests, ...(state.employer?.open ?? [])];
-    for (const q of all) if (!q.finishable && !byQuest.has(q.id)) byQuest.set(q.id, state.planQuestRoute([q]));
-    for (const c of groupByChain(state.quests))
-      byChain.set(`${c.groupId}:${c.title}`, state.planQuestRoute(c.quests.filter((q) => !q.finishable)));
+    for (const currentQuest of all)
+      if (!currentQuest.finishable && !byQuest.has(currentQuest.id))
+        byQuest.set(currentQuest.id, state.planQuestRoute([currentQuest]));
+    for (const candidate of groupByChain(state.quests))
+      byChain.set(
+        `${candidate.groupId}:${candidate.title}`,
+        state.planQuestRoute(candidate.quests.filter((currentQuest) => !currentQuest.finishable)),
+      );
     return { byQuest, byChain };
   }, [state, state.quests, state.employer, state.jobs, state.inventory.bag.size, state.queue.length]);
 
@@ -139,17 +151,19 @@ export function QuestsScreen({
       if (confirm) {
         // Reward choice (quest.rewardOptions): ← → or the option number, then y.
         if (confirm.kind === 'finish' && confirm.quest.rewardOptions.length > 1) {
-          const n = confirm.quest.rewardOptions.length;
-          if (key.leftArrow || input === 'h') return setConfirm({ ...confirm, choice: (confirm.choice + n - 1) % n });
+          const count = confirm.quest.rewardOptions.length;
+          if (key.leftArrow || input === 'h')
+            return setConfirm({ ...confirm, choice: (confirm.choice + count - 1) % count });
           if (key.rightArrow || input === 'l' || key.tab)
-            return setConfirm({ ...confirm, choice: (confirm.choice + 1) % n });
-          const d = Number(input);
-          if (Number.isInteger(d) && d >= 1 && d <= n) return setConfirm({ ...confirm, choice: d - 1 });
+            return setConfirm({ ...confirm, choice: (confirm.choice + 1) % count });
+          const value = Number(input);
+          if (Number.isInteger(value) && value >= 1 && value <= count)
+            return setConfirm({ ...confirm, choice: value - 1 });
         }
         setConfirm(null);
         if (confirm.kind === 'route' && input === 'a')
           return state.startAutopilotForQuests(
-            routeQuests.map((q) => q.id),
+            routeQuests.map((currentQuest) => currentQuest.id),
             route ? SCOPE_LABEL[route.scope] : 'route',
           );
         if (input !== 'y') return;
@@ -166,8 +180,8 @@ export function QuestsScreen({
         if (input === '3') return setRoute({ ...route, scope: 'all' });
         if (input === 'e') return setRoute({ ...route, objective: route.objective === 'energy' ? 'time' : 'energy' });
         const rstep = key.pageUp || key.pageDown ? 10 : 1;
-        if (key.upArrow || input === 'k' || key.pageUp) return setScroll((s) => Math.max(0, s - rstep));
-        if (key.downArrow || input === 'j' || key.pageDown) return setScroll((s) => s + rstep);
+        if (key.upArrow || input === 'k' || key.pageUp) return setScroll((value) => Math.max(0, value - rstep));
+        if (key.downArrow || input === 'j' || key.pageDown) return setScroll((value) => value + rstep);
         if (input === 'x' && state.autoRoute) return state.stopAutoRoute();
         if (!plan?.stops.length) return;
         if (key.return) return setConfirm({ kind: 'route', plan });
@@ -192,12 +206,12 @@ export function QuestsScreen({
         setSel(0);
         setScroll(0);
         setDetail(false);
-        return setList((l) => (l === 'log' ? 'givers' : 'log'));
+        return setList((lineValue) => (lineValue === 'log' ? 'givers' : 'log'));
       }
       const step = key.pageUp || key.pageDown ? 10 : 1;
       if (detail) {
-        if (key.upArrow || input === 'k' || key.pageUp) return setScroll((s) => Math.max(0, s - step));
-        if (key.downArrow || input === 'j' || key.pageDown) return setScroll((s) => s + step);
+        if (key.upArrow || input === 'k' || key.pageUp) return setScroll((value) => Math.max(0, value - step));
+        if (key.downArrow || input === 'j' || key.pageDown) return setScroll((value) => value + step);
       }
       if (key.upArrow || input === 'k' || key.pageUp) {
         setScroll(0);
@@ -221,8 +235,8 @@ export function QuestsScreen({
           return state.error(
             'Not finished yet: ' +
               quest.requirements
-                .filter((r) => !r.solved)
-                .map((r) => r.info)
+                .filter((requirement) => !requirement.solved)
+                .map((requirement) => requirement.info)
                 .join('; '),
           );
         return setConfirm({ kind: 'finish', quest, choice: 0 });
@@ -244,14 +258,19 @@ export function QuestsScreen({
   const rightW = width - leftW;
   const listRows = Math.max(2, height - 3);
   const [start, end] = scrollWindow(idx, rows.length, listRows);
-  const tabs = (['log', 'givers'] as List[]).map((l) =>
-    h(
+  const tabs = (['log', 'givers'] as List[]).map((lineValue) =>
+    createElement(
       Text,
-      defined({ key: l, inverse: list === l, bold: list === l, color: list === l ? 'cyan' : undefined }),
-      l === 'log' ? ` Quest log ${state.quests.length}/${state.questCapacity || '?'} ` : ' Quest givers ',
+      defined({
+        key: lineValue,
+        inverse: list === lineValue,
+        bold: list === lineValue,
+        color: list === lineValue ? 'cyan' : undefined,
+      }),
+      lineValue === 'log' ? ` Quest log ${state.quests.length}/${state.questCapacity || '?'} ` : ' Quest givers ',
     ),
   );
-  const left = h(
+  const left = createElement(
     Box,
     {
       flexDirection: 'column',
@@ -261,50 +280,56 @@ export function QuestsScreen({
       height,
       paddingX: 1,
     },
-    h(Text, { wrap: 'truncate' }, ...tabs, h(Text, { dimColor: true }, ' Tab')),
-    ...rows.slice(start, end).map((r, i) => {
-      const n = start + i;
-      if (r.kind === 'chain') {
-        const c = r.chain;
-        return h(
+    createElement(Text, { wrap: 'truncate' }, ...tabs, createElement(Text, { dimColor: true }, ' Tab')),
+    ...rows.slice(start, end).map((result, index) => {
+      const count = start + index;
+      if (result.kind === 'chain') {
+        const candidate = result.chain;
+        return createElement(
           Text,
-          { key: `c${n}`, bold: true, color: 'yellow', wrap: 'truncate' },
-          truncate(`${r.indent ? '  ' : ''}${c.title}`, leftW - 14),
-          h(Text, { dimColor: true, bold: false }, ` ${c.quests.length}`),
-          c.finishable ? h(Text, { color: 'green' }, ` ✔${c.finishable}`) : '',
-          r.indent
+          { key: `c${count}`, bold: true, color: 'yellow', wrap: 'truncate' },
+          truncate(`${result.indent ? '  ' : ''}${candidate.title}`, leftW - 14),
+          createElement(Text, { dimColor: true, bold: false }, ` ${candidate.quests.length}`),
+          candidate.finishable ? createElement(Text, { color: 'green' }, ` ✔${candidate.finishable}`) : '',
+          result.indent
             ? ''
-            : h(
+            : createElement(
                 Text,
                 { color: 'cyan', bold: false },
-                ` ${estimateTag(estimates.byChain.get(`${c.groupId}:${c.title}`))}`,
+                ` ${estimateTag(estimates.byChain.get(`${candidate.groupId}:${candidate.title}`))}`,
               ),
         );
       }
-      if (r.kind === 'giver')
-        return h(
+      if (result.kind === 'giver')
+        return createElement(
           Text,
-          { key: `g${r.key}`, inverse: n === idx, color: 'magenta', bold: r.name.startsWith('▾'), wrap: 'truncate' },
-          truncate(r.name, leftW - 4),
+          {
+            key: `g${result.key}`,
+            inverse: count === idx,
+            color: 'magenta',
+            bold: result.name.startsWith('▾'),
+            wrap: 'truncate',
+          },
+          truncate(result.name, leftW - 4),
         );
-      const q = r.quest;
-      const mark = q.finishable ? '✔' : q.accepted ? '·' : r.tag === 'new' ? '!' : ' ';
-      const est = q.finishable ? '' : estimateTag(estimates.byQuest.get(q.id));
+      const currentQuest = result.quest;
+      const mark = currentQuest.finishable ? '✔' : currentQuest.accepted ? '·' : result.tag === 'new' ? '!' : ' ';
+      const est = currentQuest.finishable ? '' : estimateTag(estimates.byQuest.get(currentQuest.id));
       const titleW = leftW - 10 - (est ? est.length + 1 : 0);
-      return h(
+      return createElement(
         Text,
         defined({
-          key: q.id,
-          inverse: n === idx,
+          key: currentQuest.id,
+          inverse: count === idx,
           wrap: 'truncate',
-          color: q.finishable ? 'green' : r.tag === 'locked' ? 'gray' : undefined,
+          color: currentQuest.finishable ? 'green' : result.tag === 'locked' ? 'gray' : undefined,
         }),
-        `${list === 'givers' ? '    ' : '  '}${mark} ${truncate(q.soloTitle || q.title, titleW).padEnd(titleW)}`,
-        est ? h(Text, { color: 'cyan' }, ` ${est}`) : '',
+        `${list === 'givers' ? '    ' : '  '}${mark} ${truncate(currentQuest.soloTitle || currentQuest.title, titleW).padEnd(titleW)}`,
+        est ? createElement(Text, { color: 'cyan' }, ` ${est}`) : '',
       );
     }),
     rows.length === 0
-      ? h(
+      ? createElement(
           Text,
           { dimColor: true },
           list === 'log' ? 'No accepted quests.' : 'Loading saloon… (or open a quest giver from the map: o)',
@@ -315,78 +340,101 @@ export function QuestsScreen({
   let detailLines: React.ReactNode[] = [];
   let maxTop = 0;
   if (route && plan) {
-    [detailLines, maxTop] = routeLines(state, plan, route, routeQuests.length, rightW - 4, height - 3, scroll);
+    [detailLines, maxTop] = routeLines({
+      state,
+      plan,
+      route,
+      questCount: routeQuests.length,
+      width: rightW - 4,
+      room: height - 3,
+      scroll,
+    });
   } else if (quest) {
     const dw = Math.max(10, rightW - 4);
     const info: React.ReactNode[] = [
-      h(Text, { key: 't', bold: true, wrap: 'truncate' }, quest.soloTitle || quest.title),
-      h(Text, { key: 'g', color: 'yellow', wrap: 'truncate' }, quest.group),
-      h(
+      createElement(Text, { key: 't', bold: true, wrap: 'truncate' }, quest.soloTitle || quest.title),
+      createElement(Text, { key: 'g', color: 'yellow', wrap: 'truncate' }, quest.group),
+      createElement(
         Text,
         { key: 'e', dimColor: true, wrap: 'truncate' },
         `${quest.employerName || quest.employer}${quest.employerAt ? ` · at ${quest.employerAt.x},${quest.employerAt.y} · ${formatDuration(state.travelTo(quest.employerAt))}` : ''}`,
       ),
-      ...(quest.limited ? [h(Text, { key: 'l', color: 'yellow', wrap: 'truncate' }, quest.limited)] : []),
+      ...(quest.limited ? [createElement(Text, { key: 'l', color: 'yellow', wrap: 'truncate' }, quest.limited)] : []),
       ...estimateLines(estimates.byQuest.get(quest.id), quest.finishable),
-      h(Text, { key: 'rq', bold: true }, 'Requirements'),
-      ...quest.requirements.flatMap((r, i) => {
-        const row = h(
+      createElement(Text, { key: 'rq', bold: true }, 'Requirements'),
+      ...quest.requirements.flatMap((requirement, index) => {
+        const row = createElement(
           Text,
-          { key: `r${i}`, color: r.solved ? 'green' : 'red', wrap: 'truncate' },
-          `${r.solved ? '✔' : '✘'} ${r.info}`,
+          { key: `r${index}`, color: requirement.solved ? 'green' : 'red', wrap: 'truncate' },
+          `${requirement.solved ? '✔' : '✘'} ${requirement.info}`,
         );
-        if (r.solved) return [row];
+        if (requirement.solved) return [row];
         // Where to get it: jobs that drop the item (or the job itself), nearest first.
-        const src = state.requirementSources(r).sort((a, b) => (a.way ?? Infinity) - (b.way ?? Infinity));
-        const have = r.itemId !== undefined ? state.inventory.countBase(r.itemId) : 0;
+        const src = state
+          .requirementSources(requirement)
+          .sort((first, second) => (first.way ?? Infinity) - (second.way ?? Infinity));
+        const have = requirement.itemId !== undefined ? state.inventory.countBase(requirement.itemId) : 0;
         const extra = [];
-        if (have) extra.push(h(Text, { key: `h${i}`, dimColor: true, wrap: 'truncate' }, `    in bag: ${have}`));
-        for (const s of src.slice(0, 3)) {
-          const ok = s.job.jobPoints >= s.job.workPoints;
+        if (have)
           extra.push(
-            h(
+            createElement(Text, { key: `h${index}`, dimColor: true, wrap: 'truncate' }, `    in bag: ${have}`),
+          );
+        for (const source of src.slice(0, 3)) {
+          const ok = source.job.jobPoints >= source.job.workPoints;
+          extra.push(
+            createElement(
               Text,
-              { key: `s${i}-${s.job.id}`, color: ok ? 'magentaBright' : 'gray', wrap: 'truncate' },
-              `    ↳ ${s.job.name}${s.chance !== null ? ` ${Math.round(s.chance * 100)}%` : ''} · ${s.job.laborPoints} LP${s.way !== null ? ` · ${formatDuration(s.way)}` : ''}${ok ? '' : ' (not enough LP)'}`,
+              { key: `s${index}-${source.job.id}`, color: ok ? 'magentaBright' : 'gray', wrap: 'truncate' },
+              `    ↳ ${source.job.name}${source.chance !== null ? ` ${Math.round(source.chance * 100)}%` : ''} · ${source.job.laborPoints} LP${source.way !== null ? ` · ${formatDuration(source.way)}` : ''}${ok ? '' : ' (not enough LP)'}`,
             ),
           );
         }
         if (src.length > 3)
           extra.push(
-            h(Text, { key: `m${i}`, dimColor: true }, `    +${src.length - 3} more jobs (v shows all on the map)`),
+            createElement(
+              Text,
+              { key: `m${index}`, dimColor: true },
+              `    +${src.length - 3} more jobs (v shows all on the map)`,
+            ),
           );
         return [row, ...extra];
       }),
-      h(Text, { key: 'rw', bold: true }, 'Rewards'),
-      h(Text, { key: 'rws', wrap: 'truncate' }, quest.rewards.map((r) => r.text).join(' · ') || '—'),
+      createElement(Text, { key: 'rw', bold: true }, 'Rewards'),
+      createElement(
+        Text,
+        { key: 'rws', wrap: 'truncate' },
+        quest.rewards.map((result) => result.text).join(' · ') || '—',
+      ),
       ...(quest.rewardOptions.length
         ? [
-            h(
+            createElement(
               Text,
               { key: 'ro', dimColor: true, wrap: 'truncate' },
-              `Choice: ${quest.rewardOptions.map((o, i) => `${i + 1}) ${o.text}`).join(' / ')} (pick when finishing)`,
+              `Choice: ${quest.rewardOptions.map((options, index) => `${index + 1}) ${options.text}`).join(' / ')} (pick when finishing)`,
             ),
           ]
         : []),
-      h(Text, { key: 'sp' }, ' '),
+      createElement(Text, { key: 'sp' }, ' '),
     ];
     const text = wrapLines([quest.description, quest.hint && `Hint: ${quest.hint}`].filter(Boolean).join('\n\n'), dw);
     const room = Math.max(0, height - 3 - info.length);
     maxTop = Math.max(0, text.length - room);
-    const s = Math.min(scroll, maxTop);
+    const value = Math.min(scroll, maxTop);
     detailLines = [
       ...info,
-      ...text.slice(s, s + room).map((l, i) => h(Text, { key: `d${i}`, dimColor: true }, l || ' ')),
+      ...text
+        .slice(value, value + room)
+        .map((textValue, index) => createElement(Text, { key: `d${index}`, dimColor: true }, textValue || ' ')),
     ];
   } else if (cur?.kind === 'giver') {
     detailLines = [
-      h(Text, { key: 'n', bold: true, color: 'magenta' }, cur.name.replace(/^▾ /, '')),
-      h(
+      createElement(Text, { key: 'n', bold: true, color: 'magenta' }, cur.name.replace(/^▾ /, '')),
+      createElement(
         Text,
         { key: 'h', dimColor: true },
         cur.at ? `at ${cur.at.x},${cur.at.y} · travel ${formatDuration(state.travelTo(cur.at))}` : 'In the saloon',
       ),
-      h(Text, { key: 'k' }, 'Enter: show quests · w: walk there'),
+      createElement(Text, { key: 'k' }, 'Enter: show quests · w: walk there'),
     ];
   }
   useEffect(() => {
@@ -394,28 +442,28 @@ export function QuestsScreen({
   });
   const keys = confirm
     ? confirm.kind === 'finish' && confirm.quest.rewardOptions.length > 1
-      ? h(
+      ? createElement(
           Box,
           { flexDirection: 'column' },
-          h(
+          createElement(
             Text,
             { color: 'yellow', wrap: 'truncate' },
             `Finish "${confirm.quest.title}"? Choose a reward (← → or 1-${confirm.quest.rewardOptions.length}), then y:`,
           ),
-          ...confirm.quest.rewardOptions.map((o, i) =>
-            h(
+          ...confirm.quest.rewardOptions.map((options, index) =>
+            createElement(
               Text,
               defined({
-                key: o.id,
-                inverse: i === confirm.choice,
-                color: i === confirm.choice ? 'green' : undefined,
+                key: options.id,
+                inverse: index === confirm.choice,
+                color: index === confirm.choice ? 'green' : undefined,
                 wrap: 'truncate',
               }),
-              ` ${i + 1}) ${o.text}`,
+              ` ${index + 1}) ${options.text}`,
             ),
           ),
         )
-      : h(
+      : createElement(
           Text,
           { color: 'yellow', wrap: 'truncate' },
           confirm.kind === 'route'
@@ -423,19 +471,19 @@ export function QuestsScreen({
             : `${confirm.kind === 'finish' ? 'Finish' : 'Cancel'} "${confirm.quest.title}"${confirm.kind === 'finish' && confirm.quest.rewardOptions.length === 1 ? ` (reward: ${confirm.quest.rewardOptions[0]?.text})` : ''}? y / n`,
         )
     : route
-      ? h(
+      ? createElement(
           Text,
           { dimColor: true, wrap: 'truncate' },
           `${state.autoRoute ? `auto: ${state.autoRoute.runs.length} left, x stop · ` : ''}1 quest · 2 chain · 3 all · e energy/time · Enter queue · v map · j k scroll · Esc`,
         )
-      : h(
+      : createElement(
           Text,
           { dimColor: true, wrap: 'truncate' },
           quest
             ? `${quest.accepted ? `${quest.finishable ? 'Enter finish · ' : ''}x cancel quest · R route` : 'a/Enter accept'} · v jobs on map${quest.employerAt ? ' · w walk to giver' : ''} · ${detail ? 'j k scroll · h list' : 'l text'}`
             : 'Enter open · R route · Esc back',
         );
-  const right = h(
+  const right = createElement(
     Box,
     {
       flexDirection: 'column',
@@ -446,85 +494,95 @@ export function QuestsScreen({
       paddingX: 1,
     },
     ...detailLines,
-    h(Box, { flexGrow: 1 }),
+    createElement(Box, { flexGrow: 1 }),
     keys,
   );
-  return h(Box, { width, height }, left, right);
+  return createElement(Box, { width, height }, left, right);
 }
 
 /** Right panel for the route planner, and how far it scrolls. */
-function routeLines(
-  state: GameState,
-  plan: RoutePlan,
-  route: { scope: RouteScope; objective: RouteObjective },
-  questCount: number,
-  width: number,
-  room: number,
-  scroll: number,
-): [React.ReactNode[], number] {
+function routeLines({
+  state,
+  plan,
+  route,
+  questCount,
+  width,
+  room,
+  scroll,
+}: {
+  state: GameState;
+  plan: RoutePlan;
+  route: { scope: RouteScope; objective: RouteObjective };
+  questCount: number;
+  width: number;
+  room: number;
+  scroll: number;
+}): [React.ReactNode[], number] {
   const out: React.ReactNode[] = [];
   const add = (text: string, props: Record<string, unknown> = {}) =>
-    out.push(h(Text, { key: out.length, wrap: 'truncate', ...props }, truncate(text, width)));
+    out.push(createElement(Text, { key: out.length, wrap: 'truncate', ...props }, truncate(text, width)));
   const head: React.ReactNode[] = [];
   head.push(
-    h(
+    createElement(
       Text,
       { key: 'h', bold: true, wrap: 'truncate' },
       `Route · ${SCOPE_LABEL[route.scope]} (${questCount} quest${questCount === 1 ? '' : 's'}) · best per ${route.objective}`,
     ),
   );
-  const t = plan.totals;
+  const target = plan.totals;
   head.push(
-    h(
+    createElement(
       Text,
       { key: 't', color: 'cyan', wrap: 'truncate' },
-      `${t.runs} jobs · ${t.energy} energy · ${formatDuration(t.seconds)} (${formatDuration(t.travel)} travel) · ${t.xp} XP · ${money(t.money)}`,
+      `${target.runs} jobs · ${target.energy} energy · ${formatDuration(target.seconds)} (${formatDuration(target.travel)} travel) · ${target.xp} XP · ${money(target.money)}`,
     ),
   );
   if (plan.energyShort > 0) {
     head.push(
-      h(
+      createElement(
         Text,
         { key: 'en', color: 'yellow', wrap: 'truncate' },
-        `Energy: have ${state.character.energy}, ${plan.energyShort} short · ${plan.fitRuns} of ${t.runs} jobs can be queued now`,
+        `Energy: have ${state.character.energy}, ${plan.energyShort} short · ${plan.fitRuns} of ${target.runs} jobs can be queued now`,
       ),
     );
   }
-  const label = (k: string) => plan.needs.find((n) => n.key === k)?.label ?? k;
-  const unitOf = (k: string) => plan.needs.find((n) => n.key === k)?.unit;
-  const fmtGain = (k: string, g: number) =>
-    unitOf(k) === 'seconds'
-      ? `${formatDuration(g)} ${label(k)}`
-      : unitOf(k) === 'runs'
-        ? `${g}× ${label(k)}`
-        : `~${Math.round(g * 10) / 10} ${label(k)}`;
+  const label = (entryKey: string) => plan.needs.find((need) => need.key === entryKey)?.label ?? entryKey;
+  const unitOf = (entryKey: string) => plan.needs.find((need) => need.key === entryKey)?.unit;
+  const fmtGain = (entryKey: string, value: number) =>
+    unitOf(entryKey) === 'seconds'
+      ? `${formatDuration(value)} ${label(entryKey)}`
+      : unitOf(entryKey) === 'runs'
+        ? `${value}× ${label(entryKey)}`
+        : `~${Math.round(value * 10) / 10} ${label(entryKey)}`;
   add('Needs', { bold: true });
-  for (const n of plan.needs)
+  for (const need of plan.needs)
     add(
-      `  ${n.unit === 'seconds' ? formatDuration(n.amount) : n.amount}${n.unit === 'items' ? '×' : n.unit === 'runs' ? ' runs' : ''} ${n.label} — ${n.quests.join(', ')}`,
+      `  ${need.unit === 'seconds' ? formatDuration(need.amount) : need.amount}${need.unit === 'items' ? '×' : need.unit === 'runs' ? ' runs' : ''} ${need.label} — ${need.quests.join(', ')}`,
       { dimColor: true },
     );
   if (!plan.needs.length) add('  nothing — all requirements met or not job-related', { dimColor: true });
   if (plan.stops.length) add('Stops', { bold: true });
-  plan.stops.forEach((s, i) => {
+  plan.stops.forEach((source, index) => {
     add(
-      `${String(i + 1).padStart(2)}. ${s.job.name} · ${s.runs}× ${DURATION_LABEL[s.duration]} @ ${s.at.x},${s.at.y}`,
+      `${String(index + 1).padStart(2)}. ${source.job.name} · ${source.runs}× ${DURATION_LABEL[source.duration]} @ ${source.at.x},${source.at.y}`,
       { color: 'magentaBright' },
     );
     add(
-      `    ${s.travel ? `walk ${formatDuration(s.travel)} · ` : ''}${s.energy} energy · ${s.xp} XP · ${money(s.money)}`,
+      `    ${source.travel ? `walk ${formatDuration(source.travel)} · ` : ''}${source.energy} energy · ${source.xp} XP · ${money(source.money)}`,
       { dimColor: true },
     );
     add(
-      `    → ${Object.entries(s.gains)
-        .map(([k, g]) => fmtGain(k, g))
+      `    → ${Object.entries(source.gains)
+        .map(([entryKey, value]) => fmtGain(entryKey, value))
         .join(', ')}`,
       { color: 'green' },
     );
   });
-  for (const u of plan.unmet) add(`✘ ${u.need.label}: ${u.why}`, { color: 'red' });
-  for (const [k, r] of Object.entries(plan.leftover))
-    add(`… ${label(k)}: ~${Math.round(r * 10) / 10} still open after the run limit`, { color: 'yellow' });
+  for (const value of plan.unmet) add(`✘ ${value.need.label}: ${value.why}`, { color: 'red' });
+  for (const [entryKey, currentValue] of Object.entries(plan.leftover))
+    add(`… ${label(entryKey)}: ~${Math.round(currentValue * 10) / 10} still open after the run limit`, {
+      color: 'yellow',
+    });
   if (plan.stops.length)
     add('Drop amounts are expected values (job window %); re-plan after the jobs finish.', { dimColor: true });
   const body = Math.max(0, room - head.length);
@@ -536,23 +594,23 @@ function routeLines(
 /** Quest detail: "≈ 2h 10m · 24 energy · 3 jobs (12m walking)", with what the estimate can't cover. */
 function estimateLines(plan: RoutePlan | undefined, finishable: boolean): React.ReactNode[] {
   if (finishable || !plan || (!plan.stops.length && !plan.unmet.length)) return [];
-  const t = plan.totals;
+  const target = plan.totals;
   const out: React.ReactNode[] = [];
   if (plan.stops.length) {
     out.push(
-      h(
+      createElement(
         Text,
         { key: 'est', color: 'cyan', wrap: 'truncate' },
-        `≈ ${formatDuration(t.seconds)} · ${t.energy} energy · ${t.runs} job${t.runs === 1 ? '' : 's'}${t.travel ? ` (${formatDuration(t.travel)} walking)` : ''} · R for the route`,
+        `≈ ${formatDuration(target.seconds)} · ${target.energy} energy · ${target.runs} job${target.runs === 1 ? '' : 's'}${target.travel ? ` (${formatDuration(target.travel)} walking)` : ''} · R for the route`,
       ),
     );
   }
   if (plan.unmet.length) {
     out.push(
-      h(
+      createElement(
         Text,
         { key: 'estu', color: 'yellow', wrap: 'truncate' },
-        `${plan.stops.length ? '+ not from jobs' : 'No job estimate'}: ${plan.unmet.map((u) => u.need.label).join(', ')}`,
+        `${plan.stops.length ? '+ not from jobs' : 'No job estimate'}: ${plan.unmet.map((value) => value.need.label).join(', ')}`,
       ),
     );
   }

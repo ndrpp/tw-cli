@@ -36,7 +36,7 @@ export interface BuyLimits {
   maxWalk: number;
 }
 
-const money = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+const money = (countValue: number) => `$${Math.round(countValue).toLocaleString('en-US')}`;
 
 /** One way to get a needed item: a shop / the mobile trader, or a lot of market offers. */
 interface Option {
@@ -61,57 +61,73 @@ export function chooseBuys(
   const picks: BuyPick[] = [];
   let direct = 0;
   let market = 0;
-  const walk = (s: BuySource) => (s.kind === 'mobile' ? 0 : travel(s.at));
+  const walk = (source: BuySource) => (source.kind === 'mobile' ? 0 : travel(source.at));
   for (const need of needs) {
-    const all = sources(need.itemId).filter((s) => s.price > 0 && walk(s) <= limits.maxWalk);
+    const all = sources(need.itemId).filter((source) => source.price > 0 && walk(source) <= limits.maxWalk);
     const options: Option[] = [];
-    for (const s of all) {
+    for (const source of all) {
       if (
-        s.kind === 'market' ||
-        (s.kind === 'mobile' && s.item.limitedCount !== null && s.item.limitedCount < need.count)
+        source.kind === 'market' ||
+        (source.kind === 'mobile' && source.item.limitedCount !== null && source.item.limitedCount < need.count)
       )
         continue;
       options.push({
-        picks: [{ ...need, cost: s.price * need.count, source: s }],
-        cost: s.price * need.count,
-        walk: walk(s),
+        picks: [{ ...need, cost: source.price * need.count, source: source }],
+        cost: source.price * need.count,
+        walk: walk(source),
         market: false,
       });
     }
-    const offers = limits.market ? all.filter((s) => s.kind === 'market') : [];
+    const offers = limits.market ? all.filter((source) => source.kind === 'market') : [];
     // The cheapest lot overall and the cheapest in each single town (one pickup walk can beat a cheaper lot).
     const byTown = new Map<number, BuySource[]>();
-    for (const o of offers) if (o.kind === 'market') byTown.set(o.townId, [...(byTown.get(o.townId) ?? []), o]);
+    for (const optionsValue of offers)
+      if (optionsValue.kind === 'market')
+        byTown.set(optionsValue.townId, [...(byTown.get(optionsValue.townId) ?? []), optionsValue]);
     const lots = [
       cheapestLot(offers, need.count),
       ...[...byTown.values()].map((list) => cheapestLot(list, need.count)),
     ];
     const lot = lots[0];
-    for (const l of lots) {
-      if (!l) continue;
+    for (const lotOffers of lots) {
+      if (!lotOffers) continue;
       // One walk per town the goods wait in.
-      const towns = new Map(l.map((o) => [(o as { townId: number }).townId, walk(o)]));
+      const towns = new Map(
+        lotOffers.flatMap((offer) => (offer.kind === 'market' ? [[offer.townId, walk(offer)] as const] : [])),
+      );
       options.push({
-        picks: l.map((o) => ({ ...need, count: unitCount(o), cost: o.price, source: o })),
-        cost: l.reduce((a, o) => a + o.price, 0),
-        walk: [...towns.values()].reduce((a, w) => a + w, 0),
+        picks: lotOffers.map((optionsValue) => ({
+          ...need,
+          count: unitCount(optionsValue),
+          cost: optionsValue.price,
+          source: optionsValue,
+        })),
+        cost: lotOffers.reduce((accumulator, current) => accumulator + current.price, 0),
+        walk: [...towns.values()].reduce((accumulator, current) => accumulator + current, 0),
         market: true,
       });
     }
-    const fits = (o: Option) => (o.market ? market + o.cost <= limits.marketLimit : direct + o.cost <= limits.buyLimit);
-    const score = (o: Option) => o.cost + o.walk * limits.walkValue;
-    const best = options.filter(fits).sort((a, b) => score(a) - score(b) || a.walk - b.walk)[0];
+    const fits = (optionsValue: Option) =>
+      optionsValue.market
+        ? market + optionsValue.cost <= limits.marketLimit
+        : direct + optionsValue.cost <= limits.buyLimit;
+    const score = (optionsValue: Option) => optionsValue.cost + optionsValue.walk * limits.walkValue;
+    const best = options
+      .filter(fits)
+      .sort((first, second) => score(first) - score(second) || first.walk - second.walk)[0];
     if (best) {
       if (best.market) market += best.cost;
       else direct += best.cost;
       picks.push(...best.picks);
       continue;
     }
-    const shop = options.filter((o) => !o.market).sort((a, b) => a.cost - b.cost)[0];
+    const shop = options
+      .filter((optionsValue) => !optionsValue.market)
+      .sort((first, second) => first.cost - second.cost)[0];
     const others = (spent: number) => (spent > 0 ? ` (with ${money(spent)} for the other items)` : '');
-    const got = offers.reduce((a, o) => a + unitCount(o), 0);
+    const got = offers.reduce((accumulator, current) => accumulator + unitCount(current), 0);
     const firstPick = shop?.picks[0];
-    const marketOption = options.find((o) => o.market);
+    const marketOption = options.find((optionsValue) => optionsValue.market);
     const problem = shop
       ? `${need.name}: ${money(shop.cost)} (${firstPick ? where(firstPick.source) : 'unknown'}), over the ${money(limits.buyLimit)} quest buy limit${others(direct)}`
       : lot
@@ -128,38 +144,38 @@ export function chooseBuys(
 function cheapestLot(offers: BuySource[], count: number): BuySource[] | null {
   if (count <= 0 || !offers.length) return null;
   // best[u]: cheapest cost for at least u items (u capped at count), with the offers taken.
-  let best: { cost: number; take: number[] }[] = Array.from({ length: count + 1 }, (_, u) => ({
-    cost: u === 0 ? 0 : Infinity,
+  let best: { cost: number; take: number[] }[] = Array.from({ length: count + 1 }, (_, value) => ({
+    cost: value === 0 ? 0 : Infinity,
     take: [],
   }));
-  offers.forEach((o, i) => {
-    const next = best.map((b) => ({ ...b }));
-    for (let u = 0; u <= count; u++) {
-      const from = best[u];
+  offers.forEach((optionsValue, index) => {
+    const next = best.map((second) => ({ ...second }));
+    for (let value = 0; value <= count; value++) {
+      const from = best[value];
       if (!from || !Number.isFinite(from.cost)) continue;
-      const to = Math.min(count, u + unitCount(o));
+      const to = Math.min(count, value + unitCount(optionsValue));
       const target = next[to];
       if (!target) continue;
-      const cost = from.cost + o.price;
+      const cost = from.cost + optionsValue.price;
       if (cost < target.cost || (cost === target.cost && from.take.length + 1 < target.take.length))
-        next[to] = { cost, take: [...from.take, i] };
+        next[to] = { cost, take: [...from.take, index] };
     }
     best = next;
   });
   const end = best[count];
   if (!end || !Number.isFinite(end.cost)) return null;
-  return end.take.flatMap((i) => {
-    const offer = offers[i];
+  return end.take.flatMap((index) => {
+    const offer = offers[index];
     return offer ? [offer] : [];
   });
 }
 
-const unitCount = (s: BuySource) => (s.kind === 'market' ? Math.max(1, s.offer.count) : 1);
+const unitCount = (source: BuySource) => (source.kind === 'market' ? Math.max(1, source.offer.count) : 1);
 
-export function where(s: BuySource): string {
-  if (s.kind === 'mobile') return 'mobile trader';
-  if (s.kind === 'market') return `market in ${s.townName}`;
-  return `${s.shop === 'general' ? 'general store' : s.shop} in ${s.townName}`;
+export function where(source: BuySource): string {
+  if (source.kind === 'mobile') return 'mobile trader';
+  if (source.kind === 'market') return `market in ${source.townName}`;
+  return `${source.shop === 'general' ? 'general store' : source.shop} in ${source.townName}`;
 }
 
 /** How long fetched data counts: shop stock (unverified how often it changes), market offers, the mobile trader. */
@@ -189,14 +205,18 @@ export class BuyCatalog {
   setMarket(itemId: number, offers: MarketOffer[]): void {
     this.market.set(baseId(itemId), {
       at: Date.now(),
-      offers: offers.filter((o) => o.direction === 'SELL' && o.buyNow !== null && baseId(o.itemId) === baseId(itemId)),
+      offers: offers.filter(
+        (offerInfo) =>
+          offerInfo.direction === 'SELL' && offerInfo.buyNow !== null && baseId(offerInfo.itemId) === baseId(itemId),
+      ),
     });
     this.version++;
   }
 
   /** An offer was bought (or is gone): forget it. */
   dropOffer(offerId: number): void {
-    for (const m of this.market.values()) m.offers = m.offers.filter((o) => o.id !== offerId);
+    for (const match of this.market.values())
+      match.offers = match.offers.filter((offerInfo) => offerInfo.id !== offerId);
     this.version++;
   }
 
@@ -215,37 +235,37 @@ export class BuyCatalog {
   ): BuySource[] {
     const base = baseId(itemId);
     const out: BuySource[] = [];
-    for (const [townId, c] of this.shops) {
-      const t = town(townId);
-      if (!t) continue;
-      for (const shop of c.shops) {
-        const id = shop.items.find((i) => baseId(i) === base);
+    for (const [townId, candidate] of this.shops) {
+      const targetValue = town(townId);
+      if (!targetValue) continue;
+      for (const shop of candidate.shops) {
+        const id = shop.items.find((index) => baseId(index) === base);
         if (id !== undefined)
           out.push({
             kind: 'shop',
             shop: shop.key,
             townId,
-            townName: t.name,
-            at: t.at,
+            townName: targetValue.name,
+            at: targetValue.at,
             price: Math.round(price(id) * (shop.charge || 1)),
           });
       }
     }
-    for (const i of this.mobile?.trader.items ?? []) {
-      const dollar = i.prices.find((p) => p.currency === 'dollar');
-      if (baseId(i.itemId) === base && dollar && i.limitedCount !== 0)
-        out.push({ kind: 'mobile', item: i, price: dollar.amount });
+    for (const index of this.mobile?.trader.items ?? []) {
+      const dollar = index.prices.find((pick) => pick.currency === 'dollar');
+      if (baseId(index.itemId) === base && dollar && index.limitedCount !== 0)
+        out.push({ kind: 'mobile', item: index, price: dollar.amount });
     }
-    for (const o of this.market.get(base)?.offers ?? []) {
-      const townId = townAt(o.town);
-      if (townId !== undefined && o.buyNow !== null && o.buyNow > 0)
+    for (const offerInfo of this.market.get(base)?.offers ?? []) {
+      const townId = townAt(offerInfo.town);
+      if (townId !== undefined && offerInfo.buyNow !== null && offerInfo.buyNow > 0)
         out.push({
           kind: 'market',
-          offer: o,
+          offer: offerInfo,
           townId,
-          townName: o.town.name,
-          at: { x: o.town.x, y: o.town.y },
-          price: o.buyNow,
+          townName: offerInfo.town.name,
+          at: { x: offerInfo.town.x, y: offerInfo.town.y },
+          price: offerInfo.buyNow,
         });
     }
     return out;

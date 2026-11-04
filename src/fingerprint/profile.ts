@@ -4,6 +4,7 @@
 // recomputed hash does not match, so what we send is exactly what that browser would send.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { errorMessage } from '../util/errors.ts';
 import { obj, objs } from '../util/json.ts';
 import { x64hash128 } from './murmur.ts';
 
@@ -79,94 +80,101 @@ const REQUIRED = new Set([
 
 /** Array.prototype.join semantics: null/undefined become '', everything else String(x). */
 function joinLike(values: readonly unknown[], sep: string): string {
-  return values.map((v) => (v == null ? '' : String(v))).join(sep);
+  return values.map((value) => (value == null ? '' : String(value))).join(sep);
 }
 
 /** Reproduces: each value (arrays joined with ';') then x64hash128(list.join('~~~'), 31). */
 export function hashComponents(components: readonly FpComponent[]): string {
-  const parts = components.map((c) => (Array.isArray(c.value) ? joinLike(c.value, ';') : c.value));
+  const parts = components.map((candidate) =>
+    Array.isArray(candidate.value) ? joinLike(candidate.value, ';') : candidate.value,
+  );
   return x64hash128(joinLike(parts, '~~~'), 31);
 }
 
 export class FingerprintProfileError extends Error {}
 
-const isPrimitive = (v: unknown): v is string | number | boolean | null =>
-  v === null || ['string', 'number', 'boolean'].includes(typeof v);
+const isPrimitive = (value: unknown): value is string | number | boolean | null =>
+  value === null || ['string', 'number', 'boolean'].includes(typeof value);
 
 /** A component value as JSON gave it; anything else becomes the string the hash would have joined anyway. */
-function componentValue(v: unknown): ComponentValue {
-  if (v === undefined) return null;
-  if (Array.isArray(v)) return v.map((e) => (e === undefined ? null : isPrimitive(e) ? e : String(e)));
-  return isPrimitive(v) ? v : String(v);
+function componentValue(value: unknown): ComponentValue {
+  if (value === undefined) return null;
+  if (Array.isArray(value))
+    return value.map((entry) => (entry === undefined ? null : isPrimitive(entry) ? entry : String(entry)));
+  return isPrimitive(value) ? value : String(value);
 }
 
 /** The well-typed fields of a profile file or upload (the rest dropped). */
 function partialProfile(raw: unknown): Partial<FingerprintProfile> {
-  const r = obj(raw);
-  const p: Partial<FingerprintProfile> = {};
-  if (r.version === 1) p.version = 1;
-  if (typeof r.capturedAt === 'string') p.capturedAt = r.capturedAt;
-  if (typeof r.userAgent === 'string') p.userAgent = r.userAgent;
-  if (Array.isArray(r.languages)) p.languages = r.languages.map(String);
-  if (typeof r.webdriver === 'boolean' || r.webdriver === null) p.webdriver = r.webdriver;
-  if (typeof r.fp === 'string') p.fp = r.fp;
-  if (Array.isArray(r.components))
-    p.components = objs(r.components).map((c) => ({ key: String(c.key), value: componentValue(c.value) }));
-  return p;
+  const json = obj(raw);
+  const pick: Partial<FingerprintProfile> = {};
+  if (json.version === 1) pick.version = 1;
+  if (typeof json.capturedAt === 'string') pick.capturedAt = json.capturedAt;
+  if (typeof json.userAgent === 'string') pick.userAgent = json.userAgent;
+  if (Array.isArray(json.languages)) pick.languages = json.languages.map(String);
+  if (typeof json.webdriver === 'boolean' || json.webdriver === null) pick.webdriver = json.webdriver;
+  if (typeof json.fp === 'string') pick.fp = json.fp;
+  if (Array.isArray(json.components))
+    pick.components = objs(json.components).map((component) => ({
+      key: String(component.key),
+      value: componentValue(component.value),
+    }));
+  return pick;
 }
 
 export function validateProfile(raw: unknown): FingerprintProfile {
-  const r = partialProfile(raw);
-  if (r.version !== 1) throw new FingerprintProfileError(`unsupported profile version ${String(obj(raw).version)}`);
-  const fp = r.fp ?? '';
+  const result = partialProfile(raw);
+  if (result.version !== 1)
+    throw new FingerprintProfileError(`unsupported profile version ${String(obj(raw).version)}`);
+  const fp = result.fp ?? '';
   if (!/^[0-9a-f]{32}$/.test(fp)) throw new FingerprintProfileError('fp must be 32 lowercase hex chars');
-  if (!r.userAgent) {
+  if (!result.userAgent) {
     throw new FingerprintProfileError(
       'userAgent missing: run `tw fp ua "<value of navigator.userAgent from the same browser>"`',
     );
   }
-  const p: FingerprintProfile = {
+  const profile: FingerprintProfile = {
     version: 1,
-    capturedAt: r.capturedAt ?? '',
-    userAgent: r.userAgent,
-    languages: r.languages ?? [],
-    webdriver: r.webdriver ?? null,
+    capturedAt: result.capturedAt ?? '',
+    userAgent: result.userAgent,
+    languages: result.languages ?? [],
+    webdriver: result.webdriver ?? null,
     fp,
-    components: r.components ?? [],
+    components: result.components ?? [],
   };
-  if (p.components.length === 0) return p; // hash-only profile
+  if (profile.components.length === 0) return profile; // hash-only profile
 
-  const keys = p.components.map((c) => c.key);
+  const keys = profile.components.map((candidate) => candidate.key);
   let cursor = 0;
-  for (const k of keys) {
-    const idx = COMPONENT_ORDER.indexOf(k as (typeof COMPONENT_ORDER)[number], cursor);
+  for (const key of keys) {
+    const idx = COMPONENT_ORDER.indexOf(key as (typeof COMPONENT_ORDER)[number], cursor);
     if (idx < 0) {
       throw new FingerprintProfileError(
-        `component "${k}" is unknown or out of order; was the profile captured with the game's options?`,
+        `component "${key}" is unknown or out of order; was the profile captured with the game's options?`,
       );
     }
     cursor = idx + 1;
   }
-  for (const k of REQUIRED) {
-    if (!keys.includes(k)) throw new FingerprintProfileError(`required component "${k}" missing`);
+  for (const entryKey of REQUIRED) {
+    if (!keys.includes(entryKey)) throw new FingerprintProfileError(`required component "${entryKey}" missing`);
   }
 
-  const recomputed = hashComponents(p.components);
-  if (recomputed !== p.fp) {
+  const recomputed = hashComponents(profile.components);
+  if (recomputed !== profile.fp) {
     throw new FingerprintProfileError(
-      `recomputed hash ${recomputed} != captured ${p.fp}; the profile was edited or captured incorrectly`,
+      `recomputed hash ${recomputed} != captured ${profile.fp}; the profile was edited or captured incorrectly`,
     );
   }
-  return p;
+  return profile;
 }
 
 export function loadProfile(path: string): FingerprintProfile {
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(path, 'utf8'));
-  } catch (e) {
+  } catch (error) {
     throw new FingerprintProfileError(
-      `cannot read fingerprint profile ${path}: ${(e as Error).message}\n` +
+      `cannot read fingerprint profile ${path}: ${errorMessage(error)}\n` +
         'Capture one with tools/capture-fingerprint.js in your browser, then run: tw fp import <file>',
     );
   }

@@ -5,11 +5,12 @@
 // are not here: the planner's Quests goal covers them, and its shop trips walk to the town. Requirements it
 // cannot do are logged once.
 
+import { errorMessage } from '../util/errors.ts';
 import type { MarketPickup } from './autopilot-config.ts';
-import { type AutopilotConfig, goalWeights } from './autopilot-config.ts';
+import { type AutopilotConfig, goalWeights, questInScope } from './autopilot-config.ts';
 import { baseId } from './items.ts';
 import { type BuyPick, where } from './quest-buy.ts';
-import type { Quest } from './quests.ts';
+import { parseGameNumber, type Quest } from './quests.ts';
 import type { GameState } from './state.ts';
 import { walkPost } from './tasks.ts';
 import { buyMobileTrader, MarketApi, shopBuy } from './trade.ts';
@@ -24,15 +25,17 @@ export function chooseReward(
   isUpgrade: (text: string) => boolean = () => false,
 ): number | undefined {
   if (options.length <= 1) return options[0]?.id;
-  const w = goalWeights(config);
-  const score = (t: string) => {
-    if (isUpgrade(t)) return Infinity;
-    const n = Number(t.match(/([\d.,]+)/)?.[1]?.replace(/[.,]/g, '') ?? 0) || 1;
-    if (/experience|xp/i.test(t)) return w.xp * n;
-    if (/dollar|\$/i.test(t)) return w.money * n;
-    return w.products * 100; // an item: valued like a product
+  const width = goalWeights(config);
+  const score = (textValue: string) => {
+    if (isUpgrade(textValue)) return Infinity;
+    const count = parseGameNumber(textValue) || 1;
+    if (/experience|xp/i.test(textValue)) return width.xp * count;
+    if (/dollar|\$/i.test(textValue)) return width.money * count;
+    return width.products * 100; // an item: valued like a product
   };
-  return options.reduce((a, b) => (score(b.text) > score(a.text) ? b : a)).id;
+  return options.reduce((accumulator, current) =>
+    score(current.text) > score(accumulator.text) ? current : accumulator,
+  ).id;
 }
 
 export interface QuestHost {
@@ -60,88 +63,98 @@ export class QuestModule {
   private quests(): Quest[] {
     const { state, config } = this.host;
     const rules = state.autopilot.rules;
-    return state.quests.filter(
-      (q) =>
-        q.accepted &&
-        (!rules.onlyQuests.length || rules.onlyQuests.includes(q.id)) &&
-        !rules.excludedQuests.includes(q.id) &&
-        !config.quests.excludedChains.includes(q.group) &&
-        (config.quests.repeatable || !/repeatable/i.test(q.group)),
-    );
+    return state.quests.filter((quest) => quest.accepted && questInScope(quest, rules, config));
   }
 
   /** One quest step if there is one to do now; true when it sent a request. */
   async step(): Promise<boolean> {
-    const s = this.host.state;
-    if (!s.items) return false;
+    const gameState = this.host.state;
+    if (!gameState.items) return false;
     const skip = this.host.skipped();
     const quests = this.quests();
 
-    for (const q of quests.filter((x) => x.finishable)) {
-      const key = `finish:${q.id}`;
+    for (const currentQuest of quests.filter((quest) => quest.finishable)) {
+      const key = `finish:${currentQuest.id}`;
       if (skip.has(key)) continue;
       // Map quest givers want you there: walk first when not at the giver.
-      const at = q.employerAt;
-      const p = s.character.position;
-      if (at && (at.x !== p.x || at.y !== p.y) && skip.has(`finish-here:${q.id}`)) {
-        if (s.queue.length) continue;
-        s.debug.add('quest', `Walk to ${q.employerName} to finish ${q.title}`, {
-          quest: q.id,
+      const at = currentQuest.employerAt;
+      const position = gameState.character.position;
+      if (at && (at.x !== position.x || at.y !== position.y) && skip.has(`finish-here:${currentQuest.id}`)) {
+        if (gameState.queue.length) continue;
+        gameState.debug.add('quest', `Walk to ${currentQuest.employerName} to finish ${currentQuest.title}`, {
+          quest: currentQuest.id,
           giverAt: at,
-          position: p,
+          position: position,
         });
-        const r = await s
-          .autopilotCall(() => s.tasks.add(s.queue.length, [walkPost(q.employer, 'questgiver', at)], s.taskLimit))
-          .catch((e) => {
-            this.host.fail(`walk:${q.id}`, String(e));
+        const result = await gameState
+          .autopilotCall(() =>
+            gameState.tasks.add(
+              gameState.queue.length,
+              [walkPost(currentQuest.employer, 'questgiver', at)],
+              gameState.taskLimit,
+            ),
+          )
+          .catch((entry) => {
+            this.host.fail(`walk:${currentQuest.id}`, String(entry));
             return null;
           });
-        if (r?.added.length) {
-          s.queue.push(...r.added);
-          s.info(`Autopilot: walking to ${q.employerName} to finish ${q.title}.`);
+        if (result?.added.length) {
+          gameState.queue.push(...result.added);
+          gameState.info(`Autopilot: walking to ${currentQuest.employerName} to finish ${currentQuest.title}.`);
         }
         return true;
       }
-      const reward = chooseReward(q.rewardOptions, this.host.config, (t) => this.isUpgrade(t));
-      s.debug.add('quest', `Finish ${q.title}`, {
-        quest: q.id,
-        giver: q.employerName,
+      const reward = chooseReward(currentQuest.rewardOptions, this.host.config, (textValue) =>
+        this.isUpgrade(textValue),
+      );
+      gameState.debug.add('quest', `Finish ${currentQuest.title}`, {
+        quest: currentQuest.id,
+        giver: currentQuest.employerName,
         giverAt: at,
-        position: p,
-        rewardOptions: q.rewardOptions,
+        position: position,
+        rewardOptions: currentQuest.rewardOptions,
         chosen: reward,
       });
-      const before = s.log.length;
-      await s.finishQuest(q, reward);
-      if (s.log.slice(before).some((l) => l.level === 'error'))
-        this.host.fail(at ? `finish-here:${q.id}` : key, `could not finish ${q.title}`);
+      const before = gameState.log.length;
+      await gameState.finishQuest(currentQuest, reward);
+      if (gameState.log.slice(before).some((line) => line.level === 'error'))
+        this.host.fail(at ? `finish-here:${currentQuest.id}` : key, `could not finish ${currentQuest.title}`);
       return true;
     }
 
-    for (const q of quests) {
-      for (const r of q.requirements.filter((x) => !x.solved)) {
-        if (r.kind === 'wear' && r.itemId !== undefined) {
-          const requiredBase = Math.floor(r.itemId / 1000);
-          if (s.inventory.countBase(r.itemId) > 0 && !skip.has(`wear:${r.itemId}`)) {
-            const id = [...s.inventory.bag.values()].find((b) => Math.floor(b.itemId / 1000) === requiredBase)?.itemId;
+    for (const wearQuest of quests) {
+      for (const requirement of wearQuest.requirements.filter((openRequirement) => !openRequirement.solved)) {
+        if (requirement.kind === 'wear' && requirement.itemId !== undefined) {
+          const requiredBase = baseId(requirement.itemId);
+          if (gameState.inventory.countBase(requirement.itemId) > 0 && !skip.has(`wear:${requirement.itemId}`)) {
+            const id = [...gameState.inventory.bag.values()].find(
+              (second) => baseId(second.itemId) === requiredBase,
+            )?.itemId;
             if (id === undefined) continue;
-            const slot = s.items.get(id)?.type ?? '';
-            if (!this.swapped.has(q.id)) this.swapped.set(q.id, { slot, prev: s.inventory.wear.get(slot) ?? null });
-            s.debug.add('quest', `Wear ${s.itemName(id)} for ${q.title}`, {
-              quest: q.id,
-              requirement: r.info,
+            const slot = gameState.items.get(id)?.type ?? '';
+            if (!this.swapped.has(wearQuest.id))
+              this.swapped.set(wearQuest.id, { slot, prev: gameState.inventory.wear.get(slot) ?? null });
+            gameState.debug.add('quest', `Wear ${gameState.itemName(id)} for ${wearQuest.title}`, {
+              quest: wearQuest.id,
+              requirement: requirement.info,
               slot,
-              previous: this.swapped.get(q.id),
+              previous: this.swapped.get(wearQuest.id),
             });
-            const before = s.log.length;
-            await s.wear(id);
-            if (s.log.slice(before).some((l) => l.level === 'error'))
-              this.host.fail(`wear:${r.itemId}`, `could not wear ${s.itemName(id)} for ${q.title}`);
-            else void s.loadQuests(true);
+            const before = gameState.log.length;
+            await gameState.wear(id);
+            if (gameState.log.slice(before).some((line) => line.level === 'error'))
+              this.host.fail(
+                `wear:${requirement.itemId}`,
+                `could not wear ${gameState.itemName(id)} for ${wearQuest.title}`,
+              );
+            else void gameState.loadQuests(true);
             return true;
           }
-        } else if (r.kind === 'other') {
-          this.once(`other:${r.info}`, `Autopilot: skipping a requirement it cannot do yet: "${r.info}" (${q.title}).`);
+        } else if (requirement.kind === 'other') {
+          this.once(
+            `other:${requirement.info}`,
+            `Autopilot: skipping a requirement it cannot do yet: "${requirement.info}" (${wearQuest.title}).`,
+          );
         }
       }
     }
@@ -151,42 +164,46 @@ export class QuestModule {
     // Everything done but the time window: re-read the quest log now and then (the server should mark the
     // window solved inside it; unverified), so the finish above happens in time.
     const waiting = quests.filter(
-      (q) =>
-        !q.finishable &&
-        q.requirements.some((r) => !r.solved) &&
-        q.requirements.every((r) => r.solved || r.kind === 'window'),
+      (currentQuest) =>
+        !currentQuest.finishable &&
+        currentQuest.requirements.some((requirement) => !requirement.solved) &&
+        currentQuest.requirements.every((requirement) => requirement.solved || requirement.kind === 'window'),
     );
     if (waiting.length && Date.now() - this.windowAt > WINDOW_CHECK_MS) {
       this.windowAt = Date.now();
-      s.debug.add(
+      gameState.debug.add(
         'quest',
-        `Waiting for a time window: re-reading the quest log (${waiting.map((q) => q.title).join(', ')})`,
+        `Waiting for a time window: re-reading the quest log (${waiting.map((currentQuest) => currentQuest.title).join(', ')})`,
         {
-          windows: waiting.map((q) => ({
-            quest: q.id,
-            window: q.requirements.find((r) => r.kind === 'window')?.window,
+          windows: waiting.map((currentQuest) => ({
+            quest: currentQuest.id,
+            window: currentQuest.requirements.find((requirement) => requirement.kind === 'window')?.window,
           })),
         },
       );
-      await s.loadQuests(true);
+      await gameState.loadQuests(true);
       return true;
     }
 
     // Quest done (finished or wear requirement solved): put the old gear back unless the quest item is better.
     for (const [qid, sw] of this.swapped) {
-      const q = s.quests.find((x) => x.id === qid);
+      const found = gameState.quests.find((currentQuest) => currentQuest.id === qid);
       const stillNeeded =
-        q?.requirements.some((r) => r.kind === 'wear' && !r.solved) ||
-        (q && !q.finishable && q.requirements.some((r) => r.kind === 'wear'));
+        found?.requirements.some((requirement) => requirement.kind === 'wear' && !requirement.solved) ||
+        (found && !found.finishable && found.requirements.some((requirement) => requirement.kind === 'wear'));
       if (stillNeeded) continue;
       this.swapped.delete(qid);
-      s.debug.add('quest', `Quest gear no longer needed (${q?.title ?? qid})`, {
+      gameState.debug.add('quest', `Quest gear no longer needed (${found?.title ?? qid})`, {
         slot: sw.slot,
-        previous: sw.prev && s.itemName(sw.prev),
+        previous: sw.prev && gameState.itemName(sw.prev),
       });
-      if (sw.prev && s.inventory.count(sw.prev) > 0 && !this.betterThan(s.inventory.wear.get(sw.slot), sw.prev)) {
-        await s.wear(sw.prev);
-        s.info(`Autopilot: put ${s.itemName(sw.prev)} back on.`);
+      if (
+        sw.prev &&
+        gameState.inventory.count(sw.prev) > 0 &&
+        !this.betterThan(gameState.inventory.wear.get(sw.slot), sw.prev)
+      ) {
+        await gameState.wear(sw.prev);
+        gameState.info(`Autopilot: put ${gameState.itemName(sw.prev)} back on.`);
         return true;
       }
     }
@@ -204,174 +221,184 @@ export class QuestModule {
    * the items are bought, what needs no walk (mobile trader, market offers) or sells in this town's shops.
    */
   private async buyStep(quests: Quest[], skip: Set<string>): Promise<boolean> {
-    const s = this.host.state;
-    const here = s.townHere;
-    const pickup = here && s.autopilot.pickups.find((p) => p.townId === here.id);
+    const gameState = this.host.state;
+    const here = gameState.townHere;
+    const pickup = here && gameState.autopilot.pickups.find((pickInfo) => pickInfo.townId === here.id);
     if (pickup) {
       await this.pickUp(pickup);
       return true;
     }
     if (!this.host.config.quests.buy) return false;
-    const all = s.questPurchases(quests);
-    for (const q of quests) {
-      const p = all.get(q.id);
-      if (!p || p.blocker || p.problem) continue;
-      for (const pick of p.picks) {
+    const all = gameState.questPurchases(quests);
+    for (const currentQuest of quests) {
+      const entry = all.get(currentQuest.id);
+      if (!entry || entry.blocker || entry.problem) continue;
+      for (const pick of entry.picks) {
         if (pick.source.kind === 'shop' && pick.source.townId !== here?.id) continue;
         const key = `item:${baseId(pick.itemId)}`;
         if (skip.has(key)) continue;
         if (pick.cost > this.host.budget()) {
           this.once(
-            `budget:${q.id}:${baseId(pick.itemId)}`,
-            `Autopilot: ${pick.name} ($${pick.cost}) for ${q.title} is over what is left of today's spend cap ($${this.host.budget()}).`,
+            `budget:${currentQuest.id}:${baseId(pick.itemId)}`,
+            `Autopilot: ${pick.name} ($${pick.cost}) for ${currentQuest.title} is over what is left of today's spend cap ($${this.host.budget()}).`,
           );
           continue;
         }
-        await this.buy(q, pick, key);
+        await this.buy(currentQuest, pick, key);
         return true;
       }
     }
     return false;
   }
 
-  private async buy(q: Quest, pick: BuyPick, key: string): Promise<void> {
-    const s = this.host.state;
+  private async buy(currentQuest: Quest, pick: BuyPick, key: string): Promise<void> {
+    const gameState = this.host.state;
     const src = pick.source;
-    const money = (r: { cash?: number | undefined; deposit?: number | undefined }) => {
-      if (typeof r.cash === 'number') s.character.cash = r.cash;
-      if (typeof r.deposit === 'number') s.character.deposit = r.deposit;
+    const money = (result: { cash?: number | undefined; deposit?: number | undefined }) => {
+      if (typeof result.cash === 'number') gameState.character.cash = result.cash;
+      if (typeof result.deposit === 'number') gameState.character.deposit = result.deposit;
     };
-    s.debug.add('quest', `Buy ${pick.count}× ${pick.name} for ${q.title} (${where(src)})`, {
-      quest: q.id,
+    gameState.debug.add('quest', `Buy ${pick.count}× ${pick.name} for ${currentQuest.title} (${where(src)})`, {
+      quest: currentQuest.id,
       pick,
       budget: this.host.budget(),
-      cash: s.character.cash,
-      deposit: s.character.deposit,
+      cash: gameState.character.cash,
+      deposit: gameState.character.deposit,
     });
     try {
       if (src.kind === 'shop') {
-        for (let i = 0; i < pick.count; i++) {
-          const r = await s.autopilotCall(
-            () => shopBuy(s.client, src.shop, src.townId, pick.itemId, s.inventory.lastInvId),
+        for (let index = 0; index < pick.count; index++) {
+          const result = await gameState.autopilotCall(
+            () => shopBuy(gameState.client, src.shop, src.townId, pick.itemId, gameState.inventory.lastInvId),
             `buy ${pick.name} (${where(src)})`,
           );
-          s.inventory.applyChanges(r.changes);
-          money(r);
+          gameState.inventory.applyChanges(result.changes);
+          money(result);
         }
       } else if (src.kind === 'mobile') {
-        for (let i = 0; i < pick.count; i++)
+        for (let innerIndex = 0; innerIndex < pick.count; innerIndex++)
           money(
-            await s.autopilotCall(
-              () => buyMobileTrader(s.client, src.item, 'dollar'),
+            await gameState.autopilotCall(
+              () => buyMobileTrader(gameState.client, src.item, 'dollar'),
               `buy ${pick.name} (mobile trader)`,
             ),
           );
-        s.buyCatalog.mobile = null; // stock and limited counts changed: read it again
-        await s.refreshInventory();
+        gameState.buyCatalog.mobile = null; // stock and limited counts changed: read it again
+        await gameState.refreshInventory();
       } else {
         // Instant buy at the offer's price, from the bank when cash is short (bidtype 1); goods wait in its town.
-        const fromBank = s.character.cash < src.price;
-        const r = await s.autopilotCall(
-          () => new MarketApi(s.client).bid(src.offer, src.price, fromBank),
+        const fromBank = gameState.character.cash < src.price;
+        const resultValue = await gameState.autopilotCall(
+          () => new MarketApi(gameState.client).bid(src.offer, src.price, fromBank),
           `buy ${pick.name} (${where(src)})`,
         );
-        s.buyCatalog.dropOffer(src.offer.id);
-        if (!r.instant) throw new Error('the offer did not sell at its buy-now price (bid placed instead)');
-        money(r);
-        s.updateAutopilot((f) =>
-          f.pickups.push({
+        gameState.buyCatalog.dropOffer(src.offer.id);
+        if (!resultValue.instant) throw new Error('the offer did not sell at its buy-now price (bid placed instead)');
+        money(resultValue);
+        gameState.updateAutopilot((autopilotFile) =>
+          autopilotFile.pickups.push({
             offerId: src.offer.id,
             itemId: pick.itemId,
             count: pick.count,
             townId: src.townId,
             townName: src.townName,
             at: src.at,
-            quest: q.soloTitle || q.title,
+            quest: currentQuest.soloTitle || currentQuest.title,
           }),
         );
       }
       this.host.spend(pick.cost);
-      s.info(
-        `Autopilot: bought ${pick.count > 1 ? `${pick.count}× ` : ''}${pick.name} for ${q.title} ($${pick.cost}, ${where(src)})${src.kind === 'market' ? `; picking it up in ${src.townName}` : ''}.`,
+      gameState.info(
+        `Autopilot: bought ${pick.count > 1 ? `${pick.count}× ` : ''}${pick.name} for ${currentQuest.title} ($${pick.cost}, ${where(src)})${src.kind === 'market' ? `; picking it up in ${src.townName}` : ''}.`,
       );
-      void s.loadQuests(true);
+      void gameState.loadQuests(true);
     } catch (err) {
-      this.host.fail(key, `buying ${pick.name} (${where(src)}): ${err instanceof Error ? err.message : String(err)}`);
+      this.host.fail(key, `buying ${pick.name} (${where(src)}): ${errorMessage(err)}`);
     }
   }
 
   /** Picks up market goods bought for a quest; once only: a failure leaves it to you (trade screen, market). */
-  private async pickUp(p: MarketPickup): Promise<void> {
-    const s = this.host.state;
-    const name = s.itemName(p.itemId);
-    s.debug.add('quest', `Pick up ${name} at the market in ${p.townName}`, { pickup: p });
-    s.updateAutopilot((f) => (f.pickups = f.pickups.filter((x) => x.offerId !== p.offerId)));
+  private async pickUp(pickInfo: MarketPickup): Promise<void> {
+    const gameState = this.host.state;
+    const name = gameState.itemName(pickInfo.itemId);
+    gameState.debug.add('quest', `Pick up ${name} at the market in ${pickInfo.townName}`, { pickup: pickInfo });
+    gameState.updateAutopilot(
+      (autopilotFile) =>
+        (autopilotFile.pickups = autopilotFile.pickups.filter((xCoord) => xCoord.offerId !== pickInfo.offerId)),
+    );
     try {
-      await s.autopilotCall(() => new MarketApi(s.client).fetch(p.offerId), `market: pick up ${name}`);
-      s.info(`Autopilot: picked up ${name} at the market in ${p.townName} (for ${p.quest}).`);
-      await s.refreshInventory();
-      void s.loadQuests(true);
+      await gameState.autopilotCall(
+        () => new MarketApi(gameState.client).fetch(pickInfo.offerId),
+        `market: pick up ${name}`,
+      );
+      gameState.info(`Autopilot: picked up ${name} at the market in ${pickInfo.townName} (for ${pickInfo.quest}).`);
+      await gameState.refreshInventory();
+      void gameState.loadQuests(true);
     } catch (err) {
-      s.error(
-        `Autopilot: could not pick up ${name} in ${p.townName}: ${err instanceof Error ? err.message : String(err)}. Pick it up on the market tab of the trade screen.`,
+      gameState.error(
+        `Autopilot: could not pick up ${name} in ${pickInfo.townName}: ${errorMessage(err)}. Pick it up on the market tab of the trade screen.`,
       );
     }
   }
 
   /** In a town: once an hour, accept what its saloon offers (filters, room in the quest log). */
   private async acceptInTown(skip: Set<string>): Promise<boolean> {
-    const s = this.host.state;
-    const town = s.townHere;
+    const gameState = this.host.state;
+    const town = gameState.townHere;
     if (!town || Date.now() - (this.saloonChecked.get(town.id) ?? 0) < 3600_000) return false;
     this.saloonChecked.set(town.id, Date.now());
-    if (s.questCapacity && s.quests.length >= s.questCapacity) return false;
-    await s.loadSaloon();
-    s.debug.add('quest', `Saloon in ${town.name}: ${s.saloon.length} quest giver(s)`, {
-      givers: s.saloon,
-      questLog: `${s.quests.length}/${s.questCapacity || '?'}`,
+    if (gameState.questCapacity && gameState.quests.length >= gameState.questCapacity) return false;
+    await gameState.loadSaloon();
+    gameState.debug.add('quest', `Saloon in ${town.name}: ${gameState.saloon.length} quest giver(s)`, {
+      givers: gameState.saloon,
+      questLog: `${gameState.quests.length}/${gameState.questCapacity || '?'}`,
     });
     const cfg = this.host.config;
-    for (const e of s.saloon) {
-      if (!(await s.openEmployer(e.key)) || !s.employer) continue;
-      for (const q of s.employer.open) {
-        if (!q.acceptable || q.accepted || skip.has(`accept:${q.id}`)) continue;
-        if (cfg.quests.excludedChains.includes(q.group) || (!cfg.quests.repeatable && /repeatable/i.test(q.group)))
+    for (const entry of gameState.saloon) {
+      if (!(await gameState.openEmployer(entry.key)) || !gameState.employer) continue;
+      for (const currentQuest of gameState.employer.open) {
+        if (!currentQuest.acceptable || currentQuest.accepted || skip.has(`accept:${currentQuest.id}`)) continue;
+        if (
+          cfg.quests.excludedChains.includes(currentQuest.group) ||
+          (!cfg.quests.repeatable && /repeatable/i.test(currentQuest.group))
+        )
           continue;
-        if (s.questCapacity && s.quests.length >= s.questCapacity) return true;
-        s.debug.add('quest', `Accept ${q.title}`, {
-          quest: q.id,
-          chain: q.group,
-          giver: e.name,
-          requirements: q.requirements,
+        if (gameState.questCapacity && gameState.quests.length >= gameState.questCapacity) return true;
+        gameState.debug.add('quest', `Accept ${currentQuest.title}`, {
+          quest: currentQuest.id,
+          chain: currentQuest.group,
+          giver: entry.name,
+          requirements: currentQuest.requirements,
         });
-        await s.acceptQuest(q);
+        await gameState.acceptQuest(currentQuest);
       }
     }
     return true;
   }
 
   private isUpgrade(text: string): boolean {
-    const s = this.host.state;
-    const id = s.items?.findByName(text.trim());
+    const gameState = this.host.state;
+    const id = gameState.items?.findByName(text.trim());
     if (id === undefined) return false;
-    const slot = s.items?.get(id)?.type;
-    const req = s.requiredLevel(id);
-    if (!slot || (req && req.level > s.character.level)) return false;
-    return this.betterThan(id, s.inventory.wear.get(slot) ?? undefined);
+    const slot = gameState.items?.get(id)?.type;
+    const req = gameState.requiredLevel(id);
+    if (!slot || (req && req.level > gameState.character.level)) return false;
+    return this.betterThan(id, gameState.inventory.wear.get(slot) ?? undefined);
   }
 
   /** Item a beats b by total attribute + skill points (a rough "better gear" test). */
-  private betterThan(a: number | undefined, b: number | undefined): boolean {
-    if (!a) return false;
-    if (!b) return true;
-    const s = this.host.state;
+  private betterThan(value: number | undefined, currentValue: number | undefined): boolean {
+    if (!value) return false;
+    if (!currentValue) return true;
+    const gameState = this.host.state;
     const pts = (id: number) => {
-      const d = s.items?.get(id);
-      return d
-        ? Object.values(d.attributes).reduce((x, y) => x + y, 0) + Object.values(d.skills).reduce((x, y) => x + y, 0)
+      const entry = gameState.items?.get(id);
+      return entry
+        ? Object.values(entry.attributes).reduce((accumulator, current) => accumulator + current, 0) +
+            Object.values(entry.skills).reduce((accumulator, current) => accumulator + current, 0)
         : 0;
     };
-    return pts(a) > pts(b);
+    return pts(value) > pts(currentValue);
   }
 
   private once(key: string, msg: string): void {

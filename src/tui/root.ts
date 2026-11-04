@@ -10,12 +10,13 @@ import { ensureGame } from '../auth/session.ts';
 import { CONFIG_DIR } from '../auth/session-store.ts';
 import { Calibration } from '../game/calibration.ts';
 import { GameState } from '../game/state.ts';
+import { errorMessage } from '../util/errors.ts';
 import { WakeDetector } from '../util/wake.ts';
 import { App, LoadingFrame } from './app.ts';
 import { formatDuration } from './format.ts';
 import { SetupScreen } from './setup.ts';
 
-const h = React.createElement;
+const createElement = React.createElement;
 
 type Phase =
   | { kind: 'connecting'; message?: string; startedAt: number }
@@ -45,14 +46,14 @@ const RETRY_MS = 10_000;
 export function Root() {
   const { exit } = useApp();
   const [phase, setPhase] = useState<Phase>(() => ({ kind: 'connecting', startedAt: Date.now() }));
-  const win = useWindowSize();
+  const windowSize = useWindowSize();
   const [, setFrame] = useState(0);
   const connecting = phase.kind === 'connecting';
   // Spinner and timer while connecting (the game's own ticker is not running yet).
   useEffect(() => {
     if (!connecting) return;
-    const t = setInterval(() => setFrame((f) => f + 1), 120);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setFrame((frame) => frame + 1), 120);
+    return () => clearInterval(timer);
   }, [connecting]);
   useInput(
     (input) => {
@@ -85,12 +86,12 @@ export function Root() {
           const next = makeState(game, prev, startedAt);
           next.info(`${why.replace(/…$/, '')} Reloaded.`);
           setState(next);
-          setGeneration((g) => g + 1);
+          setGeneration((value) => value + 1);
           setPhase({ kind: 'game' });
         })
-        .catch((e) => {
+        .catch((entry) => {
           if (cancelled) return;
-          if (e instanceof AuthError) return setPhase({ kind: 'setup', canGoBack: false, message: e.message });
+          if (entry instanceof AuthError) return setPhase({ kind: 'setup', canGoBack: false, message: entry.message });
           retry = setTimeout(() => reconnect(why, attempt + 1), RETRY_MS);
         });
     };
@@ -118,9 +119,8 @@ export function Root() {
         setState(makeState(game, null, startedAt));
         setPhase({ kind: 'game' });
       })
-      .catch((e) => {
-        if (!cancelled)
-          setPhase({ kind: 'setup', canGoBack: false, message: e instanceof Error ? e.message : String(e) });
+      .catch((entry) => {
+        if (!cancelled) setPhase({ kind: 'setup', canGoBack: false, message: errorMessage(entry) });
       });
     return () => {
       cancelled = true;
@@ -128,16 +128,16 @@ export function Root() {
   }, []);
 
   if (phase.kind === 'connecting') {
-    return h(LoadingFrame, {
-      width: win.columns || 80,
-      height: win.rows || 24,
+    return createElement(LoadingFrame, {
+      width: windowSize.columns || 80,
+      height: windowSize.rows || 24,
       steps: [{ label: CONNECT_LABEL, status: 'running', startedAt: phase.startedAt }],
       latest: phase.message,
       keys: 'q quit',
     });
   }
   if (phase.kind === 'setup' || !state) {
-    return h(SetupScreen, {
+    return createElement(SetupScreen, {
       message: phase.kind === 'setup' ? phase.message : undefined,
       onReady: (game: OpenGame) => {
         setState(makeState(game));
@@ -147,7 +147,7 @@ export function Root() {
       onQuit: () => exit(),
     });
   }
-  return h(App, {
+  return createElement(App, {
     key: `${generation}:${state.client.h}:${state.character.playerId}`,
     state,
     onAccount: () => setPhase({ kind: 'setup', canGoBack: true }),
@@ -155,6 +155,6 @@ export function Root() {
 }
 
 export async function runRoot(): Promise<void> {
-  const app = render(h(Root), { alternateScreen: true, exitOnCtrlC: true });
+  const app = render(createElement(Root), { alternateScreen: true, exitOnCtrlC: true });
   await app.waitUntilExit();
 }

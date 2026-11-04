@@ -14,9 +14,10 @@ export interface Position {
  * plus 1000·(level − 120)^2.9 above level 120; capped at the world's max level.
  */
 export function levelStartXp(level: number, maxLevel = 250): number {
-  const l = Math.min(level, maxLevel);
+  const value = Math.min(level, maxLevel);
   return Math.floor(
-    ((l * (l + 1) * (2 * l + 1)) / 6 + (l + 1) * 10 - 21) * 3 + (l > 120 ? 1000 * (l - 120) ** 2.9 : 0),
+    ((value * (value + 1) * (2 * value + 1)) / 6 + (value + 1) * 10 - 21) * 3 +
+      (value > 120 ? 1000 * (value - 120) ** 2.9 : 0),
   );
 }
 
@@ -82,48 +83,53 @@ export class CharacterState {
   }
 
   static fromInit(data: JsonObject, clock: ServerClock): CharacterState {
-    const c = new CharacterState(clock);
-    c.playerId = Number(data.playerId);
-    c.name = String(data.name ?? '');
-    c.level = Number(data.level);
-    c.charClass = String(obj(data.charClass).type ?? '');
-    c.charSex = String(data.charSex ?? '');
-    c.duelLevel = Number(data.duelLevel) || 0;
-    c.itemLevelDecrease = nums(data.itemLevelRequirementDecrease);
-    c.experience = Number(data.experience);
-    c.cash = Number(data.cash);
-    c.deposit = Number(data.deposit);
-    c.nuggets = Number(data.nuggets);
+    const character = new CharacterState(clock);
+    character.playerId = Number(data.playerId);
+    character.name = String(data.name ?? '');
+    character.level = Number(data.level);
+    character.charClass = String(obj(data.charClass).type ?? '');
+    character.charSex = String(data.charSex ?? '');
+    character.duelLevel = Number(data.duelLevel) || 0;
+    character.itemLevelDecrease = nums(data.itemLevelRequirementDecrease);
+    character.experience = Number(data.experience);
+    character.cash = Number(data.cash);
+    character.deposit = Number(data.deposit);
+    character.nuggets = Number(data.nuggets);
     const pos = obj(data.pos);
-    c.position = { x: Number(pos.x ?? 0), y: Number(pos.y ?? 0) };
+    character.position = { x: Number(pos.x ?? 0), y: Number(pos.y ?? 0) };
     const town = isObj(data.town) ? data.town : null;
-    c.homeTown = town ? { id: Number(town.id), x: Number(obj(town.coords).x), y: Number(obj(town.coords).y) } : null;
-    c.speed = Number(data.charSpeed ?? 1);
-    c.maxEnergy = Number(data.maxEnergy);
-    c.healthRegen = Number(data.healthRegenFactor ?? 0);
-    c.energyRegen = Number(data.energyRegenFactor ?? 0);
+    character.homeTown = town
+      ? { id: Number(town.id), x: Number(obj(town.coords).x), y: Number(obj(town.coords).y) }
+      : null;
+    character.speed = Number(data.charSpeed ?? 1);
+    character.maxEnergy = Number(data.maxEnergy);
+    character.healthRegen = Number(data.healthRegenFactor ?? 0);
+    character.energyRegen = Number(data.energyRegenFactor ?? 0);
     if (isObj(data.taskLimit))
-      c.taskLimit = { normal: Number(data.taskLimit.normal) || 4, premium: Number(data.taskLimit.premium) || 9 };
-    c.skills = nums(obj(data.skillData).skills);
-    c.skillBonus = nums(obj(data.skillData).skillBonus);
+      character.taskLimit = {
+        normal: Number(data.taskLimit.normal) || 4,
+        premium: Number(data.taskLimit.premium) || 9,
+      };
+    character.skills = nums(obj(data.skillData).skills);
+    character.skillBonus = nums(obj(data.skillData).skillBonus);
     const lp = Number(data.lpPerPoint ?? 0);
-    c.lpPerPoint = lp;
+    character.lpPerPoint = lp;
     const lpBonus = Number(data.lpPerPointBonus ?? 0);
-    const healthPoints = (c.skills.health ?? 0) + (c.skillBonus.health ?? 0);
-    c.maxHealth = Math.trunc(100 + (c.level - 1) * lp + healthPoints * (lp + lpBonus));
-    c.setHealth(Number(data.health));
-    c.setEnergy(Number(data.energy));
-    return c;
+    const healthPoints = (character.skills.health ?? 0) + (character.skillBonus.health ?? 0);
+    character.maxHealth = Math.trunc(100 + (character.level - 1) * lp + healthPoints * (lp + lpBonus));
+    character.setHealth(Number(data.health));
+    character.setEnergy(Number(data.energy));
+    return character;
   }
 
   /** `at`: server time (s) the value was measured (energy_date from live updates); default now. */
-  setEnergy(e: number, at?: number): void {
-    this.baseEnergy = Math.floor(e);
+  setEnergy(value: number, at?: number): void {
+    this.baseEnergy = Math.floor(value);
     this.energyAt = at && at <= this.clock.now() ? at : this.clock.now();
   }
 
-  setHealth(h: number, at?: number): void {
-    this.baseHealth = Math.min(Math.floor(h), this.maxHealth);
+  setHealth(height: number, at?: number): void {
+    this.baseHealth = Math.min(Math.floor(height), this.maxHealth);
     this.healthAt = at && at <= this.clock.now() ? at : this.clock.now();
   }
 

@@ -34,13 +34,13 @@ export class RateTracker {
     this.keepS = keepS;
   }
 
-  record(t: number, xp: number, money: number): void {
-    const s = { t, xp, money };
-    this.first ??= s;
+  record(time: number, xp: number, money: number): void {
+    const source = { t: time, xp, money };
+    this.first ??= source;
     const last = this.samples[this.samples.length - 1];
-    if (last && t - last.t < SAMPLE_S) return;
-    this.samples.push(s);
-    while (this.samples.length > 2 && (this.samples[1]?.t ?? Number.POSITIVE_INFINITY) <= t - this.keepS)
+    if (last && time - last.t < SAMPLE_S) return;
+    this.samples.push(source);
+    while (this.samples.length > 2 && (this.samples[1]?.t ?? Number.POSITIVE_INFINITY) <= time - this.keepS)
       this.samples.shift();
   }
 
@@ -48,7 +48,7 @@ export class RateTracker {
   rates(now: number, xp: number, money: number, windowS = 3600): Rates | null {
     // The newest sample at or before the window start, else the oldest kept.
     let base = this.samples[0];
-    for (const s of this.samples) if (s.t <= now - windowS) base = s;
+    for (const source of this.samples) if (source.t <= now - windowS) base = source;
     if (!base) return null;
     const span = now - base.t;
     if (span < MIN_SPAN_S) return null;

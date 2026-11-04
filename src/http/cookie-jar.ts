@@ -14,9 +14,9 @@ export interface Cookie {
 export class CookieJar {
   private cookies = new Map<string, Cookie>();
 
-  static fromJSON(list: Cookie[]): CookieJar {
+  static fromJSON(cookies: Cookie[]): CookieJar {
     const jar = new CookieJar();
-    for (const c of list) jar.cookies.set(`${c.domain}|${c.name}`, c);
+    for (const cookie of cookies) jar.cookies.set(`${cookie.domain}|${cookie.name}`, cookie);
     return jar;
   }
 
@@ -27,7 +27,8 @@ export class CookieJar {
 
   private purgeExpired(): void {
     const now = Date.now();
-    for (const [id, c] of this.cookies) if (c.expires !== undefined && c.expires <= now) this.cookies.delete(id);
+    for (const [id, cookie] of this.cookies)
+      if (cookie.expires !== undefined && cookie.expires <= now) this.cookies.delete(id);
   }
 
   store(url: string, res: Response): void {
@@ -36,7 +37,7 @@ export class CookieJar {
       const [pair = '', ...attrs] = line.split(';');
       const eq = pair.indexOf('=');
       if (eq <= 0) continue;
-      const c: Cookie = {
+      const cookie: Cookie = {
         name: pair.slice(0, eq).trim(),
         value: pair.slice(eq + 1).trim(),
         domain: host,
@@ -44,30 +45,30 @@ export class CookieJar {
       };
       let expired = false;
       let foreign = false;
-      for (const attr of attrs) {
-        const i = attr.indexOf('=');
-        const k = (i < 0 ? attr : attr.slice(0, i)).trim().toLowerCase();
-        const v = i < 0 ? '' : attr.slice(i + 1).trim();
-        if (k === 'domain' && v) {
-          const d = v.replace(/^\./, '').toLowerCase();
-          if (host === d || host.endsWith(`.${d}`)) Object.assign(c, { domain: d, hostOnly: false });
+      for (const attribute of attrs) {
+        const separator = attribute.indexOf('=');
+        const attributeName = (separator < 0 ? attribute : attribute.slice(0, separator)).trim().toLowerCase();
+        const attributeValue = separator < 0 ? '' : attribute.slice(separator + 1).trim();
+        if (attributeName === 'domain' && attributeValue) {
+          const domain = attributeValue.replace(/^\./, '').toLowerCase();
+          if (host === domain || host.endsWith(`.${domain}`)) Object.assign(cookie, { domain, hostOnly: false });
           else foreign = true;
-        } else if (k === 'max-age') {
-          const secs = Number(v);
-          if (secs <= 0) expired = true;
-          else if (Number.isFinite(secs)) c.expires = Date.now() + secs * 1000;
-        } else if (k === 'expires' && c.expires === undefined) {
-          const t = Date.parse(v);
-          if (!Number.isNaN(t)) {
-            if (t < Date.now()) expired = true;
-            else c.expires = t;
+        } else if (attributeName === 'max-age') {
+          const seconds = Number(attributeValue);
+          if (seconds <= 0) expired = true;
+          else if (Number.isFinite(seconds)) cookie.expires = Date.now() + seconds * 1000;
+        } else if (attributeName === 'expires' && cookie.expires === undefined) {
+          const expiresAt = Date.parse(attributeValue);
+          if (!Number.isNaN(expiresAt)) {
+            if (expiresAt < Date.now()) expired = true;
+            else cookie.expires = expiresAt;
           }
         }
       }
       if (foreign) continue;
-      const id = `${c.domain}|${c.name}`;
+      const id = `${cookie.domain}|${cookie.name}`;
       if (expired) this.cookies.delete(id);
-      else this.cookies.set(id, c);
+      else this.cookies.set(id, cookie);
     }
   }
 
@@ -75,8 +76,10 @@ export class CookieJar {
     this.purgeExpired();
     const host = new URL(url).hostname;
     return [...this.cookies.values()]
-      .filter((c) => (c.hostOnly ? host === c.domain : host === c.domain || host.endsWith(`.${c.domain}`)))
-      .map((c) => `${c.name}=${c.value}`)
+      .filter((cookie) =>
+        cookie.hostOnly ? host === cookie.domain : host === cookie.domain || host.endsWith(`.${cookie.domain}`),
+      )
+      .map((cookie) => `${cookie.name}=${cookie.value}`)
       .join('; ');
   }
 }

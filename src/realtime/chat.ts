@@ -78,10 +78,14 @@ export interface ChatLine {
 /** Town role names as the browser's RoomTown.getPlayerInfo shows them (3 is the founder/mayor). */
 export const TOWN_ROLES = ['Guest', 'Citizen', 'Councillor', 'Mayor'];
 
+const PRESENCE_IDLE_MS = 5 * 60_000;
+const CHAT_ERROR_PAUSE_MS = 30_000;
+const CHAT_SEND_TIMEOUT_MS = 30_000;
+
 /** Online within 5 minutes of the last action, as Chat.Resource.Client.updateStatus. */
 export function chatPresence(actioned: number | undefined, now = Date.now()): 'online' | 'idle' | 'unknown' {
   if (!actioned) return 'unknown';
-  return now - actioned > 300_000 ? 'idle' : 'online';
+  return now - actioned > PRESENCE_IDLE_MS ? 'idle' : 'online';
 }
 
 const ROOM_KIND_TITLE: Record<string, string> = {
@@ -92,8 +96,8 @@ const ROOM_KIND_TITLE: Record<string, string> = {
 };
 export const HISTORY_LIMIT = 200;
 
-function stripTags(s: unknown): string {
-  return String(s ?? '')
+function stripTags(source: unknown): string {
+  return String(source ?? '')
     .replace(/<[^>]+>/g, '')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -118,34 +122,45 @@ export const CHAT_POLICY: HostPolicy = {
 /** Chat.Router clientConnectionId: shuffled a-z + time, 18 chars, + last 4 digits of the time. */
 export function makeClientId(now = Date.now(), rand = Math.random): string {
   const chars = `abcdefghijklmnopqrstuvwxyz${now}`.split('');
-  for (let i = chars.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    const atI = chars[i] ?? '';
-    chars[i] = chars[j] ?? '';
-    chars[j] = atI;
+  for (let index = chars.length - 1; index > 0; index--) {
+    const innerIndex = Math.floor(rand() * (index + 1));
+    const current = chars[index] ?? '';
+    chars[index] = chars[innerIndex] ?? '';
+    chars[innerIndex] = current;
   }
-  return chars.join('').substr(5, 18) + String(now).substr(-4);
+  return chars.join('').slice(5, 23) + String(now).slice(-4);
 }
 
 export function encodeChatRequest(data: Record<string, unknown>): string {
-  return encodeURIComponent(JSON.stringify(data).replace(/\n/g, '\\n'));
+  return encodeURIComponent(JSON.stringify(data));
 }
 
-function selfFrom(p: JsonObject): SelfUpdate {
-  const n = (v: unknown) =>
-    typeof v === 'number' ? v : typeof v === 'string' && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : undefined;
+/** The reason a chat error ends the session, or null when it is an ordinary error. */
+const sessionInvalidReason = (message: string): string | null => {
+  if (/invalid sid|sid invalidated by login/.test(message)) return message;
+  if (/admin login/.test(message)) return 'Administrator login - chat deactivated';
+  return null;
+};
+
+function selfFrom(data: JsonObject): SelfUpdate {
+  const numberOrUndefined = (value: unknown) =>
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value !== '' && !Number.isNaN(Number(value))
+        ? Number(value)
+        : undefined;
   return {
-    x: n(p.x),
-    y: n(p.y),
-    level: n(p.level),
-    experience: n(p.experience),
-    money: n(p.money),
-    deposit: n(p.deposit),
-    energy: n(p.energy),
-    energyAt: n(p.energy_date),
-    health: n(p.health),
-    healthAt: n(p.health_date),
-    townId: n(p.townId),
+    x: numberOrUndefined(data.x),
+    y: numberOrUndefined(data.y),
+    level: numberOrUndefined(data.level),
+    experience: numberOrUndefined(data.experience),
+    money: numberOrUndefined(data.money),
+    deposit: numberOrUndefined(data.deposit),
+    energy: numberOrUndefined(data.energy),
+    energyAt: numberOrUndefined(data.energy_date),
+    health: numberOrUndefined(data.health),
+    healthAt: numberOrUndefined(data.health_date),
+    townId: numberOrUndefined(data.townId),
   };
 }
 
@@ -187,7 +202,7 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
     super();
     this.client = client;
     this.policy = opts.policy ?? CHAT_POLICY;
-    this.errorPauseMs = opts.errorPauseMs ?? 30_000;
+    this.errorPauseMs = opts.errorPauseMs ?? CHAT_ERROR_PAUSE_MS;
   }
 
   get active(): boolean {
@@ -211,13 +226,24 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
     return this.exchange([{ op: 'nop', to: null, stamp: Date.now() }], this.abort.signal, this.policy);
   }
 
-  /** Says something in a room (Chat.Request.Send) or whispers to a player (Chat.Request.Tell). */
-  async say(to: string, message: string, tell = false): Promise<void> {
-    if (!message.trim()) return;
-    const req: Record<string, unknown> = { op: 'send', to, stamp: Date.now(), message };
-    if (tell) req.tell = true;
+  /** Says something in a room (Chat.Request.Send). */
+  say(to: string, message: string): Promise<void> {
+    return this.send({ op: 'send', to, stamp: Date.now(), message });
+  }
+
+  /** Whispers to a player (Chat.Request.Tell). */
+  whisper(to: string, message: string): Promise<void> {
+    return this.send({ op: 'send', to, stamp: Date.now(), message, tell: true });
+  }
+
+  private async send(request: Record<string, unknown>): Promise<void> {
+    if (!String(request.message ?? '').trim()) return;
     // A second request beside the pending long-poll, like Chat.Router (openCnt ≤ 2); not on the poll lane.
-    const ok = await this.exchange([req], undefined, { ...this.policy, lane: 'chat-send', timeoutMs: 30_000 });
+    const ok = await this.exchange([request], undefined, {
+      ...this.policy,
+      lane: 'chat-send',
+      timeoutMs: CHAT_SEND_TIMEOUT_MS,
+    });
     if (!ok) throw new Error('chat session is gone');
   }
 
@@ -233,17 +259,17 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
       actioned: this.actioned,
       batch: batchOut,
     };
-    const c = this.client;
+    const client = this.client;
     const res = await send(
-      c.jar,
-      c.identity,
-      `${c.worldUrl}/gameservice/chat/`,
+      client.jar,
+      client.identity,
+      `${client.worldUrl}/gameservice/chat/`,
       {
         method: 'POST',
         body: encodeChatRequest(data),
         ajax: true,
-        referer: `${c.worldUrl}/game.php`,
-        origin: c.worldUrl,
+        referer: `${client.worldUrl}/game.php`,
+        origin: client.worldUrl,
         signal,
       },
       policy,
@@ -257,31 +283,28 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
     }
     const json = obj(parsed);
     if (json.error) {
-      const err = String(json.error);
-      if (/invalid sid|sid invalidated by login/.test(err)) {
-        this.emit('invalid', err);
+      const error = String(json.error);
+      const invalidReason = sessionInvalidReason(error);
+      if (invalidReason) {
+        this.emit('invalid', invalidReason);
         return false;
       }
-      if (/admin login/.test(err)) {
-        this.emit('invalid', 'Administrator login - chat deactivated');
-        return false;
-      }
-      throw new Error(`chat: ${err}`);
+      throw new Error(`chat: ${error}`);
     }
-    const batch: ChatEvent[] = objs(json.batch).map((e) => ({
-      id: String(e.id),
-      t: Number(e.t),
-      payload: obj(e.payload),
+    const batch: ChatEvent[] = objs(json.batch).map((event) => ({
+      id: String(event.id),
+      t: Number(event.t),
+      payload: obj(event.payload),
     }));
-    batch.sort((a, b) => a.t - b.t);
-    for (const e of batch) this.handle(e);
+    batch.sort((first, second) => first.t - second.t);
+    for (const event of batch) this.handle(event);
     return true;
   }
 
   roomTitle(id: string): string {
     if (id.startsWith('tell:')) return `✉ ${id.slice(5)}`;
-    const r = this.rooms.get(id);
-    return r ? r.title : id;
+    const entry = this.rooms.get(id);
+    return entry ? entry.title : id;
   }
 
   private addLine(room: string, line: ChatLine): void {
@@ -293,36 +316,40 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
     this.emit('chat', room, line);
   }
 
-  private acquireRoom(d: JsonObject): ChatRoom {
-    const id = String(d.id);
-    const kind = String(d.room ?? '');
+  private acquireRoom(jsonValue: JsonObject): ChatRoom {
+    const id = String(jsonValue.id);
+    const kind = String(jsonValue.room ?? '');
     const title =
-      stripTags(d.title) ||
-      (kind === 'general' ? `Saloon ${String(d.general_id ?? '')}`.trim() : (ROOM_KIND_TITLE[kind] ?? id));
+      stripTags(jsonValue.title) ||
+      (kind === 'general' ? `Saloon ${String(jsonValue.general_id ?? '')}`.trim() : (ROOM_KIND_TITLE[kind] ?? id));
     const room = this.rooms.get(id) ?? { id, kind, title, topic: '', members: new Set<string>() };
     room.title = title;
-    room.topic = stripTags(d.topic);
-    if (d.townid !== undefined && d.townid !== null) room.townId = Number(d.townid);
+    room.topic = stripTags(jsonValue.topic);
+    if (jsonValue.townid !== undefined && jsonValue.townid !== null) room.townId = Number(jsonValue.townid);
     this.rooms.set(id, room);
     return room;
   }
 
   /** Creates or updates a client from Status / ClientJoined / UserUpdate data (missing fields keep old values). */
-  private acquireClient(v: unknown): ChatClient | null {
-    if (!isObj(v) || v.id === undefined) return null;
-    const d = v;
-    const id = String(d.id);
-    const prev = this.clients.get(id);
-    const n = (v: unknown): number | undefined =>
-      v === null || v === undefined || v === '' ? undefined : Number.isFinite(Number(v)) ? Number(v) : undefined;
+  private acquireClient(value: unknown): ChatClient | null {
+    if (!isObj(value) || value.id === undefined) return null;
+    const data = value;
+    const id = String(data.id);
+    const previous = this.clients.get(id);
+    const numberOrUndefined = (candidate: unknown): number | undefined =>
+      candidate === null || candidate === undefined || candidate === ''
+        ? undefined
+        : Number.isFinite(Number(candidate))
+          ? Number(candidate)
+          : undefined;
     const client: ChatClient = {
       id,
-      playerId: n(d.westid ?? d.playerId) ?? prev?.playerId ?? 0,
-      name: String(d.name ?? d.pname ?? prev?.name ?? '?'),
-      level: n(d.level) ?? prev?.level ?? 0,
-      townId: n(d.townId ?? d.town_id) ?? prev?.townId ?? 0,
-      townRights: n(d.town_rights ?? d.townRights) ?? prev?.townRights ?? 0,
-      actioned: n(d.actioned) ?? prev?.actioned ?? 0,
+      playerId: numberOrUndefined(data.westid ?? data.playerId) ?? previous?.playerId ?? 0,
+      name: String(data.name ?? data.pname ?? previous?.name ?? '?'),
+      level: numberOrUndefined(data.level) ?? previous?.level ?? 0,
+      townId: numberOrUndefined(data.townId ?? data.town_id) ?? previous?.townId ?? 0,
+      townRights: numberOrUndefined(data.town_rights ?? data.townRights) ?? previous?.townRights ?? 0,
+      actioned: numberOrUndefined(data.actioned) ?? previous?.actioned ?? 0,
     };
     this.clients.set(id, client);
     return client;
@@ -332,23 +359,23 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
     return this.clients.get(id)?.name ?? '?';
   }
 
-  handle(e: ChatEvent): void {
-    this.emit('event', e);
-    const p = e.payload;
-    switch (e.id) {
+  handle(event: ChatEvent): void {
+    this.emit('event', event);
+    const payload = event.payload;
+    switch (event.id) {
       case 'Status':
-        if (isObj(p.self)) {
-          this.myId = String(p.self.id);
-          this.acquireClient(p.self);
-          this.emit('self', selfFrom(p.self));
+        if (isObj(payload.self)) {
+          this.myId = String(payload.self.id);
+          this.acquireClient(payload.self);
+          this.emit('self', selfFrom(payload.self));
         }
-        for (const c of arr(p.clients)) this.acquireClient(c);
-        if (Array.isArray(p.rooms)) {
+        for (const client of arr(payload.clients)) this.acquireClient(client);
+        if (Array.isArray(payload.rooms)) {
           const seen = new Set<string>();
-          for (const r of objs(p.rooms)) {
-            if (!isObj(r.roomdescription)) continue;
-            const room = this.acquireRoom(r.roomdescription);
-            room.members = new Set(arr(r.members).map(String));
+          for (const roomData of objs(payload.rooms)) {
+            if (!isObj(roomData.roomdescription)) continue;
+            const room = this.acquireRoom(roomData.roomdescription);
+            room.members = new Set(arr(roomData.members).map(String));
             seen.add(room.id);
           }
           for (const id of [...this.rooms.keys()]) if (!seen.has(id)) this.rooms.delete(id);
@@ -356,23 +383,23 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
         }
         break;
       case 'ClientJoined': {
-        const room = this.rooms.get(String(p.rid));
-        this.acquireClient(p.client);
-        const joined = obj(p.client);
+        const room = this.rooms.get(String(payload.rid));
+        this.acquireClient(payload.client);
+        const joined = obj(payload.client);
         if (room && joined.id !== undefined) room.members.add(String(joined.id));
         this.emit('rooms');
         break;
       }
       case 'ClientLeft':
-        this.rooms.get(String(p.rid))?.members.delete(String(p.cid));
+        this.rooms.get(String(payload.rid))?.members.delete(String(payload.cid));
         this.emit('rooms');
         break;
       case 'TellConfirmed': {
-        const to = this.acquireClient(p.to)?.name ?? '?';
+        const to = this.acquireClient(payload.to)?.name ?? '?';
         this.addLine(`tell:${to}`, {
-          at: e.t,
+          at: event.t,
           from: this.clients.get(this.myId ?? '')?.name ?? 'me',
-          text: stripTags(p.message),
+          text: stripTags(payload.message),
           own: true,
         });
         break;
@@ -381,37 +408,45 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
         this.emit('tellFailed');
         break;
       case 'UserUpdate':
-        this.acquireClient(p);
-        if (this.myId !== null && String(p.id) === this.myId) this.emit('self', selfFrom(p));
-        else if (p.id !== undefined) this.emit('rooms');
+        this.acquireClient(payload);
+        if (this.myId !== null && String(payload.id) === this.myId) this.emit('self', selfFrom(payload));
+        else if (payload.id !== undefined) this.emit('rooms');
         break;
       case 'QuestDataChanged':
         this.emit('quests');
         break;
       case 'ReportChanged':
-        this.emit('reports', p);
+        this.emit('reports', payload);
         break;
       case 'ReadState':
-        this.emit('read', p);
+        this.emit('read', payload);
         break;
       case 'NuggetsChanged':
-        this.emit('nuggets', Number(p.nuggets));
+        this.emit('nuggets', Number(payload.nuggets));
         break;
       case 'TellReceived': {
-        const from = this.acquireClient(p.from)?.name ?? '?';
-        this.addLine(`tell:${from}`, { at: e.t, from, text: stripTags(p.message), own: false });
-        this.emit('tell', { from: String(obj(p.from).name ?? '?'), message: String(p.message ?? '') });
+        const from = this.acquireClient(payload.from)?.name ?? '?';
+        this.addLine(`tell:${from}`, { at: event.t, from, text: stripTags(payload.message), own: false });
+        this.emit('tell', {
+          from: String(obj(payload.from).name ?? '?'),
+          message: String(payload.message ?? ''),
+        });
         break;
       }
       case 'Text': {
-        const cid = String(p.cid ?? '');
-        const room = String(p.to ?? '');
-        this.addLine(room, { at: e.t, from: this.clientName(cid), text: stripTags(p.message), own: cid === this.myId });
-        this.emit('text', { room, cid, message: String(p.message ?? '') });
+        const clientId = String(payload.cid ?? '');
+        const room = String(payload.to ?? '');
+        this.addLine(room, {
+          at: event.t,
+          from: this.clientName(clientId),
+          text: stripTags(payload.message),
+          own: clientId === this.myId,
+        });
+        this.emit('text', { room, cid: clientId, message: String(payload.message ?? '') });
         break;
       }
       case 'CharDeathStateChanged':
-        this.emit('revived', p);
+        this.emit('revived', payload);
         break;
     }
   }
@@ -426,7 +461,7 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
       } catch (err) {
         if (!this.running) break;
         this.emit('error', err instanceof Error ? err : new Error(String(err)));
-        await new Promise((r) => setTimeout(r, this.errorPauseMs));
+        await new Promise((transform) => setTimeout(transform, this.errorPauseMs));
       }
     }
   }

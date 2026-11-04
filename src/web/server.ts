@@ -17,6 +17,7 @@ import {
   readProfileRaw,
   validateProfile,
 } from '../fingerprint/profile.ts';
+import { errorMessage } from '../util/errors.ts';
 import { obj } from '../util/json.ts';
 import { page } from './page.ts';
 
@@ -44,12 +45,12 @@ function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
-    req.on('data', (c: Buffer) => {
-      size += c.length;
+    req.on('data', (candidate: Buffer) => {
+      size += candidate.length;
       if (size > MAX_BODY) {
         reject(new Error('body too large'));
         req.destroy();
-      } else chunks.push(c);
+      } else chunks.push(candidate);
     });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
@@ -72,12 +73,17 @@ function send(res: ServerResponse, status: number, type: string, body: string): 
 const json = (res: ServerResponse, status: number, data: unknown) =>
   send(res, status, 'application/json; charset=utf-8', JSON.stringify(data));
 
+/** 18 bytes of entropy, base64url: enough that the URL cannot be guessed. */
+const TOKEN_BYTES = 18;
+/** Let the last HTTP response reach the browser before the process exits. */
+const EXIT_DELAY_MS = 300;
+
 async function defaultLogin(name: string, password: string, profile: FingerprintProfile) {
   const game = await ensureGame({ forceLogin: true, profile, credentials: async () => ({ name, password }) });
-  const c = game.bootstrap.character ?? {};
+  const character = game.bootstrap.character ?? {};
   return {
-    name: String(c.name ?? '?'),
-    level: Number(c.level ?? 0),
+    name: String(character.name ?? '?'),
+    level: Number(character.level ?? 0),
     world: String(game.bootstrap.game?.currentWorldName ?? DEFAULT_WORLD.url),
   };
 }
@@ -85,12 +91,11 @@ async function defaultLogin(name: string, password: string, profile: Fingerprint
 export function startWebServer(
   opts: WebOptions,
 ): Promise<{ url: string; token: string; close: () => Promise<void>; done: Promise<void> }> {
-  const token = randomBytes(18).toString('base64url');
+  const token = randomBytes(TOKEN_BYTES).toString('base64url');
   const profileFile = opts.profileFile ?? PROFILE_FILE;
-  const log = opts.log ?? ((m: string) => console.error(m));
+  const log = opts.log ?? ((message: string) => console.error(message));
   const login = opts.login ?? defaultLogin;
-  let resolveDone!: () => void;
-  const done = new Promise<void>((r) => (resolveDone = r));
+  const { promise: done, resolve: resolveDone } = Promise.withResolvers<void>();
   let loginRunning = false;
 
   const server = createServer(async (req, res) => {
@@ -130,8 +135,10 @@ export function startWebServer(
           let profile: FingerprintProfile;
           try {
             profile = validateProfile({ ...body, version: 1 });
-          } catch (e) {
-            return json(res, 400, { error: e instanceof FingerprintProfileError ? e.message : 'invalid profile' });
+          } catch (entry) {
+            return json(res, 400, {
+              error: entry instanceof FingerprintProfileError ? entry.message : 'invalid profile',
+            });
           }
           const previous = readProfileRaw(profileFile)?.fp ?? null;
           mkdirSync(dirname(profileFile), { recursive: true, mode: 0o700 });
@@ -151,25 +158,27 @@ export function startWebServer(
         let profile: FingerprintProfile;
         try {
           profile = validateProfile(readProfileRaw(profileFile));
-        } catch (e) {
-          return json(res, 400, { error: `Save the fingerprint first (${e instanceof Error ? e.message : e})` });
+        } catch (entryValue) {
+          return json(res, 400, {
+            error: `Save the fingerprint first (${entryValue instanceof Error ? entryValue.message : entryValue})`,
+          });
         }
         loginRunning = true;
         try {
           const who = await login(name, password, profile);
           log(`Logged in as ${who.name} (level ${who.level}) on ${who.world}. Session saved.`);
           json(res, 200, { ok: true, ...who });
-          if (opts.exitAfterLogin) setTimeout(resolveDone, 300);
-        } catch (e) {
-          json(res, 401, { error: e instanceof Error ? e.message : String(e) });
+          if (opts.exitAfterLogin) setTimeout(resolveDone, EXIT_DELAY_MS);
+        } catch (loginError) {
+          json(res, 401, { error: errorMessage(loginError) });
         } finally {
           loginRunning = false;
         }
         return;
       }
       return send(res, 404, 'text/plain', 'not found');
-    } catch (e) {
-      return json(res, 500, { error: e instanceof Error ? e.message : String(e) });
+    } catch (requestError) {
+      return json(res, 500, { error: errorMessage(requestError) });
     }
   });
 
@@ -183,7 +192,7 @@ export function startWebServer(
         url: `http://${shownHost}:${port}/?t=${token}`,
         token,
         done,
-        close: () => new Promise<void>((r) => server.close(() => r())),
+        close: () => new Promise<void>((transform) => server.close(() => transform())),
       });
     });
   });

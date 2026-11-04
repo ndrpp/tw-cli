@@ -8,11 +8,15 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { CONFIG_DIR } from '../auth/session-store.ts';
 import { entries, isObj, mergeDefaults, obj } from '../util/json.ts';
+import { baseId } from './items.ts';
 
 export const CALIBRATION_FILE = () => join(CONFIG_DIR, 'calibration.json');
 
 /** Prior strength: how many observed runs / samples it takes to count as much as the game's own number. */
 export const PRIOR_RUNS = 5;
+
+/** Until there are enough samples: 2 % motivation lost per run, none recovered per hour. */
+export const DEFAULT_MOTIVATION = { perRun: 0.02, perHour: 0 } as const;
 
 export interface CalibrationData {
   /** `${jobId}:${duration key}` → runs seen in reports and items found per base item id. */
@@ -47,10 +51,10 @@ export class Calibration {
     try {
       const raw = obj(JSON.parse(readFileSync(file, 'utf8')));
       const drops = entries(raw.drops)
-        .filter(([, d]) => isObj(d))
-        .map(([key, d]) => {
-          const found = entries(obj(d).found).map(([id, n]): [string, number] => [id, Number(n) || 0]);
-          return [key, { runs: Number(obj(d).runs) || 0, found: Object.fromEntries(found) }] as const;
+        .filter(([, dataValue]) => isObj(dataValue))
+        .map(([key, dataValue]) => {
+          const found = entries(obj(dataValue).found).map(([id, count]): [string, number] => [id, Number(count) || 0]);
+          return [key, { runs: Number(obj(dataValue).runs) || 0, found: Object.fromEntries(found) }] as const;
         });
       return { ...mergeDefaults(EMPTY, raw), drops: Object.fromEntries(drops) };
     } catch {
@@ -72,14 +76,14 @@ export class Calibration {
 
   /** One job report: the job, its duration key and the items found ([itemId, count]). */
   addJobRun(jobId: number, duration: string, items: [number, number][]): void {
-    const k = `${jobId}:${duration}`;
-    const existing = this.data.drops[k];
-    const d = existing ?? { runs: 0, found: {} };
-    if (!existing) this.data.drops[k] = d;
-    d.runs++;
-    for (const [id, n] of items) {
-      const base = String(Math.floor(id / 1000));
-      d.found[base] = (d.found[base] ?? 0) + n;
+    const entryKey = `${jobId}:${duration}`;
+    const existing = this.data.drops[entryKey];
+    const dataValue = existing ?? { runs: 0, found: {} };
+    if (!existing) this.data.drops[entryKey] = dataValue;
+    dataValue.runs++;
+    for (const [id, count] of items) {
+      const base = String(baseId(id));
+      dataValue.found[base] = (dataValue.found[base] ?? 0) + count;
     }
     this.save();
   }
@@ -93,20 +97,20 @@ export class Calibration {
 
   /** A job's motivation moved by `delta` (fraction) over `hours` with `runs` runs done meanwhile (not capped at 100 %). */
   addMotivation(runs: number, hours: number, delta: number): void {
-    const m = this.data.motivation;
-    m.n++;
-    m.rr += runs * runs;
-    m.rh += runs * hours;
-    m.hh += hours * hours;
-    m.rd += runs * -delta;
-    m.hd += hours * -delta;
+    const match = this.data.motivation;
+    match.n++;
+    match.rr += runs * runs;
+    match.rh += runs * hours;
+    match.hh += hours * hours;
+    match.rd += runs * -delta;
+    match.hd += hours * -delta;
     this.save();
   }
 
   addRoom(ratio: number): void {
-    const r = this.data.rooms;
-    r.ratio = (r.ratio * r.n + ratio) / (r.n + 1);
-    r.n++;
+    const result = this.data.rooms;
+    result.ratio = (result.ratio * result.n + ratio) / (result.n + 1);
+    result.n++;
     this.save();
   }
 
@@ -120,18 +124,18 @@ export class Calibration {
 
   /** Expected items per run, the game's number blended with what reports showed. */
   dropRate(jobId: number, duration: string, itemId: number, prior: number): number {
-    const d = this.data.drops[`${jobId}:${duration}`];
-    if (!d?.runs) return prior;
-    const found = d.found[String(Math.floor(itemId / 1000))] ?? 0;
-    return (found + prior * PRIOR_RUNS) / (d.runs + PRIOR_RUNS);
+    const dataValue = this.data.drops[`${jobId}:${duration}`];
+    if (!dataValue?.runs) return prior;
+    const found = dataValue.found[String(baseId(itemId))] ?? 0;
+    return (found + prior * PRIOR_RUNS) / (dataValue.runs + PRIOR_RUNS);
   }
 
   /** Multiplier for the danger → HP heuristic (1 until dangerous runs were seen). */
   get hpScale(): number {
-    const h = this.data.hp;
-    if (!h.runs || h.predicted <= 0) return 1;
-    const prior = (h.predicted / h.runs) * PRIOR_RUNS; // PRIOR_RUNS runs exactly as predicted
-    return (h.observed + prior) / (h.predicted + prior);
+    const item = this.data.hp;
+    if (!item.runs || item.predicted <= 0) return 1;
+    const prior = (item.predicted / item.runs) * PRIOR_RUNS; // PRIOR_RUNS runs exactly as predicted
+    return (item.observed + prior) / (item.predicted + prior);
   }
 
   /**
@@ -139,24 +143,28 @@ export class Calibration {
    * until 3 samples; solved by least squares, clamped to sane ranges.
    */
   get motivation(): { perRun: number; perHour: number; samples: number } {
-    const m = this.data.motivation;
-    const det = m.rr * m.hh - m.rh * m.rh;
-    if (m.n < 3 || Math.abs(det) < 1e-9) return { perRun: 0.02, perHour: 0, samples: m.n };
+    const match = this.data.motivation;
+    const det = match.rr * match.hh - match.rh * match.rh;
+    if (match.n < 3 || Math.abs(det) < 1e-9) return { ...DEFAULT_MOTIVATION, samples: match.n };
     // drop = perRun · runs − perHour · hours; normal equations [rr −rh; −rh hh]·[a b] = [rd −hd].
-    const perRun = (m.rd * m.hh - m.rh * m.hd) / det;
-    const perHour = (m.rh * m.rd - m.rr * m.hd) / det;
-    return { perRun: Math.min(0.2, Math.max(0, perRun)), perHour: Math.min(0.5, Math.max(0, perHour)), samples: m.n };
+    const perRun = (match.rd * match.hh - match.rh * match.hd) / det;
+    const perHour = (match.rh * match.rd - match.rr * match.hd) / det;
+    return {
+      perRun: Math.min(0.2, Math.max(0, perRun)),
+      perHour: Math.min(0.5, Math.max(0, perHour)),
+      samples: match.n,
+    };
   }
 
   /** Hotel energy rate multiplier: measured sleeps blended with 1 (the hotel's number read as % per hour). */
   get roomScale(): number {
-    const r = this.data.rooms;
-    return (r.ratio * r.n + 1) / (r.n + 1);
+    const result = this.data.rooms;
+    return (result.ratio * result.n + 1) / (result.n + 1);
   }
 
   /** Summary for the debug log and screen. */
   summary(): Record<string, unknown> {
-    const runs = Object.values(this.data.drops).reduce((a, d) => a + d.runs, 0);
+    const runs = Object.values(this.data.drops).reduce((accumulator, current) => accumulator + current.runs, 0);
     return {
       jobReports: runs,
       jobKinds: Object.keys(this.data.drops).length,

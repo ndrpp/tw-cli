@@ -62,9 +62,17 @@ export interface Quest {
  * (read as UTC: the game's timezone is unverified), or null.
  */
 export function questEnds(limited: string): number | null {
-  const m = limited.match(/until(?: the)? (\d{1,2})\.(\d{1,2})\.(\d{4})(?: at (\d{1,2}):(\d{2}))?/i);
-  if (!m) return null;
-  return Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] ?? 23), Number(m[5] ?? 59)) / 1000;
+  const matchValue = limited.match(/until(?: the)? (\d{1,2})\.(\d{1,2})\.(\d{4})(?: at (\d{1,2}):(\d{2}))?/i);
+  if (!matchValue) return null;
+  return (
+    Date.UTC(
+      Number(matchValue[3]),
+      Number(matchValue[2]) - 1,
+      Number(matchValue[1]),
+      Number(matchValue[4] ?? 23),
+      Number(matchValue[5] ?? 59),
+    ) / 1000
+  );
 }
 
 export interface QuestEmployer {
@@ -148,6 +156,9 @@ function decodeEntities(text: string): string {
 }
 
 /** HTML → plain text for the terminal. `compact` drops blank lines (reports are field lists). */
+/** The first game-formatted number in text ("1.234" or "1,234" → 1234); 0 when there is none. */
+export const parseGameNumber = (text: string): number => Number(text.match(/[\d.,]+/)?.[0]?.replace(/[.,]/g, '') ?? 0);
+
 export function plainText(html: unknown, opts: { compact?: boolean } = {}): string {
   const text = String(html ?? '')
     .replace(/<br\b[^>]*>/gi, '\n')
@@ -171,9 +182,9 @@ export function plainText(html: unknown, opts: { compact?: boolean } = {}): stri
     .trim();
 }
 
-function rewardText(r: JsonObject, itemName?: (id: number) => string): QuestReward {
-  const info = obj(r.info);
-  if (r.isItem) {
+function rewardText(jsonValue: JsonObject, itemName?: (id: number) => string): QuestReward {
+  const info = obj(jsonValue.info);
+  if (jsonValue.isItem) {
     const id = Number(info.text);
     return { item: id, text: itemName ? itemName(id) : `item ${id}` };
   }
@@ -181,9 +192,9 @@ function rewardText(r: JsonObject, itemName?: (id: number) => string): QuestRewa
   return { item: null, text: `${plainText(info.text)} ${label}`.trim() };
 }
 
-function parseRequirement(r: JsonObject): QuestRequirement {
-  const req: QuestRequirement = { solved: !!r.solved, info: plainText(r.info), kind: 'other' };
-  const js = obj(r.jsInfo);
+function parseRequirement(jsonValue: JsonObject): QuestRequirement {
+  const req: QuestRequirement = { solved: !!jsonValue.solved, info: plainText(jsonValue.info), kind: 'other' };
+  const js = obj(jsonValue.jsInfo);
   if (js.id !== undefined) {
     if (js.type === 'inventory_changed' || js.type === 'wear_changed') {
       req.itemId = Number(js.id);
@@ -208,31 +219,35 @@ function parseRequirement(r: JsonObject): QuestRequirement {
   return req;
 }
 
-export function parseQuest(q: JsonObject, itemName?: (id: number) => string): Quest {
-  const coords = q.employer_coords && typeof q.employer_coords === 'object' ? obj(q.employer_coords) : null;
+export function parseQuest(jsonValue: JsonObject, itemName?: (id: number) => string): Quest {
+  const coords =
+    jsonValue.employer_coords && typeof jsonValue.employer_coords === 'object' ? obj(jsonValue.employer_coords) : null;
   return {
-    id: Number(q.id),
-    title: plainText(q.title),
-    soloTitle: plainText(q.soloTitle ?? q.title),
-    groupId: Number(q.group) || 0,
-    group: plainText(q.groupTitle) || 'Other quests',
-    employer: String(q.employer ?? ''),
-    employerName: plainText(q.employer_name),
+    id: Number(jsonValue.id),
+    title: plainText(jsonValue.title),
+    soloTitle: plainText(jsonValue.soloTitle ?? jsonValue.title),
+    groupId: Number(jsonValue.group) || 0,
+    group: plainText(jsonValue.groupTitle) || 'Other quests',
+    employer: String(jsonValue.employer ?? ''),
+    employerName: plainText(jsonValue.employer_name),
     employerAt: coords ? { x: Number(coords.x), y: Number(coords.y) } : null,
-    accepted: !!q.accepted,
-    acceptable: q.acceptable === undefined ? !q.accepted : !!q.acceptable,
-    finishable: !!q.finishable,
-    requirements: objs(q.requirements).map(parseRequirement),
-    rewards: objs(q.questRewards)
-      .filter((r) => !r.hidden)
-      .map((r) => rewardText(r, itemName)),
-    rewardOptions: entries(q.questRewardsOptions).map(([id, v]) => {
-      const o = obj(v);
-      return { id: Number(o.id ?? id), text: plainText(o.title ?? o.text ?? obj(o.info).text ?? `option ${id}`) };
+    accepted: !!jsonValue.accepted,
+    acceptable: jsonValue.acceptable === undefined ? !jsonValue.accepted : !!jsonValue.acceptable,
+    finishable: !!jsonValue.finishable,
+    requirements: objs(jsonValue.requirements).map(parseRequirement),
+    rewards: objs(jsonValue.questRewards)
+      .filter((reward) => !reward.hidden)
+      .map((reward) => rewardText(reward, itemName)),
+    rewardOptions: entries(jsonValue.questRewardsOptions).map(([id, value]) => {
+      const optionJson = obj(value);
+      return {
+        id: Number(optionJson.id ?? id),
+        text: plainText(optionJson.title ?? optionJson.text ?? obj(optionJson.info).text ?? `option ${id}`),
+      };
     }),
-    description: plainText(q.description),
-    hint: plainText(q.questHint),
-    limited: plainText(q.limited),
+    description: plainText(jsonValue.description),
+    hint: plainText(jsonValue.questHint),
+    limited: plainText(jsonValue.limited),
   };
 }
 
@@ -246,17 +261,19 @@ export interface QuestChain {
 /** Quests grouped by chain, chains sorted by name; quests keep the server's order inside a chain. */
 export function groupByChain(quests: Quest[]): QuestChain[] {
   const chains = new Map<string, QuestChain>();
-  for (const q of quests) {
-    const key = q.groupId ? `#${q.groupId}` : q.group;
-    let c = chains.get(key);
-    if (!c) {
-      c = { groupId: q.groupId, title: q.group, quests: [], finishable: 0 };
-      chains.set(key, c);
+  for (const quest of quests) {
+    const key = quest.groupId ? `#${quest.groupId}` : quest.group;
+    let entry = chains.get(key);
+    if (!entry) {
+      entry = { groupId: quest.groupId, title: quest.group, quests: [], finishable: 0 };
+      chains.set(key, entry);
     }
-    c.quests.push(q);
-    if (q.finishable) c.finishable++;
+    entry.quests.push(quest);
+    if (quest.finishable) entry.finishable++;
   }
-  return [...chains.values()].sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base' }));
+  return [...chains.values()].sort((first, second) =>
+    first.title.localeCompare(second.title, 'en', { sensitivity: 'base' }),
+  );
 }
 
 export class QuestApi {
@@ -271,7 +288,10 @@ export class QuestApi {
   async openQuests(): Promise<{ quests: Quest[]; capacity: number }> {
     const json = await this.client.remoteCallMode('building_quest', 'get_open_quests');
     if (json.error) throw new Error(plainText(json.msg) || 'Quest log failed');
-    return { quests: objs(json.quests).map((q) => parseQuest(q, this.itemName)), capacity: Number(json.capacity) || 0 };
+    return {
+      quests: objs(json.quests).map((jsonValue) => parseQuest(jsonValue, this.itemName)),
+      capacity: Number(json.capacity) || 0,
+    };
   }
 
   /** Quest givers in the saloon (no map position). */
@@ -279,21 +299,21 @@ export class QuestApi {
     const json = await this.client.remoteCallMode('building_quest', '');
     if (json.error) throw new Error(plainText(json.msg) || 'Saloon failed');
     return objs(json.questEmployer)
-      .filter((e) => e.key && e.key !== 'wallpaper_telekom')
-      .map((e) => ({ key: String(e.key), name: plainText(e.name) }));
+      .filter((jsonValue) => jsonValue.key && jsonValue.key !== 'wallpaper_telekom')
+      .map((jsonValue) => ({ key: String(jsonValue.key), name: plainText(jsonValue.name) }));
   }
 
   async employer(key: string, at?: { x: number; y: number } | null): Promise<QuestEmployer> {
     const json = await this.client.remoteCall('quest_employer', '', { employer: key, x: at?.x, y: at?.y });
     if (json.error)
       throw new Error(typeof json.error === 'string' ? json.error : plainText(json.msg) || 'Quest giver failed');
-    const e = obj(json.employer);
+    const jsonValue = obj(json.employer);
     return {
-      key: String(e.key ?? key),
-      name: plainText(e.name ?? key),
+      key: String(jsonValue.key ?? key),
+      name: plainText(jsonValue.name ?? key),
       x: at?.x ?? null,
       y: at?.y ?? null,
-      open: objs(e.open).map((q) => parseQuest(q, this.itemName)),
+      open: objs(jsonValue.open).map((openQuest) => parseQuest(openQuest, this.itemName)),
     };
   }
 
@@ -313,9 +333,9 @@ export class QuestApi {
     });
     if (json.error) throw new Error(plainText(json.msg) || 'Could not finish the quest');
     const rewards: string[] = [];
-    for (const r of vals(json.allRewards)) {
-      const t = rewardText(obj(r), this.itemName).text;
-      if (t) rewards.push(t);
+    for (const result of vals(json.allRewards)) {
+      const textValue = rewardText(obj(result), this.itemName).text;
+      if (textValue) rewards.push(textValue);
     }
     return {
       msg: plainText(json.msg ?? ''),

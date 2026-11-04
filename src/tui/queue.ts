@@ -9,7 +9,7 @@ import { defined } from '../util/defined.ts';
 import { formatClock, formatDuration, money, scrollWindow, truncate } from './format.ts';
 import { taskIcon } from './icons.ts';
 
-const h = React.createElement;
+const createElement = React.createElement;
 
 /** `maxRows`: lines inside the border; `selected` / `focused` highlight a task (the jobs screen's queue focus). */
 export function QueuePane({
@@ -34,7 +34,7 @@ export function QueuePane({
   const overflow = state.queue.length > rowsForTasks;
   const [start, end] = scrollWindow(selected, state.queue.length, overflow ? rowsForTasks - 1 : rowsForTasks);
   const hidden = state.queue.length - (end - start);
-  return h(
+  return createElement(
     Box,
     {
       flexDirection: 'column',
@@ -45,31 +45,36 @@ export function QueuePane({
       flexGrow: 1,
       flexShrink: 0,
     },
-    h(Text, { bold: true, wrap: 'truncate' }, `Task queue ${state.queue.length}/${state.taskLimit}`),
-    state.queue.length === 0 ? h(Text, { dimColor: true }, 'Idle') : null,
-    ...state.queue.slice(start, end).map((t, j) => {
-      const i = start + j;
-      const sel = i === selected && focused;
+    createElement(Text, { bold: true, wrap: 'truncate' }, `Task queue ${state.queue.length}/${state.taskLimit}`),
+    state.queue.length === 0 ? createElement(Text, { dimColor: true }, 'Idle') : null,
+    ...state.queue.slice(start, end).map((task, offset) => {
+      const index = start + offset;
+      const highlighted = index === selected && focused;
       // Running task counts down; later ones show their full length. Walk legs are shown apart.
-      const walk = i === 0 ? walkLeft(t, now) : t.way ? t.way.end - t.way.start : 0;
-      const work = i === 0 ? workLeft(t, now) : t.end - t.start;
+      const walk = index === 0 ? walkLeft(task, now) : task.way ? task.way.end - task.way.start : 0;
+      const work = index === 0 ? workLeft(task, now) : task.end - task.start;
       const time = formatDuration(work).padStart(7);
-      const right = walk > 0 ? `walk ${formatDuration(walk)} + ${time}` : time;
-      const label = `${i + 1}. ${taskIcon(t.type)} ${t.title}`;
-      return h(
+      const timeColumn = walk > 0 ? `walk ${formatDuration(walk)} + ${time}` : time;
+      const label = `${index + 1}. ${taskIcon(task.type)} ${task.title}`;
+      return createElement(
         Text,
-        defined({ key: t.queueId || i, inverse: sel, color: i === 0 ? 'green' : undefined, wrap: 'truncate' }),
-        `${truncate(label, Math.max(8, width - 8 - right.length))} ${right}`,
+        defined({
+          key: task.queueId || index,
+          inverse: highlighted,
+          color: index === 0 ? 'green' : undefined,
+          wrap: 'truncate',
+        }),
+        `${truncate(label, Math.max(8, width - 8 - timeColumn.length))} ${timeColumn}`,
       );
     }),
-    overflow ? h(Text, { dimColor: true }, `  +${hidden} more`) : null,
+    overflow ? createElement(Text, { dimColor: true }, `  +${hidden} more`) : null,
     total
-      ? h(
+      ? createElement(
           Text,
           { color: 'cyan', wrap: 'truncate' },
           `ends ${formatClock(total.end, now)} · +${total.gained.xp} xp ${money(total.gained.money)} · ${formatDuration(total.end - now)} left${summary && summary.walk > 0 ? ` · walk ${formatDuration(summary.walk)}` : ''}`,
         )
       : null,
-    confirm ? h(Text, { color: 'red' }, 'Cancel this task? y / n') : null,
+    confirm ? createElement(Text, { color: 'red' }, 'Cancel this task? y / n') : null,
   );
 }

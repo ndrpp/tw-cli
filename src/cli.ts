@@ -22,32 +22,34 @@ import { queueSummary } from './game/tasks.ts';
 import { formatClock, formatDuration } from './tui/format.ts';
 import { obj } from './util/json.ts';
 
-function ask(question: string, hidden = false): Promise<string> {
+function ask(question: string, echo = true): Promise<string> {
   return new Promise((resolve) => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    if (hidden) {
+    const readline = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    if (!echo) {
       // Interface._writeToOutput is internal (not in the typings): echo the prompt, not the typed password.
-      Object.assign(rl, {
-        _writeToOutput: (s: string) => {
-          if (s.startsWith(question)) process.stdout.write(question);
+      Object.assign(readline, {
+        _writeToOutput: (written: string) => {
+          if (written.startsWith(question)) process.stdout.write(question);
         },
       });
     }
-    rl.question(question, (answer) => {
-      rl.close();
-      if (hidden) process.stdout.write('\n');
+    readline.question(question, (answer) => {
+      readline.close();
+      if (!echo) process.stdout.write('\n');
       resolve(answer);
     });
   });
 }
 
+const askSecret = (question: string): Promise<string> => ask(question, false);
+
 async function promptCredentials(): Promise<Credentials> {
   const name = await ask('Account name: ');
-  const password = await ask('Password: ', true);
+  const password = await askSecret('Password: ');
   return { name, password };
 }
 
-const log = (m: string) => console.error(m);
+const log = (message: string) => console.error(message);
 
 async function openState(): Promise<GameState> {
   const game = await ensureGame({ credentials: promptCredentials, log });
@@ -55,8 +57,8 @@ async function openState(): Promise<GameState> {
 }
 
 async function main(argv: string[]): Promise<number> {
-  const [cmd, sub, arg] = argv;
-  switch (cmd) {
+  const [command, subcommand, argument] = argv;
+  switch (command) {
     case undefined:
     case 'play': {
       // Setup (fingerprint, login) happens inside the TUI when needed.
@@ -66,27 +68,30 @@ async function main(argv: string[]): Promise<number> {
     }
     case 'web': {
       const { defaultWebAddress, startWebServer } = await import('./web/server.ts');
-      const addr = defaultWebAddress();
-      const srv = await startWebServer({ ...addr, exitAfterLogin: true, log: (m) => console.log(m) });
-      console.log(`Open in your browser:\n  ${srv.url}\n`);
-      if (addr.host === '0.0.0.0') {
+      const address = defaultWebAddress();
+      const server = await startWebServer({
+        ...address,
+        exitAfterLogin: true,
+        log: (message) => console.log(message),
+      });
+      console.log(`Open in your browser:\n  ${server.url}\n`);
+      if (address.host === '0.0.0.0') {
         console.log(
-          `(In a container: port ${addr.port} must be published to the host, e.g. compose ports "127.0.0.1:${addr.port}:${addr.port}" and run with --service-ports.)`,
+          `(In a container: port ${address.port} must be published to the host, e.g. compose ports "127.0.0.1:${address.port}:${address.port}" and run with --service-ports.)`,
         );
       }
       console.log('Waiting for fingerprint and login… Ctrl+C to stop.');
-      await srv.done;
-      await srv.close();
+      await server.done;
+      await server.close();
       return 0;
     }
     case 'jobs': {
       const state = await openState();
       await state.loadJobs();
-      for (const e of state.log.filter((l) => l.level === 'error')) console.error(e.msg);
-      for (const o of state.jobOptions(sub ?? '')) {
-        const pts = o.job.laborPoints;
+      for (const entry of state.log.filter((logEntry) => logEntry.level === 'error')) console.error(entry.msg);
+      for (const option of state.jobOptions(subcommand ?? '')) {
         console.log(
-          `${String(o.job.id).padStart(4)}  ${o.job.name.padEnd(36)} ${String(pts).padStart(5)} LP  ${o.at ? `${o.at.x},${o.at.y}`.padEnd(12) : '—'.padEnd(12)} ${o.way === null ? '' : formatDuration(o.way)}`,
+          `${String(option.job.id).padStart(4)}  ${option.job.name.padEnd(36)} ${String(option.job.laborPoints).padStart(5)} LP  ${option.at ? `${option.at.x},${option.at.y}`.padEnd(12) : '—'.padEnd(12)} ${option.way === null ? '' : formatDuration(option.way)}`,
         );
       }
       return 0;
@@ -95,55 +100,56 @@ async function main(argv: string[]): Promise<number> {
       const state = await openState();
       const now = state.clock.now();
       if (!state.queue.length) console.log('Task queue is empty.');
-      state.queue.forEach((t, i) => {
-        const walk = t.way ? `  walk ${formatDuration(t.way.end - Math.max(now, t.way.start))}` : '';
+      state.queue.forEach((task, index) => {
+        const walk = task.way ? `  walk ${formatDuration(task.way.end - Math.max(now, task.way.start))}` : '';
         console.log(
-          `${i + 1}. [${t.type}] ${t.title} at ${t.coords.x},${t.coords.y}${walk}  ends in ${formatDuration(t.end - now)}`,
+          `${index + 1}. [${task.type}] ${task.title} at ${task.coords.x},${task.coords.y}${walk}  ends in ${formatDuration(task.end - now)}`,
         );
       });
-      const sum = queueSummary(state.queue, now);
-      if (sum)
+      const summary = queueSummary(state.queue, now);
+      if (summary)
         console.log(
-          `All done ${formatClock(sum.doneAt, now)} (in ${formatDuration(sum.left)})${sum.walk > 0 ? `, ${formatDuration(sum.walk)} of it walking` : ''}`,
+          `All done ${formatClock(summary.doneAt, now)} (in ${formatDuration(summary.left)})${summary.walk > 0 ? `, ${formatDuration(summary.walk)} of it walking` : ''}`,
         );
       return 0;
     }
     case 'fp': {
-      if (sub === 'import' && arg) {
-        const p = loadProfile(arg); // validates (recomputes hash)
+      if (subcommand === 'import' && argument) {
+        const profile = loadProfile(argument); // validates (recomputes hash)
         mkdirSync(dirname(PROFILE_FILE), { recursive: true, mode: 0o700 });
-        copyFileSync(arg, PROFILE_FILE);
+        copyFileSync(argument, PROFILE_FILE);
         chmodSync(PROFILE_FILE, 0o600);
         console.log(
-          `Fingerprint profile OK (fp=${p.fp}, ${p.components.length} components). Installed to ${PROFILE_FILE}`,
+          `Fingerprint profile OK (fp=${profile.fp}, ${profile.components.length} components). Installed to ${PROFILE_FILE}`,
         );
         return 0;
       }
-      if (sub === 'set' && arg) {
-        const p = writeProfileFields(PROFILE_FILE, { fp: arg.trim().toLowerCase() });
-        console.log(`Saved fingerprint ${p.fp} (hash-only) to ${PROFILE_FILE}`);
-        if (!p.userAgent) console.log('Next: tw fp ua "<navigator.userAgent from the same browser>"');
+      if (subcommand === 'set' && argument) {
+        const profile = writeProfileFields(PROFILE_FILE, { fp: argument.trim().toLowerCase() });
+        console.log(`Saved fingerprint ${profile.fp} (hash-only) to ${PROFILE_FILE}`);
+        if (!profile.userAgent) console.log('Next: tw fp ua "<navigator.userAgent from the same browser>"');
         return 0;
       }
-      if (sub === 'ua' && arg) {
-        const langs = argv[3]
-          ? argv[3]
-              .split(',')
-              .map((l) => l.trim())
-              .filter(Boolean)
-          : undefined;
-        writeProfileFields(PROFILE_FILE, { userAgent: arg, ...(langs ? { languages: langs } : {}) });
-        console.log(`Saved User-Agent${langs ? ' and languages' : ''} to ${PROFILE_FILE}`);
+      if (subcommand === 'ua' && argument) {
+        const languages = argv[3]
+          ?.split(',')
+          .map((language) => language.trim())
+          .filter(Boolean);
+        writeProfileFields(PROFILE_FILE, {
+          userAgent: argument,
+          ...(languages ? { languages } : {}),
+        });
+        console.log(`Saved User-Agent${languages ? ' and languages' : ''} to ${PROFILE_FILE}`);
         return 0;
       }
-      if (sub === 'show') {
-        const p = readProfileRaw(PROFILE_FILE);
-        if (!p) throw new Error(`No fingerprint profile at ${PROFILE_FILE}`);
-        const comps = p.components?.length
-          ? p.components.map((c) => c.key).join(',')
+      if (subcommand === 'show') {
+        const profile = readProfileRaw(PROFILE_FILE);
+        if (!profile) throw new Error(`No fingerprint profile at ${PROFILE_FILE}`);
+        const componentNames = profile.components?.length
+          ? profile.components.map((component) => component.key).join(',')
           : '(none: hash-only, not re-verifiable)';
         console.log(
-          `fp=${p.fp}\nsaved=${p.capturedAt}\nuserAgent=${p.userAgent || '(missing)'}\nlanguages=${(p.languages ?? []).join(',')}\ncomponents=${comps}`,
+          `fp=${profile.fp}\nsaved=${profile.capturedAt}\nuserAgent=${profile.userAgent || '(missing)'}\nlanguages=${(profile.languages ?? []).join(',')}\ncomponents=${componentNames}`,
         );
         return 0;
       }
@@ -157,13 +163,13 @@ async function main(argv: string[]): Promise<number> {
     case 'whoami':
     case 'status': {
       const { bootstrap } = await ensureGame({ credentials: promptCredentials, log });
-      const c = bootstrap.character ?? {};
+      const character = bootstrap.character ?? {};
       console.log(
         [
-          `${c.name} (level ${c.level}, ${String(obj(c.charClass).type ?? '?')}) on ${String(bootstrap.game?.currentWorldName ?? DEFAULT_WORLD.url)}`,
-          `HP ${c.health}/${c.maxHealth ?? '?'}  Energy ${c.energy}/${c.maxEnergy}  XP ${c.experience}`,
-          `$${c.cash} cash, $${c.deposit} bank  Nuggets ${c.nuggets}`,
-          `Position ${String(obj(c.pos).x)},${String(obj(c.pos).y)}  Tasks queued ${Array.isArray(c.taskQueue) ? c.taskQueue.length : '?'}/${c.taskLimit}`,
+          `${character.name} (level ${character.level}, ${String(obj(character.charClass).type ?? '?')}) on ${String(bootstrap.game?.currentWorldName ?? DEFAULT_WORLD.url)}`,
+          `HP ${character.health}/${character.maxHealth ?? '?'}  Energy ${character.energy}/${character.maxEnergy}  XP ${character.experience}`,
+          `$${character.cash} cash, $${character.deposit} bank  Nuggets ${character.nuggets}`,
+          `Position ${String(obj(character.pos).x)},${String(obj(character.pos).y)}  Tasks queued ${Array.isArray(character.taskQueue) ? character.taskQueue.length : '?'}/${character.taskLimit}`,
         ].join('\n'),
       );
       return 0;
@@ -177,8 +183,8 @@ async function main(argv: string[]): Promise<number> {
 
 main(process.argv.slice(2)).then(
   (code) => process.exit(code),
-  (err) => {
-    console.error(`error: ${err instanceof Error ? err.message : err}`);
+  (error) => {
+    console.error(`error: ${error instanceof Error ? error.message : error}`);
     process.exit(1);
   },
 );

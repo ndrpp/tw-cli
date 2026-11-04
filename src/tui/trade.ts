@@ -9,6 +9,7 @@ import {
   MARKET_CATEGORIES,
   type MarketFilter,
   type MarketOffer,
+  type MobileTraderItem,
   marketFee,
   SHOPS,
   type ShopKey,
@@ -17,15 +18,15 @@ import {
 import { defined } from '../util/defined.ts';
 import { ItemDetail, type ScreenProps } from './character.ts';
 import { type FormField, type FormState, FormView, formKey, formValues, makeForm } from './form.ts';
-import { formatDuration, money, scrollWindow, truncate } from './format.ts';
+import { coarseDuration, formatDuration, money, scrollWindow, truncate } from './format.ts';
 
-const h = React.createElement;
+const createElement = React.createElement;
 
 type Tab = 'bank' | 'trader' | ShopKey | 'market' | 'mine';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'bank', label: 'Bank' },
   { key: 'trader', label: 'Mobile trader' },
-  ...SHOPS.map((s) => ({ key: s.key as Tab, label: s.label })),
+  ...SHOPS.map((source) => ({ key: source.key as Tab, label: source.label })),
   { key: 'market', label: 'Market' },
   { key: 'mine', label: 'My market' },
 ];
@@ -38,32 +39,29 @@ type Pending =
   | { kind: 'search' };
 type Confirm = { text: string; run: () => void } | null;
 
-const isShop = (t: Tab): t is ShopKey => SHOPS.some((s) => s.key === t);
+const isShop = (target: Tab): target is ShopKey => SHOPS.some((source) => source.key === target);
 const DAYS = ['1', '2', '3', '4', '5', '6', '7'];
 const YES_NO = ['no', 'yes'];
-const catLabel = (type: string) => MARKET_CATEGORIES.find((c) => c.type === type)?.label ?? 'all';
-const catType = (label: string) => MARKET_CATEGORIES.find((c) => c.label === label)?.type ?? '';
-const itemsLabel = (state: ScreenProps['state'], o: MarketOffer) =>
-  `${o.count > 1 ? `${o.count}× ` : ''}${state.itemName(o.itemId)}`;
-const priceLabel = (p: { currency: string; amount: number }) =>
-  p.currency === 'dollar' ? money(p.amount) : `${p.amount} ${p.currency}`;
+const catLabel = (type: string) => MARKET_CATEGORIES.find((candidate) => candidate.type === type)?.label ?? 'all';
+const catType = (label: string) => MARKET_CATEGORIES.find((candidate) => candidate.label === label)?.type ?? '';
+const itemsLabel = (state: ScreenProps['state'], offer: MarketOffer) =>
+  `${offer.count > 1 ? `${offer.count}× ` : ''}${state.itemName(offer.itemId)}`;
+const priceLabel = (pick: { currency: string; amount: number }) =>
+  pick.currency === 'dollar' ? money(pick.amount) : `${pick.amount} ${pick.currency}`;
 
-function filterText(f: MarketFilter): string {
+function filterText(value: MarketFilter): string {
   const parts = [
-    f.type ? catLabel(f.type) : '',
-    f.levelMin || f.levelMax ? `level ${f.levelMin || 0}–${f.levelMax || '∞'}` : '',
-    f.usable ? 'usable' : '',
-    f.consumable ? 'consumable' : '',
+    value.type ? catLabel(value.type) : '',
+    value.levelMin || value.levelMax ? `level ${value.levelMin || 0}–${value.levelMax || '∞'}` : '',
+    value.usable ? 'usable' : '',
+    value.consumable ? 'consumable' : '',
   ];
   return parts.filter(Boolean).join(', ');
 }
 
-function endsIn(sec: number): string {
-  if (sec <= 0) return 'ended';
-  if (sec >= 86400) return `${Math.floor(sec / 86400)}d`;
-  if (sec >= 3600) return `${Math.floor(sec / 3600)}h`;
-  return `${Math.max(1, Math.floor(sec / 60))}m`;
-}
+/** Limited offers end when all are sold or their time is up (the timestamp is in server seconds). */
+const hasEnded = (item: MobileTraderItem, nowMs: number): boolean =>
+  item.limitedCount === 0 || (item.limitedAt !== null && item.limitedAt * 1000 <= nowMs);
 
 export function TradeScreen({ state, width, height, onCapture, onExit, active = true }: ScreenProps) {
   const [tab, setTab] = useState<Tab>('bank');
@@ -91,14 +89,14 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
 
   const bagItems = state.inventory
     .items()
-    .filter((b) => !state.inventory.isWorn(b.itemId))
-    .sort((a, b) => state.itemName(a.itemId).localeCompare(state.itemName(b.itemId)));
+    .filter((second) => !state.inventory.isWorn(second.itemId))
+    .sort((first, second) => state.itemName(first.itemId).localeCompare(state.itemName(second.itemId)));
   const shopItems = state.shop && isShop(tab) && state.shop.key === tab ? state.shop.items : [];
   const mine = state.marketMine
     ? [
-        ...state.marketMine.bids.map((o) => ({ o, mineKind: 'bid' as const })),
-        ...state.marketMine.offers.map((o) => ({ o, mineKind: 'offer' as const })),
-        ...state.marketMine.buyOrders.map((o) => ({ o, mineKind: 'want' as const })),
+        ...state.marketMine.bids.map((offer) => ({ o: offer, mineKind: 'bid' as const })),
+        ...state.marketMine.offers.map((offer) => ({ o: offer, mineKind: 'offer' as const })),
+        ...state.marketMine.buyOrders.map((offer) => ({ o: offer, mineKind: 'want' as const })),
       ]
     : [];
   const filter = state.market.filter;
@@ -117,44 +115,44 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
               : mine.length;
   const idx = Math.min(sel, Math.max(0, rowsCount - 1));
 
-  const ask = (p: Pending, f: FormState) => {
-    setPending(p);
-    setForm(f);
+  const ask = (pick: Pending, formState: FormState) => {
+    setPending(pick);
+    setForm(formState);
   };
 
-  const submit = (p: Pending, v: Record<string, string>) => {
-    const n = (k: string) => Number(v[k] ?? '') || 0;
-    if (p.kind === 'deposit') return void state.depositMoney(n('amount'));
-    if (p.kind === 'search') {
-      const f: MarketFilter = {
-        type: catType(v.cat ?? ''),
-        levelMin: n('lmin'),
-        levelMax: n('lmax'),
-        usable: v.usable === 'yes',
-        consumable: v.consumable === 'yes',
-        buyOrders: v.dir === 'buy orders',
+  const submit = (pick: Pending, value: Record<string, string>) => {
+    const transform = (entryKey: string) => Number(value[entryKey] ?? '') || 0;
+    if (pick.kind === 'deposit') return void state.depositMoney(transform('amount'));
+    if (pick.kind === 'search') {
+      const currentValue: MarketFilter = {
+        type: catType(value.cat ?? ''),
+        levelMin: transform('lmin'),
+        levelMax: transform('lmax'),
+        usable: value.usable === 'yes',
+        consumable: value.consumable === 'yes',
+        buyOrders: value.dir === 'buy orders',
       };
-      return void state.searchMarket(v.query ?? '', 1, f).then(() => setSel(0));
+      return void state.searchMarket(value.query ?? '', 1, currentValue).then(() => setSel(0));
     }
-    if (p.kind === 'bid') return void state.bidMarket(p.offer, n('amount'), v.pay === 'bank account');
-    if (p.kind === 'buy-order') {
+    if (pick.kind === 'bid') return void state.bidMarket(pick.offer, transform('amount'), value.pay === 'bank account');
+    if (pick.kind === 'buy-order') {
       return void state.placeBuyOrder({
-        query: v.item ?? '',
-        count: Math.max(1, n('count')),
-        days: Math.max(1, n('days')),
-        maxBid: n('maxbid') || undefined,
-        instant: n('instant') || undefined,
-        fromBank: v.pay === 'bank account',
+        query: value.item ?? '',
+        count: Math.max(1, transform('count')),
+        days: Math.max(1, transform('days')),
+        maxBid: transform('maxbid') || undefined,
+        instant: transform('instant') || undefined,
+        fromBank: value.pay === 'bank account',
       });
     }
-    if (p.kind === 'sell-shop') return void state.sellToShop(p.itemId, Math.max(1, n('count')));
-    if (p.kind === 'sell-market') {
+    if (pick.kind === 'sell-shop') return void state.sellToShop(pick.itemId, Math.max(1, transform('count')));
+    if (pick.kind === 'sell-market') {
       return void state.sellOnMarket({
-        itemId: p.itemId,
-        count: Math.max(1, n('count')),
-        days: Math.max(1, n('days')),
-        startPrice: n('start') || undefined,
-        buyNow: n('buynow') || undefined,
+        itemId: pick.itemId,
+        count: Math.max(1, transform('count')),
+        days: Math.max(1, transform('days')),
+        startPrice: transform('start') || undefined,
+        buyNow: transform('buynow') || undefined,
       });
     }
   };
@@ -162,12 +160,12 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
   useInput(
     (input, key) => {
       if (form && pending) {
-        const r = formKey(form, input, key);
-        if (r === 'cancel') {
+        const otherForm = formKey(form, input, key);
+        if (otherForm === 'cancel') {
           setForm(null);
           return setPending(null);
         }
-        if (r !== 'submit') return setForm(r);
+        if (otherForm !== 'submit') return setForm(otherForm);
         setForm(null);
         setPending(null);
         return submit(pending, formValues(form));
@@ -182,8 +180,10 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
         return onExit();
       }
       if (key.leftArrow || key.rightArrow) {
-        const d = key.rightArrow ? 1 : TABS.length - 1;
-        return setTab((cur) => TABS[(TABS.findIndex((t) => t.key === cur) + d) % TABS.length]?.key ?? cur);
+        const value = key.rightArrow ? 1 : TABS.length - 1;
+        return setTab(
+          (cur) => TABS[(TABS.findIndex((target) => target.key === cur) + value) % TABS.length]?.key ?? cur,
+        );
       }
       const step = key.pageUp || key.pageDown ? 10 : 1;
       if (key.upArrow || input === 'k' || key.pageUp) return setSel(Math.max(0, idx - step));
@@ -191,11 +191,10 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
       if (tab === 'trader') {
         const item = traderItems[idx];
         if (key.return && item?.prices[0]) {
-          const soldOut = item.limitedCount === 0 || (item.limitedAt !== null && item.limitedAt * 1000 <= Date.now());
-          if (soldOut) return state.error('This mobile-trader offer has ended.');
-          const p = item.prices[0];
+          if (hasEnded(item, Date.now())) return state.error('This mobile-trader offer has ended.');
+          const pick = item.prices[0];
           setConfirm({
-            text: `Buy ${state.itemName(item.itemId)} for ${priceLabel(p)}?`,
+            text: `Buy ${state.itemName(item.itemId)} for ${priceLabel(pick)}?`,
             run: () => void state.buyMobileTrader(item),
           });
         }
@@ -211,7 +210,8 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
             makeForm(
               `Deposit in ${state.bank?.townName || town.name} (fee ${fee}%)`,
               [{ key: 'amount', label: 'Amount $', value: String(state.character.cash), kind: 'number' }],
-              (v) => `Fee: $ ${depositFee(Number(v.amount) || 0, fee)} · you have $ ${state.character.cash} in cash`,
+              (value) =>
+                `Fee: $ ${depositFee(Number(value.amount) || 0, fee)} · you have $ ${state.character.cash} in cash`,
             ),
           );
         }
@@ -220,31 +220,31 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
 
       if ((isShop(tab) || tab === 'market') && key.tab) {
         setSel(0);
-        return setSide((s) => (s === 'goods' ? 'bag' : 'goods'));
+        return setSide((source) => (source === 'goods' ? 'bag' : 'goods'));
       }
 
       if (side === 'bag') {
         const it = bagItems[idx];
         if (!it || !key.return) return;
-        const d = state.items?.get(it.itemId);
+        const entry = state.items?.get(it.itemId);
         if (isShop(tab)) {
-          if (d && !d.sellable) return state.error(`${d.name} cannot be sold.`);
+          if (entry && !entry.sellable) return state.error(`${entry.name} cannot be sold.`);
           if (it.count > 1) {
             return ask(
               { kind: 'sell-shop', itemId: it.itemId },
               makeForm(
-                `Sell ${state.itemName(it.itemId)} for $ ${d?.sell ?? '?'} each`,
+                `Sell ${state.itemName(it.itemId)} for $ ${entry?.sell ?? '?'} each`,
                 [{ key: 'count', label: 'How many', value: '1', kind: 'number', hint: `max ${it.count}` }],
-                (v) => `Total: $ ${(d?.sell ?? 0) * (Number(v.count) || 0)}`,
+                (value) => `Total: $ ${(entry?.sell ?? 0) * (Number(value.count) || 0)}`,
               ),
             );
           }
           return setConfirm({
-            text: `Sell ${state.itemName(it.itemId)} for $ ${d?.sell ?? '?'}?`,
+            text: `Sell ${state.itemName(it.itemId)} for $ ${entry?.sell ?? '?'}?`,
             run: () => void state.sellToShop(it.itemId, 1),
           });
         }
-        if (d && !d.auctionable) return state.error(`${d.name} cannot be sold on the market.`);
+        if (entry && !entry.auctionable) return state.error(`${entry.name} cannot be sold on the market.`);
         return ask(
           { kind: 'sell-market', itemId: it.itemId },
           makeForm(
@@ -255,14 +255,14 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
               { key: 'buynow', label: 'Buy now $', value: '', kind: 'number', hint: 'empty: auction only' },
               { key: 'days', label: 'Days', value: '1', kind: 'choice', options: DAYS },
             ],
-            (v) => {
+            (value) => {
               const fee = marketFee({
-                startPrice: Number(v.start) || 0,
-                buyNow: Number(v.buynow) || 0,
-                days: Number(v.days) || 1,
+                startPrice: Number(value.start) || 0,
+                buyNow: Number(value.buynow) || 0,
+                days: Number(value.days) || 1,
                 homeTown: town.id === state.character.homeTown?.id,
               });
-              return `Shop sell price $ ${d?.sell ?? '?'} each · fee up to $ ${fee} (less at a bigger market)`;
+              return `Shop sell price $ ${entry?.sell ?? '?'} each · fee up to $ ${fee} (less at a bigger market)`;
             },
           ),
         );
@@ -299,7 +299,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
                 label: 'Category',
                 value: catLabel(filter.type),
                 kind: 'choice',
-                options: MARKET_CATEGORIES.map((c) => c.label),
+                options: MARKET_CATEGORIES.map((candidate) => candidate.label),
               },
               {
                 key: 'lmin',
@@ -360,22 +360,22 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
                 { key: 'days', label: 'Days', value: '1', kind: 'choice', options: DAYS },
                 { key: 'pay', label: 'Pay from', value: 'cash', kind: 'choice', options: ['cash', 'bank account'] },
               ],
-              (v) => {
-                const found = state.findAuctionable(v.item ?? '');
-                const what = !v.item
+              (value) => {
+                const found = state.findAuctionable(value.item ?? '');
+                const what = !value.item
                   ? 'type an item name'
                   : found.length === 1
-                    ? (found[0]?.name ?? v.item)
+                    ? (found[0]?.name ?? value.item)
                     : found.length
                       ? `${found.length} matches: ${found
                           .slice(0, 3)
-                          .map((f) => f.name)
+                          .map((marketItem) => marketItem.name)
                           .join(', ')}…`
                       : 'no such market item';
                 const fee = marketFee({
-                  startPrice: Number(v.maxbid) || 0,
-                  buyNow: Number(v.instant) || 0,
-                  days: Number(v.days) || 1,
+                  startPrice: Number(value.maxbid) || 0,
+                  buyNow: Number(value.instant) || 0,
+                  days: Number(value.days) || 1,
                   homeTown: town.id === state.character.homeTown?.id,
                 });
                 return `${what} · fee up to $ ${fee}`;
@@ -387,21 +387,21 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
           return void state.searchMarket(state.market.query, state.market.page + 1).then(() => setSel(0));
         if (input === '<' && state.market.page > 1)
           return void state.searchMarket(state.market.query, state.market.page - 1).then(() => setSel(0));
-        const o = state.market.offers[idx];
-        if (!o) return;
-        if (input === 'w') return void state.walkToTownAt(o.town, o.town.name);
-        const wanted = o.direction === 'BUY';
-        if (key.return && o.buyNow !== null) {
-          const buyNow = o.buyNow;
+        const offer = state.market.offers[idx];
+        if (!offer) return;
+        if (input === 'w') return void state.walkToTownAt(offer.town, offer.town.name);
+        const wanted = offer.direction === 'BUY';
+        if (key.return && offer.buyNow !== null) {
+          const buyNow = offer.buyNow;
           return setConfirm(
             wanted
               ? {
-                  text: `Sell ${itemsLabel(state, o)} to ${o.seller} now for $ ${buyNow}?`,
-                  run: () => void state.bidMarket(o, buyNow),
+                  text: `Sell ${itemsLabel(state, offer)} to ${offer.seller} now for $ ${buyNow}?`,
+                  run: () => void state.bidMarket(offer, buyNow),
                 }
               : {
-                  text: `Buy ${itemsLabel(state, o)} now for $ ${buyNow} (cash, then bank)?`,
-                  run: () => void state.bidMarket(o, buyNow),
+                  text: `Buy ${itemsLabel(state, offer)} now for $ ${buyNow} (cash, then bank)?`,
+                  run: () => void state.bidMarket(offer, buyNow),
                 },
           );
         }
@@ -410,9 +410,9 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
             {
               key: 'amount',
               label: wanted ? 'Your price $' : 'Your bid $',
-              value: String(suggestedBid(o)),
+              value: String(suggestedBid(offer)),
               kind: 'number',
-              hint: o.buyNow !== null ? `${wanted ? 'instant sale' : 'buy now'}: $ ${o.buyNow}` : '',
+              hint: offer.buyNow !== null ? `${wanted ? 'instant sale' : 'buy now'}: $ ${offer.buyNow}` : '',
             },
           ];
           if (!wanted)
@@ -424,12 +424,12 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
               options: ['cash', 'bank account'],
             });
           return ask(
-            { kind: 'bid', offer: o },
+            { kind: 'bid', offer: offer },
             makeForm(
-              `${wanted ? 'Sell into the buy order for' : 'Bid on'} ${itemsLabel(state, o)}`,
+              `${wanted ? 'Sell into the buy order for' : 'Bid on'} ${itemsLabel(state, offer)}`,
               fields,
               wanted
-                ? () => `You have ${state.inventory.count(o.itemId)} · the item leaves your bag when you win`
+                ? () => `You have ${state.inventory.count(offer.itemId)} · the item leaves your bag when you win`
                 : undefined,
             ),
           );
@@ -443,14 +443,14 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
           text: `Pick up everything finished at the market of ${state.townHere?.name ?? 'this town'}?`,
           run: () => void state.pickUpAllMarket(),
         });
-      const m = mine[idx];
-      if (!m) return;
-      if (input === 'w') return void state.walkToTownAt(m.o.town, m.o.town.name);
-      if (key.return && m.o.finished) return void state.pickUpMarket(m.o);
-      if (input === 'x' && m.mineKind !== 'bid' && !m.o.finished) {
+      const match = mine[idx];
+      if (!match) return;
+      if (input === 'w') return void state.walkToTownAt(match.o.town, match.o.town.name);
+      if (key.return && match.o.finished) return void state.pickUpMarket(match.o);
+      if (input === 'x' && match.mineKind !== 'bid' && !match.o.finished) {
         return setConfirm({
-          text: `Withdraw your ${m.mineKind === 'want' ? 'buy order' : 'offer'} for ${itemsLabel(state, m.o)}? Fees are only partly refunded.`,
-          run: () => void state.withdrawMarket(m.o),
+          text: `Withdraw your ${match.mineKind === 'want' ? 'buy order' : 'offer'} for ${itemsLabel(state, match.o)}? Fees are only partly refunded.`,
+          run: () => void state.withdrawMarket(match.o),
         });
       }
     },
@@ -461,26 +461,31 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
   const leftW = Math.max(34, Math.floor(width * 0.5));
   const rightW = width - leftW;
   const bodyH = height - 1; // below the tab row
-  const formH = form ? form.fields.length + 4 + (form.note ? 1 : 0) : 0;
+  const otherForm = form ? form.fields.length + 4 + (form.note ? 1 : 0) : 0;
   const listRows = Math.max(2, height - 6 - (confirm ? 1 : 0));
   const [start, end] = scrollWindow(idx, rowsCount, listRows);
-  const tabs = h(
+  const tabs = createElement(
     Text,
     { wrap: 'truncate' },
-    ...TABS.map((t) =>
-      h(
+    ...TABS.map((target) =>
+      createElement(
         Text,
-        defined({ key: t.key, inverse: tab === t.key, bold: tab === t.key, color: tab === t.key ? 'cyan' : undefined }),
-        ` ${t.label} `,
+        defined({
+          key: target.key,
+          inverse: tab === target.key,
+          bold: tab === target.key,
+          color: tab === target.key ? 'cyan' : undefined,
+        }),
+        ` ${target.label} `,
       ),
     ),
-    h(Text, { dimColor: true }, ' ← →'),
+    createElement(Text, { dimColor: true }, ' ← →'),
   );
   const trader = state.mobileTrader;
   const traderLeft = trader?.changesAt ? Math.max(0, trader.changesAt - state.clock.now()) : 0;
   const where =
     tab === 'trader'
-      ? `${trader ? `Mobile trader · ${trader.items.length} offer(s)` : 'Loading mobile trader…'}${traderLeft ? ` · changes in ${endsIn(traderLeft)}` : ''} · cash ${money(state.character.cash)} · bank ${money(state.character.deposit)}`
+      ? `${trader ? `Mobile trader · ${trader.items.length} offer(s)` : 'Loading mobile trader…'}${traderLeft ? ` · changes in ${coarseDuration(traderLeft)}` : ''} · cash ${money(state.character.cash)} · bank ${money(state.character.deposit)}`
       : town
         ? `${town.name}${town.here ? ' (you are here)' : ' (home town; you are not there)'} · cash ${money(state.character.cash)} · bank ${money(state.character.deposit)}`
         : 'No town: stand in a town or join one.';
@@ -488,14 +493,20 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
   const rows: React.ReactNode[] = [];
   let detail: React.ReactNode = null;
   if (tab === 'bank') {
-    const b = state.bank;
-    rows.push(h(Text, { key: 'b', bold: true }, b ? `Bank of ${b.townName || town?.name}` : 'Loading bank…'));
-    if (b) {
-      rows.push(h(Text, { key: 'c' }, `Cash        ${money(state.character.cash)}`));
-      rows.push(h(Text, { key: 'd' }, `Bank        ${money(state.character.deposit)}`));
-      rows.push(h(Text, { key: 'f' }, `Deposit fee ${b.fee}%`));
+    const second = state.bank;
+    rows.push(
+      createElement(
+        Text,
+        { key: 'b', bold: true },
+        second ? `Bank of ${second.townName || town?.name}` : 'Loading bank…',
+      ),
+    );
+    if (second) {
+      rows.push(createElement(Text, { key: 'c' }, `Cash        ${money(state.character.cash)}`));
+      rows.push(createElement(Text, { key: 'd' }, `Bank        ${money(state.character.deposit)}`));
+      rows.push(createElement(Text, { key: 'f' }, `Deposit fee ${second.fee}%`));
       rows.push(
-        h(
+        createElement(
           Text,
           { key: 'n', dimColor: true, wrap: 'wrap' },
           'Money in the bank is safe from duels. Purchases use cash first, then the bank. Enter: deposit.',
@@ -504,50 +515,51 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
     }
   } else if (tab === 'trader') {
     rows.push(
-      h(
+      createElement(
         Text,
         { key: 'hd', dimColor: true, wrap: 'truncate' },
         'Rotating offers · buy with cash, then bank · Enter buy · u refresh',
       ),
     );
-    traderItems.slice(start, end).forEach((item, i) => {
-      const p = item.prices[0];
-      const level = state.items?.get(item.itemId)?.level;
-      const soldOut = item.limitedCount === 0 || (item.limitedAt !== null && item.limitedAt * 1000 <= Date.now());
-      const price = p ? priceLabel(p) : '—';
-      const unaffordable = !!p && p.currency === 'dollar' && p.amount > state.character.cash + state.character.deposit;
-      const limited = item.limitedAt
-        ? endsIn(item.limitedAt - state.clock.now())
-        : item.limitedCount !== null
-          ? `${item.limitedCount} left`
+    traderItems.slice(start, end).forEach((traderItem, index) => {
+      const pick = traderItem.prices[0];
+      const level = state.items?.get(traderItem.itemId)?.level;
+      const soldOut = hasEnded(traderItem, Date.now());
+      const price = pick ? priceLabel(pick) : '—';
+      const unaffordable =
+        !!pick && pick.currency === 'dollar' && pick.amount > state.character.cash + state.character.deposit;
+      const limited = traderItem.limitedAt
+        ? coarseDuration(traderItem.limitedAt - state.clock.now())
+        : traderItem.limitedCount !== null
+          ? `${traderItem.limitedCount} left`
           : '';
       rows.push(
-        h(
+        createElement(
           Text,
           defined({
-            key: item.itemId,
-            inverse: start + i === idx,
+            key: traderItem.itemId,
+            inverse: start + index === idx,
             color: soldOut ? 'gray' : unaffordable ? 'red' : undefined,
             wrap: 'truncate',
           }),
-          `${truncate(state.itemName(item.itemId), leftW - 28)} ${level ? `L${level}`.padStart(4) : '    '} ${price.padStart(9)} ${truncate(limited, 6).padStart(6)}`,
+          `${truncate(state.itemName(traderItem.itemId), leftW - 28)} ${level ? `L${level}`.padStart(4) : '    '} ${price.padStart(9)} ${truncate(limited, 6).padStart(6)}`,
         ),
       );
     });
     const item = traderItems[idx];
     if (item) {
-      const p = item.prices[0];
-      detail = h(
+      const pick = item.prices[0];
+      detail = createElement(
         Box,
-        { flexDirection: 'column', width: rightW, height: bodyH - formH },
-        h(
+        { flexDirection: 'column', width: rightW, height: bodyH - otherForm },
+        createElement(
           Text,
           { bold: true, color: 'yellow', wrap: 'truncate' },
-          p
-            ? `${priceLabel(p)}${item.discount ? ` (${item.discount}% off ${priceLabel({ ...p, amount: p.base })})` : ''}${item.teaser ? ` · ${item.teaser}` : ''}`
+          pick
+            ? `${priceLabel(pick)}${item.discount ? ` (${item.discount}% off ${priceLabel({ ...pick, amount: pick.base })})` : ''}${item.teaser ? ` · ${item.teaser}` : ''}`
             : 'No price',
         ),
-        h(ItemDetail, {
+        createElement(ItemDetail, {
           state,
           itemId: item.itemId,
           count: 1,
@@ -555,33 +567,38 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
           compare: false,
           pane: 'bag',
           width: rightW,
-          height: Math.max(6, bodyH - formH - 2),
+          height: Math.max(6, bodyH - otherForm - 2),
           scroll: 0,
         }),
       );
     }
   } else if (side === 'bag') {
     rows.push(
-      h(
+      createElement(
         Text,
         { key: 'hd', dimColor: true, wrap: 'truncate' },
         `Your bag: Enter ${isShop(tab) ? 'sells to the shop' : 'offers on the market'} · Tab back`,
       ),
     );
-    bagItems.slice(start, end).forEach((b, i) => {
-      const d = state.items?.get(b.itemId);
-      const ok = isShop(tab) ? d?.sellable !== false : d?.auctionable !== false;
+    bagItems.slice(start, end).forEach((second, index) => {
+      const entry = state.items?.get(second.itemId);
+      const ok = isShop(tab) ? entry?.sellable !== false : entry?.auctionable !== false;
       rows.push(
-        h(
+        createElement(
           Text,
-          defined({ key: b.itemId, inverse: start + i === idx, color: ok ? undefined : 'gray', wrap: 'truncate' }),
-          `${truncate(state.itemName(b.itemId), leftW - 18)} ${b.count > 1 ? `×${b.count}`.padStart(4) : '    '} ${money(d?.sell ?? 0).padStart(8)}`,
+          defined({
+            key: second.itemId,
+            inverse: start + index === idx,
+            color: ok ? undefined : 'gray',
+            wrap: 'truncate',
+          }),
+          `${truncate(state.itemName(second.itemId), leftW - 18)} ${second.count > 1 ? `×${second.count}`.padStart(4) : '    '} ${money(entry?.sell ?? 0).padStart(8)}`,
         ),
       );
     });
     const it = bagItems[idx];
     if (it)
-      detail = h(ItemDetail, {
+      detail = createElement(ItemDetail, {
         state,
         itemId: it.itemId,
         count: it.count,
@@ -589,42 +606,42 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
         compare: false,
         pane: 'bag',
         width: rightW,
-        height: bodyH - formH,
+        height: bodyH - otherForm,
         scroll: 0,
       });
   } else if (isShop(tab)) {
-    const s = state.shop;
+    const shop = state.shop;
     rows.push(
-      h(
+      createElement(
         Text,
         { key: 'hd', dimColor: true, wrap: 'truncate' },
-        s && s.key === tab
-          ? `${SHOPS.find((x) => x.key === tab)?.label ?? tab} level ${s.level} · ${s.items.length} items · Tab: sell`
+        shop && shop.key === tab
+          ? `${SHOPS.find((xCoord) => xCoord.key === tab)?.label ?? tab} level ${shop.level} · ${shop.items.length} items · Tab: sell`
           : 'Loading shop…',
       ),
     );
-    shopItems.slice(start, end).forEach((id, i) => {
-      const req = state.requiredLevel(id);
+    shopItems.slice(start, end).forEach((shopItemId, index) => {
+      const req = state.requiredLevel(shopItemId);
       const tooLow = req && req.level > state.character.level;
-      const price = state.shopPrice(id);
+      const price = state.shopPrice(shopItemId);
       rows.push(
-        h(
+        createElement(
           Text,
           defined({
-            key: id,
-            inverse: start + i === idx,
+            key: shopItemId,
+            inverse: start + index === idx,
             color: tooLow ? 'gray' : price > state.character.cash + state.character.deposit ? 'red' : undefined,
             wrap: 'truncate',
           }),
-          `${truncate(state.itemName(id), leftW - 18)} ${req ? `L${req.level}`.padStart(4) : '    '} ${money(price).padStart(8)}`,
+          `${truncate(state.itemName(shopItemId), leftW - 18)} ${req ? `L${req.level}`.padStart(4) : '    '} ${money(price).padStart(8)}`,
         ),
       );
     });
     const id = shopItems[idx];
     if (id !== undefined) {
-      const d = state.items?.get(id);
-      const wornId = d ? state.inventory.wear.get(d.type) : undefined;
-      detail = h(ItemDetail, {
+      const entry = state.items?.get(id);
+      const wornId = entry ? state.inventory.wear.get(entry.type) : undefined;
+      detail = createElement(ItemDetail, {
         state,
         itemId: id,
         count: 1,
@@ -632,66 +649,66 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
         compare: wornId !== undefined,
         pane: 'bag',
         width: rightW,
-        height: bodyH - formH,
+        height: bodyH - otherForm,
         scroll: 0,
       });
     }
   } else if (tab === 'market') {
-    const m = state.market;
-    const f = filterText(filter);
+    const match = state.market;
+    const text = filterText(filter);
     rows.push(
-      h(
+      createElement(
         Text,
         { key: 'mode', wrap: 'truncate' },
-        h(
+        createElement(
           Text,
           { color: filter.buyOrders ? 'magenta' : 'green', bold: true },
           filter.buyOrders ? 'Buy orders (wanted)' : 'For sale',
         ),
-        h(Text, { dimColor: true }, ` · t switch${f ? ` · ${f}` : ''}`),
+        createElement(Text, { dimColor: true }, ` · t switch${text ? ` · ${text}` : ''}`),
       ),
     );
     rows.push(
-      h(
+      createElement(
         Text,
         { key: 'hd', dimColor: true, wrap: 'truncate' },
-        m.searched
-          ? `${m.query ? `"${m.query}"` : 'everything'} · page ${m.page}${m.next ? ' (> next)' : ''} · / search · n buy order · Tab sell`
+        match.searched
+          ? `${match.query ? `"${match.query}"` : 'everything'} · page ${match.page}${match.next ? ' (> next)' : ''} · / search · n buy order · Tab sell`
           : '/ search (filters) · n place a buy order · Tab sell from your bag',
       ),
     );
-    if (m.offers.length)
+    if (match.offers.length)
       rows.push(
-        h(
+        createElement(
           Text,
           { key: 'cols', dimColor: true, wrap: 'truncate' },
           `${'Item'.padEnd(leftW - 30)}     bid ${filter.buyOrders ? 'instant' : 'buy now'}  ends`,
         ),
       );
-    m.offers.slice(start, end).forEach((o, i) => {
-      const price = o.buyNow !== null ? money(o.buyNow) : '';
-      const bid = o.bid !== null ? money(o.bid) : '';
-      const have = o.direction === 'BUY' && state.inventory.count(o.itemId) >= o.count;
+    match.offers.slice(start, end).forEach((marketOffer, index) => {
+      const price = marketOffer.buyNow !== null ? money(marketOffer.buyNow) : '';
+      const bid = marketOffer.bid !== null ? money(marketOffer.bid) : '';
+      const have = marketOffer.direction === 'BUY' && state.inventory.count(marketOffer.itemId) >= marketOffer.count;
       rows.push(
-        h(
+        createElement(
           Text,
           defined({
-            key: o.id,
-            inverse: start + i === idx,
-            bold: o.highestBidder,
+            key: marketOffer.id,
+            inverse: start + index === idx,
+            bold: marketOffer.highestBidder,
             color: have ? 'green' : undefined,
             wrap: 'truncate',
           }),
-          `${truncate(itemsLabel(state, o), leftW - 30)} ${bid.padStart(7)} ${price.padStart(7)} ${endsIn(o.endsIn).padStart(5)}`,
+          `${truncate(itemsLabel(state, marketOffer), leftW - 30)} ${bid.padStart(7)} ${price.padStart(7)} ${coarseDuration(marketOffer.endsIn).padStart(5)}`,
         ),
       );
     });
-    const o = m.offers[idx];
-    if (o) detail = offerDetail(state, o, rightW, bodyH - formH);
+    const offer = match.offers[idx];
+    if (offer) detail = offerDetail(state, offer, rightW, bodyH - otherForm);
   } else {
     const mm = state.marketMine;
     rows.push(
-      h(
+      createElement(
         Text,
         { key: 'hd', dimColor: true, wrap: 'truncate' },
         mm
@@ -699,36 +716,36 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
           : 'Loading…',
       ),
     );
-    mine.slice(start, end).forEach(({ o, mineKind }, i) => {
-      const status = o.finished
+    mine.slice(start, end).forEach(({ o: offer, mineKind }, index) => {
+      const status = offer.finished
         ? mineKind === 'bid'
-          ? o.highestBidder
+          ? offer.highestBidder
             ? 'won, pick up'
             : 'ended'
           : 'ended, collect'
-        : endsIn(o.endsIn);
+        : coarseDuration(offer.endsIn);
       const label =
-        mineKind === 'bid' ? (o.direction === 'BUY' ? 'sell ' : 'bid  ') : mineKind === 'want' ? 'want ' : 'offer';
+        mineKind === 'bid' ? (offer.direction === 'BUY' ? 'sell ' : 'bid  ') : mineKind === 'want' ? 'want ' : 'offer';
       rows.push(
-        h(
+        createElement(
           Text,
           defined({
-            key: `${mineKind}${o.id}`,
-            inverse: start + i === idx,
-            color: o.finished ? 'green' : undefined,
+            key: `${mineKind}${offer.id}`,
+            inverse: start + index === idx,
+            color: offer.finished ? 'green' : undefined,
             wrap: 'truncate',
           }),
-          `${label} ${truncate(itemsLabel(state, o), leftW - 30)} ${(o.bid !== null ? money(o.bid) : '').padStart(7)} ${status.padStart(14)}`,
+          `${label} ${truncate(itemsLabel(state, offer), leftW - 30)} ${(offer.bid !== null ? money(offer.bid) : '').padStart(7)} ${status.padStart(14)}`,
         ),
       );
     });
-    const m = mine[idx];
-    if (m) detail = offerDetail(state, m.o, rightW, bodyH - formH);
+    const matchValue = mine[idx];
+    if (matchValue) detail = offerDetail(state, matchValue.o, rightW, bodyH - otherForm);
   }
 
   const help = confirm
-    ? h(Text, { color: 'yellow', wrap: 'truncate' }, `${confirm.text} y / n`)
-    : h(
+    ? createElement(Text, { color: 'yellow', wrap: 'truncate' }, `${confirm.text} y / n`)
+    : createElement(
         Text,
         { dimColor: true, wrap: 'truncate' },
         tab === 'bank'
@@ -745,13 +762,13 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
                     : '/ search · t buy orders · Enter buy now (or bid) · b bid · n buy order · w walk · < > page · Tab sell'
                   : 'Enter pick up · P pick up all here · x withdraw · w walk to town · ← → tab · Esc back',
       );
-  const left = h(
+  const left = createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width: leftW, height: bodyH, paddingX: 1 },
-    h(Text, { color: town?.here ? 'green' : 'yellow', wrap: 'truncate' }, where),
+    createElement(Text, { color: town?.here ? 'green' : 'yellow', wrap: 'truncate' }, where),
     ...rows,
     rowsCount === 0 && tab !== 'bank'
-      ? h(
+      ? createElement(
           Text,
           { dimColor: true },
           tab === 'market'
@@ -763,51 +780,58 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
               : 'Nothing here.',
         )
       : null,
-    h(Box, { flexGrow: 1 }),
+    createElement(Box, { flexGrow: 1 }),
     help,
   );
-  const right = h(
+  const right = createElement(
     Box,
     { flexDirection: 'column', width: rightW, height: bodyH },
-    detail ? h(Box, { flexGrow: 1, flexDirection: 'column' }, detail) : h(Box, { flexGrow: 1 }),
-    form ? h(FormView, { form, width: rightW }) : null,
+    detail ? createElement(Box, { flexGrow: 1, flexDirection: 'column' }, detail) : createElement(Box, { flexGrow: 1 }),
+    form ? createElement(FormView, { form, width: rightW }) : null,
   );
-  return h(Box, { flexDirection: 'column', width, height }, tabs, h(Box, { width, height: bodyH }, left, right));
+  return createElement(
+    Box,
+    { flexDirection: 'column', width, height },
+    tabs,
+    createElement(Box, { width, height: bodyH }, left, right),
+  );
 }
 
-function offerDetail(state: ScreenProps['state'], o: MarketOffer, width: number, height: number): React.ReactNode {
-  const way = state.travelTo(o.town);
+function offerDetail(state: ScreenProps['state'], offer: MarketOffer, width: number, height: number): React.ReactNode {
+  const way = state.travelTo(offer.town);
   const lines = [
-    h(
+    createElement(
       Text,
       { key: 'n', bold: true, wrap: 'truncate' },
-      `${o.direction === 'BUY' ? 'Wanted: ' : ''}${itemsLabel(state, o)}`,
+      `${offer.direction === 'BUY' ? 'Wanted: ' : ''}${itemsLabel(state, offer)}`,
     ),
-    h(
+    createElement(
       Text,
       { key: 'p', wrap: 'truncate' },
-      `Bid ${o.bid !== null ? money(o.bid) : '—'} · ${o.direction === 'BUY' ? 'Instant' : 'Buy now'} ${o.buyNow !== null ? money(o.buyNow) : '—'}${o.count > 1 && o.buyNow !== null ? ` (${money(Math.floor(o.buyNow / o.count))} each)` : ''}`,
+      `Bid ${offer.bid !== null ? money(offer.bid) : '—'} · ${offer.direction === 'BUY' ? 'Instant' : 'Buy now'} ${offer.buyNow !== null ? money(offer.buyNow) : '—'}${offer.count > 1 && offer.buyNow !== null ? ` (${money(Math.floor(offer.buyNow / offer.count))} each)` : ''}`,
     ),
-    h(
+    createElement(
       Text,
       { key: 's', dimColor: true, wrap: 'truncate' },
-      `${o.direction === 'BUY' ? 'Buyer' : 'Seller'} ${o.seller}${o.bidder ? ` · best bid ${o.bidder}` : ''}${o.highestBidder ? ' (you)' : ''}`,
+      `${offer.direction === 'BUY' ? 'Buyer' : 'Seller'} ${offer.seller}${offer.bidder ? ` · best bid ${offer.bidder}` : ''}${offer.highestBidder ? ' (you)' : ''}`,
     ),
-    o.direction === 'BUY'
-      ? h(
+    offer.direction === 'BUY'
+      ? createElement(
           Text,
           { key: 'h', dimColor: true, wrap: 'truncate' },
-          `You have ${state.inventory.count(o.itemId)} in your bag`,
+          `You have ${state.inventory.count(offer.itemId)} in your bag`,
         )
       : null,
-    o.description ? h(Text, { key: 'd', dimColor: true, wrap: 'truncate' }, `“${o.description}”`) : null,
-    h(
+    offer.description
+      ? createElement(Text, { key: 'd', dimColor: true, wrap: 'truncate' }, `“${offer.description}”`)
+      : null,
+    createElement(
       Text,
       { key: 't', dimColor: true, wrap: 'truncate' },
-      `${o.finished ? 'Ended' : `Ends in ${endsIn(o.endsIn)}`} · at ${o.town.name} (${formatDuration(way)} away)`,
+      `${offer.finished ? 'Ended' : `Ends in ${coarseDuration(offer.endsIn)}`} · at ${offer.town.name} (${formatDuration(way)} away)`,
     ),
   ];
-  return h(
+  return createElement(
     Box,
     {
       flexDirection: 'column',

@@ -244,8 +244,9 @@ const monthlyRevenue = calculateRevenue(orders, month);
 ```
 
 Keystrokes are free. Confusion is expensive. Accepted exceptions are universal idioms with tiny scope, such as
-`i` in a three-line loop, `x`/`y` for coordinates, `id`, `url`, `html`. Even then, ask whether `index` or `row`
-would read better.
+`id`, `url`, `html`. In this repo there are no single-letter variables or parameters at all, not even `i` in a
+three-line loop or `x`/`y` for coordinates: write `index`, `entry`, `option`, `xCoord`, `yCoord`. Even then, ask
+whether a more specific name would read better.
 
 ### Name by role, not by type
 

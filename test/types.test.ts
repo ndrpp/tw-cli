@@ -9,8 +9,8 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 function tsFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true, recursive: true })
-    .filter((e) => e.isFile() && /\.tsx?$/.test(e.name))
-    .map((e) => join(e.parentPath, e.name));
+    .filter((entry) => entry.isFile() && /\.tsx?$/.test(entry.name))
+    .map((entry) => join(entry.parentPath, entry.name));
 }
 
 /** Lines with `any` written as a type (annotations, casts, type arguments); not the word in comments or strings. */
@@ -26,9 +26,11 @@ function anyLines(name: string, text: string): number[] {
 }
 
 test('no `any` outside the tests (use unknown and narrow, see src/util/json.ts)', () => {
-  const files = ['src', 'scripts', 'tools'].flatMap((d) => tsFiles(join(ROOT, d)));
+  const files = ['src', 'scripts', 'tools'].flatMap((date) => tsFiles(join(ROOT, date)));
   assert.ok(files.length > 50, 'found the sources');
-  const found = files.flatMap((f) => anyLines(f, readFileSync(f, 'utf8')).map((l) => `${relative(ROOT, f)}:${l}`));
+  const found = files.flatMap((textValue) =>
+    anyLines(textValue, readFileSync(textValue, 'utf8')).map((value) => `${relative(ROOT, textValue)}:${value}`),
+  );
   assert.deepEqual(found, []);
 });
 

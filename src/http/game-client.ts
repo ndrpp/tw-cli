@@ -17,6 +17,7 @@ export class SessionInvalidError extends Error {}
 export class FatalServerError extends Error {}
 
 export const HTML_ACCEPT = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+export const isRedirect = (status: number): boolean => status >= 300 && status < 400;
 const JSON_ACCEPT = 'application/json, text/javascript, */*; q=0.01';
 
 /** Shared request helper: identity headers, cookie jar in/out, throttled, no auto-redirects. */
@@ -101,7 +102,7 @@ export class GameClient {
       },
       this.policy,
     );
-    if (res.status >= 300 && res.status < 400) {
+    if (isRedirect(res.status)) {
       await res.body?.cancel().catch(() => {});
       throw new SessionInvalidError(`redirected to ${res.headers.get('location') ?? '?'}`);
     }
@@ -123,20 +124,20 @@ export class GameClient {
     return obj(await this.requestRaw(url, data));
   }
 
-  remoteCall(window: string, action: string, data: Record<string, FormValue> = {}) {
+  remoteCall(window: string, action: string, data: Record<string, FormValue> = {}): Promise<JsonObject> {
     return this.request(this.buildUrl({ window, action }), data);
   }
 
-  remoteCallRaw(window: string, action: string, data: Record<string, FormValue> = {}) {
+  remoteCallRaw(window: string, action: string, data: Record<string, FormValue> = {}): Promise<unknown> {
     return this.requestRaw(this.buildUrl({ window, action }), data);
   }
 
   /** Ajax.get: game.php?window=<w>&ajax=<a> (no h). */
-  get(window: string, ajax: string, data: Record<string, FormValue> = {}) {
+  get(window: string, ajax: string, data: Record<string, FormValue> = {}): Promise<JsonObject> {
     return this.request(this.buildUrl({ window, ajax }), data);
   }
 
-  remoteCallMode(window: string, mode: string, data: Record<string, FormValue> = {}) {
+  remoteCallMode(window: string, mode: string, data: Record<string, FormValue> = {}): Promise<JsonObject> {
     return this.request(this.buildUrl({ window, mode }), data);
   }
 }
