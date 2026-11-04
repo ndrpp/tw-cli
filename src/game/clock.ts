@@ -24,13 +24,19 @@ export class ServerClock {
 
   async sync(client: GameClient): Promise<void> {
     const start = Date.now();
-    const res = await send(client.jar, client.identity, `${client.worldUrl}/ntp.php`, {
-      method: 'POST',
-      body: '',
-      ajax: true,
-      referer: `${client.worldUrl}/game.php`,
-      origin: client.worldUrl,
-    }, client.policy);
+    const res = await send(
+      client.jar,
+      client.identity,
+      `${client.worldUrl}/ntp.php`,
+      {
+        method: 'POST',
+        body: '',
+        ajax: true,
+        referer: `${client.worldUrl}/game.php`,
+        origin: client.worldUrl,
+      },
+      client.policy,
+    );
     const serverMs = Number((await res.text()).trim());
     if (!Number.isFinite(serverMs)) return;
     const rtt = Date.now() - start;

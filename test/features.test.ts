@@ -1,13 +1,14 @@
 // Inventory, skills, quests, hotel, live updates (chat long-poll) and their TUI screens.
 // Fixtures: bag_init / items / open_quests are trimmed from the downloaded game.php, items_en_DK.json and
 // the captured quest log reply (game-c450166a72a56.php); other replies follow the client JS.
-import { afterEach, beforeEach, test } from 'node:test';
+
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { PassThrough } from 'node:stream';
+import { afterEach, beforeEach, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 const home = mkdtempSync(join(tmpdir(), 'twcli-feat-'));
 process.env.TW_CLI_HOME = home;
@@ -29,7 +30,17 @@ const { ChatPoller, encodeChatRequest, makeClientId } = await import('../src/rea
 const { App } = await import('../src/tui/app.ts');
 
 const WORLD = 'https://en32.the-west.net';
-const FAST = { concurrency: 1, minIntervalMs: 0, jitterMs: 0, maxRetries: 0, baseBackoffMs: 0, maxBackoffMs: 0, breakerThreshold: 100, breakerCooldownMs: 0, timeoutMs: 5_000 };
+const FAST = {
+  concurrency: 1,
+  minIntervalMs: 0,
+  jitterMs: 0,
+  maxRetries: 0,
+  baseBackoffMs: 0,
+  maxBackoffMs: 0,
+  breakerThreshold: 100,
+  breakerCooldownMs: 0,
+  timeoutMs: 5_000,
+};
 /** Captured server JSON (fixtures are loosely shaped, so tests read them as any). */
 const json = (name: string): any => JSON.parse(readFileSync(`${FIX}${name}.json`, 'utf8'));
 const BAG = json('bag_init.sample');
@@ -39,7 +50,28 @@ const QUESTS = json('open_quests.sample');
 const SKILL_DATA = {
   attributes: { strength: 4, flexibility: 0, dexterity: 0, charisma: 26 },
   attributeBonus: { strength: 14, flexibility: 14, dexterity: 12, charisma: 14 },
-  skills: { build: 5, punch: 5, tough: 5, endurance: 4, health: 7, ride: 1, reflex: 0, dodge: 0, hide: 0, swim: 0, aim: 1, shot: 0, pitfall: 0, finger_dexterity: 0, repair: 1, leadership: 27, tactic: 26, trade: 111, animal: 27, appearance: 27 },
+  skills: {
+    build: 5,
+    punch: 5,
+    tough: 5,
+    endurance: 4,
+    health: 7,
+    ride: 1,
+    reflex: 0,
+    dodge: 0,
+    hide: 0,
+    swim: 0,
+    aim: 1,
+    shot: 0,
+    pitfall: 0,
+    finger_dexterity: 0,
+    repair: 1,
+    leadership: 27,
+    tactic: 26,
+    trade: 111,
+    animal: 27,
+    appearance: 27,
+  },
   skillBonus: { build: 43, trade: 115 },
   freeAttribute: 1,
   freeSkill: 3,
@@ -50,18 +82,44 @@ function bootstrap(): any {
   return {
     h: 'abc123',
     player: { h: 'abc123' },
-    game: { sincepoch: now, travelSpeed: 1, currentWorldName: 'Quebec', jobs: [], itemsFile: 'cache/items_en_DK.json?42' },
+    game: {
+      sincepoch: now,
+      travelSpeed: 1,
+      currentWorldName: 'Quebec',
+      jobs: [],
+      itemsFile: 'cache/items_en_DK.json?42',
+    },
     character: {
-      playerId: 42, name: 'shallax', level: 30, charClass: { type: 'adventurer' }, experience: 1000, cash: 50, deposit: 10, nuggets: 0,
-      pos: { x: 100, y: 100 }, town: { id: 1421, coords: { x: 200, y: 200 } }, charSpeed: 1, maxEnergy: 100, energy: 40, health: 300,
-      healthRegenFactor: 0, energyRegenFactor: 0, taskQueue: [], taskLimit: { normal: 4, premium: 9 }, skillData: SKILL_DATA, lpPerPoint: 10,
+      playerId: 42,
+      name: 'shallax',
+      level: 30,
+      charClass: { type: 'adventurer' },
+      experience: 1000,
+      cash: 50,
+      deposit: 10,
+      nuggets: 0,
+      pos: { x: 100, y: 100 },
+      town: { id: 1421, coords: { x: 200, y: 200 } },
+      charSpeed: 1,
+      maxEnergy: 100,
+      energy: 40,
+      health: 300,
+      healthRegenFactor: 0,
+      energyRegenFactor: 0,
+      taskQueue: [],
+      taskLimit: { normal: 4, premium: 9 },
+      skillData: SKILL_DATA,
+      lpPerPoint: 10,
     },
     premium: null,
     bag: BAG,
   };
 }
 
-interface Call { url: string; body: string }
+interface Call {
+  url: string;
+  body: string;
+}
 let calls: Call[];
 let realFetch: typeof fetch;
 let routes: Record<string, (body: string) => unknown>;
@@ -77,13 +135,19 @@ function fakeServer() {
       const r = route(body);
       return r instanceof Response ? r : Response.json(r);
     }
-    return new Response('unexpected ' + url, { status: 404 });
+    return new Response(`unexpected ${url}`, { status: 404 });
   }) as typeof fetch;
 }
 
 function makeState() {
   const b = bootstrap();
-  const client = new GameClient({ worldUrl: WORLD, h: b.h, jar: new CookieJar(), identity: { userAgent: 'UA', acceptLanguage: 'en' }, policy: FAST });
+  const client = new GameClient({
+    worldUrl: WORLD,
+    h: b.h,
+    jar: new CookieJar(),
+    identity: { userAgent: 'UA', acceptLanguage: 'en' },
+    policy: FAST,
+  });
   return new GameState({ client, bootstrap: b }, async () => ({ client, bootstrap: b }));
 }
 
@@ -107,7 +171,9 @@ test('items: base id / upgrade level, names and bonus text', () => {
 });
 
 test('item stats: computed like the web popup (upgrade level, per-level rounding, sets)', async () => {
-  const { itemStats, calculateItemLevelBonus, upgradedSpeed, speedPercent, mergedStages, setBonusLines } = await import('../src/game/itemstats.ts');
+  const { itemStats, calculateItemLevelBonus, upgradedSpeed, speedPercent, mergedStages, setBonusLines } = await import(
+    '../src/game/itemstats.ts'
+  );
   const c = ItemCatalog.fromRaw(ITEMS);
   // ItemManager.calculateItemLevelBonus: ≥1 → round(max(1, v·lvl/10)); <1 → round(max(1, v·1000·lvl))/10000
   assert.equal(calculateItemLevelBonus(1, 22), 2);
@@ -119,7 +185,10 @@ test('item stats: computed like the web popup (upgrade level, per-level rounding
   const knife = itemStats(c.get(16000)!, 16001, { charLevel: 30 });
   assert.deepEqual(knife.damage, { min: 24, max: 37 });
   assert.equal(knife.lines[0]!.text, '24-37 Damage');
-  assert.ok(knife.lines.some((l) => l.text === '+ 7 Appearance'), JSON.stringify(knife.lines));
+  assert.ok(
+    knife.lines.some((l) => l.text === '+ 7 Appearance'),
+    JSON.stringify(knife.lines),
+  );
   assert.equal(knife.totals.appearance, 7);
   // Without a character: per-level description as the game writes it
   const plain = itemStats(c.get(16000)!, 16000);
@@ -138,10 +207,26 @@ test('item stats: computed like the web popup (upgrade level, per-level rounding
   assert.ok(s1 < bat.speed!, 'upgrade makes the horse faster');
   assert.ok(itemStats(bat, 54994001, { charLevel: 50 }).lines.some((l) => l.text === `Speed: +${speedPercent(s1)}%`));
   // Set stages merge per bonus and stop at the worn count
-  const set = { key: 's', name: 'S', items: [1, 2, 3], bonus: {
-    2: [{ type: 'attribute', name: 'strength', value: 1 }, { type: 'job', job: 'all', value: 10 }],
-    3: [{ type: 'attribute', name: 'strength', value: 2 }, { type: 'character', key: 'level', roundingMethod: 'ceil', bonus: { type: 'skill', name: 'build', value: 0.25 } }],
-  } };
+  const set = {
+    key: 's',
+    name: 'S',
+    items: [1, 2, 3],
+    bonus: {
+      2: [
+        { type: 'attribute', name: 'strength', value: 1 },
+        { type: 'job', job: 'all', value: 10 },
+      ],
+      3: [
+        { type: 'attribute', name: 'strength', value: 2 },
+        {
+          type: 'character',
+          key: 'level',
+          roundingMethod: 'ceil',
+          bonus: { type: 'skill', name: 'build', value: 0.25 },
+        },
+      ],
+    },
+  };
   assert.equal(mergedStages(set, 1).length, 0);
   assert.deepEqual(setBonusLines(set, 2, { charLevel: 10 }), ['+ 1 Strength', '+ 10 labor points']);
   assert.deepEqual(setBonusLines(set, 3, { charLevel: 10 }), ['+ 3 Strength', '+ 3 Construction', '+ 10 labor points']);
@@ -151,23 +236,76 @@ test('quest route: needs from requirements, greedy plan per energy, unmet reason
   const { questNeeds, planRoute } = await import('../src/game/route.ts');
   const req = (o: any) => ({ solved: false, info: '', ...o });
   const quests: any[] = [
-    { id: 1, title: 'A', soloTitle: 'A', requirements: [req({ itemId: 700000, count: 5, info: 'Ham 0/5' }), req({ jobId: 92, count: 4, info: 'Mucking out the stables (0/4)' })] },
-    { id: 2, title: 'B', soloTitle: 'B', requirements: [req({ itemId: 700000, count: 2 }), req({ itemId: 999000, count: 1 }), req({ jobId: 36, count: 3600, info: 'Trading (30 minutes)' })] },
+    {
+      id: 1,
+      title: 'A',
+      soloTitle: 'A',
+      requirements: [
+        req({ itemId: 700000, count: 5, info: 'Ham 0/5' }),
+        req({ jobId: 92, count: 4, info: 'Mucking out the stables (0/4)' }),
+      ],
+    },
+    {
+      id: 2,
+      title: 'B',
+      soloTitle: 'B',
+      requirements: [
+        req({ itemId: 700000, count: 2 }),
+        req({ itemId: 999000, count: 1 }),
+        req({ jobId: 36, count: 3600, info: 'Trading (30 minutes)' }),
+      ],
+    },
   ];
-  const needs = questNeeds(quests, (id) => (id === 700000 ? 1 : 0), (id) => `item${id}`, (id) => `job${id}`);
+  const needs = questNeeds(
+    quests,
+    (id) => (id === 700000 ? 1 : 0),
+    (id) => `item${id}`,
+    (id) => `job${id}`,
+  );
   const by = Object.fromEntries(needs.map((n) => [n.key, n]));
   assert.equal(by['item:700']?.amount, 6, '5 + 2 needed, 1 in the bag');
   assert.deepEqual([by['job:92:runs']?.amount, by['job:36:seconds']?.amount], [4, 1800]);
   const job = (id: number, groupid: number, items: Record<string, number>, ok = true): any => ({
-    id, groupid, name: `job${id}`, jobPoints: ok ? 10 : 0, workPoints: 1, laborPoints: ok ? 9 : -1, durations: {},
+    id,
+    groupid,
+    name: `job${id}`,
+    jobPoints: ok ? 10 : 0,
+    workPoints: 1,
+    laborPoints: ok ? 9 : -1,
+    durations: {},
     values: {
-      short: { duration: 15, energy: 1, money: 1, experience: 1, luck: 0, items: Object.entries(items).map(([i, p]) => ({ itemId: +i, expected: p * 0.02, percent: p * 2 })) },
-      long: { duration: 3600, energy: 12, money: 100, experience: 50, luck: 0, items: Object.entries(items).map(([i, p]) => ({ itemId: +i, expected: p * 1.5, percent: p * 150 })) },
+      short: {
+        duration: 15,
+        energy: 1,
+        money: 1,
+        experience: 1,
+        luck: 0,
+        items: Object.entries(items).map(([i, p]) => ({ itemId: +i, expected: p * 0.02, percent: p * 2 })),
+      },
+      long: {
+        duration: 3600,
+        energy: 12,
+        money: 100,
+        experience: 50,
+        luck: 0,
+        items: Object.entries(items).map(([i, p]) => ({ itemId: +i, expected: p * 1.5, percent: p * 150 })),
+      },
     },
   });
   const jobs = [job(10, 1, { 700000: 1 }), job(92, 2, {}), job(36, 3, {}, false), job(11, 4, { 999000: 1 }, false)];
-  const locs: Record<number, any[]> = { 1: [{ x: 10, y: 0 }], 2: [{ x: 20, y: 0 }], 3: [{ x: 5, y: 0 }], 4: [{ x: 1, y: 1 }] };
-  const plan = planRoute({ needs, jobs, locations: (g) => locs[g], from: { x: 0, y: 0 }, wayTime: (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) });
+  const locs: Record<number, any[]> = {
+    1: [{ x: 10, y: 0 }],
+    2: [{ x: 20, y: 0 }],
+    3: [{ x: 5, y: 0 }],
+    4: [{ x: 1, y: 1 }],
+  };
+  const plan = planRoute({
+    needs,
+    jobs,
+    locations: (g) => locs[g],
+    from: { x: 0, y: 0 },
+    wayTime: (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y),
+  });
   const ham = plan.stops.find((s) => s.job.id === 10)!;
   assert.equal(ham.duration, 'long', 'per energy, 1 h runs drop far more per point');
   assert.equal(ham.runs, 4, '6 ham at ~1.5 per run');
@@ -183,14 +321,27 @@ test('quest route: needs from requirements, greedy plan per energy, unmet reason
 test('inventory: Bag.init, worn slots, and Bag.handleChanges semantics (new totals, 0 removes)', () => {
   const c = ItemCatalog.fromRaw(ITEMS);
   const inv = Inventory.fromInit(BAG);
-  assert.ok([...inv.wear.keys()].every((k) => k.startsWith('#')), 'slots unknown before items load');
+  assert.ok(
+    [...inv.wear.keys()].every((k) => k.startsWith('#')),
+    'slots unknown before items load',
+  );
   inv.retype(c);
   assert.equal(inv.wear.get('animal'), 54994000);
   assert.equal(inv.wear.get('left_arm'), 110001);
   const knife = BAG.bag.right_arm[0];
   assert.equal(inv.count(knife.item_id), 1);
-  assert.equal(inv.lastInvId, Math.max(...Object.values<any>(BAG.bag).flat().map((i: any) => i.inv_id)));
-  inv.applyChanges([{ item_id: knife.item_id, count: 0, inv_id: 1, type: 'right_arm' }, { item_id: 700000, count: 5, inv_id: 99999999, type: 'yield' }]);
+  assert.equal(
+    inv.lastInvId,
+    Math.max(
+      ...Object.values<any>(BAG.bag)
+        .flat()
+        .map((i: any) => i.inv_id),
+    ),
+  );
+  inv.applyChanges([
+    { item_id: knife.item_id, count: 0, inv_id: 1, type: 'right_arm' },
+    { item_id: 700000, count: 5, inv_id: 99999999, type: 'yield' },
+  ]);
   assert.equal(inv.count(knife.item_id), 0);
   assert.equal(inv.count(700000), 5);
   assert.equal(inv.lastInvId, 99999999);
@@ -213,7 +364,12 @@ test('skills: planning respects free points; attribute points raise their skills
   assert.equal(plannedDelta(plan, 'trade'), 0);
   const p = savePayload(plan);
   assert.equal(p.modifier, 'add');
-  assert.deepEqual(JSON.parse(p.data), { attribute_modifications: { strength: 1 }, skill_modifications: { build: 3 }, attribute_points_used: 1, skill_points_used: 3 });
+  assert.deepEqual(JSON.parse(p.data), {
+    attribute_modifications: { strength: 1 },
+    skill_modifications: { build: 3 },
+    attribute_points_used: 1,
+    skill_points_used: 3,
+  });
   assert.ok(adjustPlan(plan, s, 'build', -1));
   assert.equal(plan.skills.build, 2);
 });
@@ -223,12 +379,20 @@ test('quests: captured quest log parses (requirements, rewards, HTML stripped)',
   const mike = qs.find((q: any) => q.id === 280)!;
   assert.equal(mike.finishable, true);
   assert.equal(mike.accepted, true);
-  assert.deepEqual(mike.requirements, [{ solved: true, info: 'Trading (30 minutes)', kind: 'job', jobId: 36, count: 3600 }]);
+  assert.deepEqual(mike.requirements, [
+    { solved: true, info: 'Trading (30 minutes)', kind: 'job', jobId: 36, count: 3600 },
+  ]);
   const kinds = qs.flatMap((q: any) => q.requirements.map((r: any) => r.kind));
-  assert.ok(kinds.includes('wear') && kinds.includes('item') && kinds.includes('bought'), 'wear / item / bought told apart');
+  assert.ok(
+    kinds.includes('wear') && kinds.includes('item') && kinds.includes('bought'),
+    'wear / item / bought told apart',
+  );
   const bought = qs.flatMap((q: any) => q.requirements).find((r: any) => r.kind === 'bought');
   assert.equal(bought.buy, 'White horse');
-  assert.deepEqual(mike.rewards.map((r: any) => r.text), ['125 Experience points', '50 Dollars']);
+  assert.deepEqual(
+    mike.rewards.map((r: any) => r.text),
+    ['125 Experience points', '50 Dollars'],
+  );
   const horse = qs.find((q: any) => q.id === 3063)!;
   assert.equal(horse.requirements.filter((r: any) => !r.solved).length, 3);
   assert.ok(horse.rewards.some((r: any) => r.item === 722000 && r.text === '#722000'));
@@ -239,19 +403,32 @@ test('quests: captured quest log parses (requirements, rewards, HTML stripped)',
   assert.equal(plainText('Cempas&uacute;chil &amp; co'), 'Cempasúchil & co');
   assert.equal(horse.soloTitle, 'Times of trial');
   const chains = groupByChain(qs);
-  assert.deepEqual(chains.map((c) => [c.title, c.quests.length, c.finishable]), [['Angel of love', 1, 1], ['Repeatable quests', 1, 0], ['The Headless Horseman', 1, 0]]);
+  assert.deepEqual(
+    chains.map((c) => [c.title, c.quests.length, c.finishable]),
+    [
+      ['Angel of love', 1, 1],
+      ['Repeatable quests', 1, 0],
+      ['The Headless Horseman', 1, 0],
+    ],
+  );
 });
 
 test('hotel: rooms sorted, default room like HotelWindow', () => {
   const h = parseHotel(1421, {
-    hotel_level: 2, town_name: 'Slobozia', own_hotel: true, waytime: '0:00',
+    hotel_level: 2,
+    town_name: 'Slobozia',
+    own_hotel: true,
+    waytime: '0:00',
     rooms: {
       bedroom: { name: 'Bedroom', level: 2, available: true, free: false, costs: 5, energy: 40, health: 30 },
       cubby: { name: 'Cubby', level: 1, available: true, free: true, costs: 0, energy: 20, health: 15 },
       hotel_room: { name: 'Hotel room', level: 3, available: false, free: false, costs: 10, energy: 60, health: 50 },
     },
   });
-  assert.deepEqual(h.rooms.map((r) => r.key), ['cubby', 'bedroom', 'hotel_room']);
+  assert.deepEqual(
+    h.rooms.map((r) => r.key),
+    ['cubby', 'bedroom', 'hotel_room'],
+  );
   assert.equal(defaultRoom(h)?.key, 'bedroom');
   assert.equal(defaultRoom({ ...h, own: false })?.key, 'cubby');
 });
@@ -263,17 +440,51 @@ test('chat long-poll: request format, Status/UserUpdate → character, invalid s
   routes['/gameservice/chat/'] = (body) => {
     const req: any = JSON.parse(decodeURIComponent(body));
     assert.equal(req.messageid, ++n);
-    assert.deepEqual(req.batch.map((b: any) => b.op), ['nop']);
+    assert.deepEqual(
+      req.batch.map((b: any) => b.op),
+      ['nop'],
+    );
     assert.equal(req.clid.length, 22);
     if (n === 1) {
-      return { timenow: Date.now(), batch: [{ id: 'Status', t: 1, payload: { sessionHash: 'x', clients: [], rooms: [], self: { id: 'client_42', westid: 42, x: 100, y: 100, level: 30, experience: 1000, money: 50 } } }] };
+      return {
+        timenow: Date.now(),
+        batch: [
+          {
+            id: 'Status',
+            t: 1,
+            payload: {
+              sessionHash: 'x',
+              clients: [],
+              rooms: [],
+              self: { id: 'client_42', westid: 42, x: 100, y: 100, level: 30, experience: 1000, money: 50 },
+            },
+          },
+        ],
+      };
     }
     if (n === 2) {
-      return { timenow: Date.now(), batch: [
-        { id: 'UserUpdate', t: 3, payload: { id: 'client_42', x: 555, y: 666, level: 31, experience: 1500, money: 80, deposit: 10, energy: 30, health: 280 } },
-        { id: 'UserUpdate', t: 2, payload: { id: 'client_7', x: 1, y: 1, money: 1 } },
-        { id: 'ReportChanged', t: 4, payload: {} },
-      ] };
+      return {
+        timenow: Date.now(),
+        batch: [
+          {
+            id: 'UserUpdate',
+            t: 3,
+            payload: {
+              id: 'client_42',
+              x: 555,
+              y: 666,
+              level: 31,
+              experience: 1500,
+              money: 80,
+              deposit: 10,
+              energy: 30,
+              health: 280,
+            },
+          },
+          { id: 'UserUpdate', t: 2, payload: { id: 'client_7', x: 1, y: 1, money: 1 } },
+          { id: 'ReportChanged', t: 4, payload: {} },
+        ],
+      };
     }
     return { error: 'invalid sid' };
   };
@@ -295,7 +506,10 @@ test('chat long-poll: request format, Status/UserUpdate → character, invalid s
   const call = calls.find((c) => c.url === `${WORLD}/gameservice/chat/`)!;
   assert.match(call.body, /^%7B%22messageid%22%3A1/);
   assert.equal(encodeChatRequest({ a: 'x\ny' }), encodeURIComponent('{"a":"x\\ny"}'));
-  assert.match(makeClientId(1793696400339, () => 0.5), /^[a-z0-9]{18}0339$/);
+  assert.match(
+    makeClientId(1793696400339, () => 0.5),
+    /^[a-z0-9]{18}0339$/,
+  );
 });
 
 test('chat lane: a pending long-poll does not block game requests', async () => {
@@ -321,32 +535,101 @@ test('chat lane: a pending long-poll does not block game requests', async () => 
 test('state: wear/unwear, skills save, quest accept/finish, sleep send the client requests', async () => {
   fakeServer();
   const state = makeState();
-  routes['/game.php?window=skill&mode=overview'] = () => ({ attributes: SKILL_DATA.attributes, skills: SKILL_DATA.skills, attributeBonuspoints: {}, skillBonuspoints: {}, open_attrPoints: 1, open_skillPoints: 3 });
+  routes['/game.php?window=skill&mode=overview'] = () => ({
+    attributes: SKILL_DATA.attributes,
+    skills: SKILL_DATA.skills,
+    attributeBonuspoints: {},
+    skillBonuspoints: {},
+    open_attrPoints: 1,
+    open_skillPoints: 3,
+  });
   routes['/game.php?window=work&mode=index'] = () => ({ jobs: {} });
   routes['/game.php?window=map&ajax=get_minimap'] = () => ({ towns: {}, job_groups: {} });
-  routes['/game.php?window=inventory&action=carry'] = () => ({ changes: [{ item_id: 16000, count: 0, inv_id: 1592886, type: 'right_arm' }, { item_id: 54997000, count: 1, inv_id: 99999999, type: 'right_arm' }], speed: 0.8, wearSets: {}, bonus: { allBonuspoints: {} } });
-  routes['/game.php?window=inventory&action=uncarry'] = () => ({ changes: [{ item_id: 54994000, count: 1, inv_id: 99999998, type: 'animal' }], wearSets: {}, bonus: { allBonuspoints: {} } });
-  routes['/game.php?window=inventory&mode=show_equip'] = () => ({ data: [{
-    equip_manager_id: 1334, name: 'xp', head: 54988000, body: 54990000, foot: 54993000, right_arm: 54997000,
-    animal: 54994000, neck: 54989000, yield: null, pants: 54981000, belt: 11118000, left_arm: null,
-  }], max: 3, premium_max: 20, hasPremium: false, price: 50 });
+  routes['/game.php?window=inventory&action=carry'] = () => ({
+    changes: [
+      { item_id: 16000, count: 0, inv_id: 1592886, type: 'right_arm' },
+      { item_id: 54997000, count: 1, inv_id: 99999999, type: 'right_arm' },
+    ],
+    speed: 0.8,
+    wearSets: {},
+    bonus: { allBonuspoints: {} },
+  });
+  routes['/game.php?window=inventory&action=uncarry'] = () => ({
+    changes: [{ item_id: 54994000, count: 1, inv_id: 99999998, type: 'animal' }],
+    wearSets: {},
+    bonus: { allBonuspoints: {} },
+  });
+  routes['/game.php?window=inventory&mode=show_equip'] = () => ({
+    data: [
+      {
+        equip_manager_id: 1334,
+        name: 'xp',
+        head: 54988000,
+        body: 54990000,
+        foot: 54993000,
+        right_arm: 54997000,
+        animal: 54994000,
+        neck: 54989000,
+        yield: null,
+        pants: 54981000,
+        belt: 11118000,
+        left_arm: null,
+      },
+    ],
+    max: 3,
+    premium_max: 20,
+    hasPremium: false,
+    price: 50,
+  });
   routes['/game.php?window=inventory&action=switch_equip'] = () => ({
-    changes: [], speed: 1.1, wear: [54988000, 54990000, 54993000, 54997000, 54994000, 54989000, 54981000, 11118000],
-    setItems: [54977, 54979, 54982, 54986, 54983, 54978, 54984, 54981, 54980], bonus: { allBonuspoints: {} },
+    changes: [],
+    speed: 1.1,
+    wear: [54988000, 54990000, 54993000, 54997000, 54994000, 54989000, 54981000, 11118000],
+    setItems: [54977, 54979, 54982, 54986, 54983, 54978, 54984, 54981, 54980],
+    bonus: { allBonuspoints: {} },
   });
   routes['/game.php?window=skill&action=save_skill_changes'] = () => ({ error: false, msg: 'Skills changed.' });
   routes['/game.php?window=building_quest&mode=get_open_quests'] = () => QUESTS;
   routes['/game.php?window=quest&action=accept_quest'] = () => ({ error: false, finishable: false });
-  routes['/game.php?window=quest&action=finish_quest'] = () => ({ error: false, msg: 'Done', allRewards: [{ isItem: false, info: { text: 125, popup_text: 'Experience points' } }], eval: 'alert(1)' });
-  routes['/game.php?window=building_hotel&mode=get_data'] = () => ({ hotel_level: 1, town_name: 'Slobozia', own_hotel: true, rooms: { cubby: { name: 'Cubby', level: 1, available: true, free: true, energy: 20, health: 10 } } });
-  routes['/game.php?window=task&action=add'] = () => ({ tasks: { 0: { task: { queue_id: 9, type: 'sleep', date_start: 1, date_done: 2, data: { coords: { x: 200, y: 200 }, title: 'Slobozia' } } } } });
+  routes['/game.php?window=quest&action=finish_quest'] = () => ({
+    error: false,
+    msg: 'Done',
+    allRewards: [{ isItem: false, info: { text: 125, popup_text: 'Experience points' } }],
+    eval: 'alert(1)',
+  });
+  routes['/game.php?window=building_hotel&mode=get_data'] = () => ({
+    hotel_level: 1,
+    town_name: 'Slobozia',
+    own_hotel: true,
+    rooms: { cubby: { name: 'Cubby', level: 1, available: true, free: true, energy: 20, health: 10 } },
+  });
+  routes['/game.php?window=task&action=add'] = () => ({
+    tasks: {
+      0: {
+        task: {
+          queue_id: 9,
+          type: 'sleep',
+          date_start: 1,
+          date_done: 2,
+          data: { coords: { x: 200, y: 200 }, title: 'Slobozia' },
+        },
+      },
+    },
+  });
 
   await state.loadItems();
   assert.equal(state.inventory.wear.get('animal'), 54994000);
   await state.wear(16000);
   const carry = calls.find((c) => c.url.includes('action=carry'))!;
   assert.match(carry.url, /h=abc123/);
-  assert.equal(carry.body, `item_id=16000&last_inv_id=${Math.max(...Object.values<any>(BAG.bag).flat().map((i: any) => i.inv_id))}`);
+  assert.equal(
+    carry.body,
+    `item_id=16000&last_inv_id=${Math.max(
+      ...Object.values<any>(BAG.bag)
+        .flat()
+        .map((i: any) => i.inv_id),
+    )}`,
+  );
   assert.equal(state.inventory.wear.get('right_arm'), 16000);
   assert.equal(state.inventory.count(16000), 0);
   assert.equal(state.character.speed, 0.8);
@@ -358,7 +641,10 @@ test('state: wear/unwear, skills save, quest accept/finish, sleep send the clien
   await state.loadEquipSets();
   assert.deepEqual([state.equipSets!.sets.length, state.equipSets!.sets[0]!.name], [1, 'xp']);
   await state.switchEquipSet(1334);
-  assert.deepEqual(Object.fromEntries(new URLSearchParams(calls.find((c) => c.url.includes('action=switch_equip'))!.body)), { id: '1334', last_inv_id: '99999999' });
+  assert.deepEqual(
+    Object.fromEntries(new URLSearchParams(calls.find((c) => c.url.includes('action=switch_equip'))!.body)),
+    { id: '1334', last_inv_id: '99999999' },
+  );
   assert.equal(state.inventory.wear.get('head'), 54988000);
   assert.equal(state.inventory.wear.get('belt'), 11118000);
   assert.equal(state.character.speed, 1.1);
@@ -388,41 +674,107 @@ test('state: wear/unwear, skills save, quest accept/finish, sleep send the clien
 
   await state.walkToQuestGiver('indianvillage', "Waupee's Indian village", { x: 28002, y: 16658 });
   const walk = calls.filter((c) => c.url.includes('task&action=add')).at(-1)!;
-  assert.equal(decodeURIComponent(walk.body).replace(/\+/g, ' '), 'tasks[1][unitId]=indianvillage&tasks[1][type]=questgiver&tasks[1][x]=28002&tasks[1][y]=16658&tasks[1][taskType]=walk');
+  assert.equal(
+    decodeURIComponent(walk.body).replace(/\+/g, ' '),
+    'tasks[1][unitId]=indianvillage&tasks[1][type]=questgiver&tasks[1][x]=28002&tasks[1][y]=16658&tasks[1][taskType]=walk',
+  );
 });
 
 test('TUI: character screen (wear, plan + save skills) and quests screen (finish with confirm), hotel overlay', async () => {
   fakeServer();
   const state = makeState();
-  routes['/game.php?window=skill&mode=overview'] = () => ({ attributes: SKILL_DATA.attributes, skills: SKILL_DATA.skills, attributeBonuspoints: SKILL_DATA.attributeBonus, skillBonuspoints: SKILL_DATA.skillBonus, open_attrPoints: 1, open_skillPoints: 3 });
+  routes['/game.php?window=skill&mode=overview'] = () => ({
+    attributes: SKILL_DATA.attributes,
+    skills: SKILL_DATA.skills,
+    attributeBonuspoints: SKILL_DATA.attributeBonus,
+    skillBonuspoints: SKILL_DATA.skillBonus,
+    open_attrPoints: 1,
+    open_skillPoints: 3,
+  });
   routes['/game.php?window=work&mode=index'] = () => ({ jobs: {} });
   routes['/game.php?window=map&ajax=get_minimap'] = () => ({ towns: {}, job_groups: {} });
-  routes['/game.php?window=inventory&action=carry'] = () => ({ changes: [], wearSets: {}, bonus: { allBonuspoints: {} } });
-  routes['/game.php?window=inventory&mode=show_equip'] = () => ({ data: [{
-    equip_manager_id: 1334, name: 'xp', head: 54988000, body: 54990000, foot: 54993000, right_arm: 54997000,
-    animal: 54994000, neck: 54989000, yield: null, pants: 54981000, belt: 11118000, left_arm: null,
-  }], max: 3, premium_max: 20, hasPremium: false, price: 50 });
+  routes['/game.php?window=inventory&action=carry'] = () => ({
+    changes: [],
+    wearSets: {},
+    bonus: { allBonuspoints: {} },
+  });
+  routes['/game.php?window=inventory&mode=show_equip'] = () => ({
+    data: [
+      {
+        equip_manager_id: 1334,
+        name: 'xp',
+        head: 54988000,
+        body: 54990000,
+        foot: 54993000,
+        right_arm: 54997000,
+        animal: 54994000,
+        neck: 54989000,
+        yield: null,
+        pants: 54981000,
+        belt: 11118000,
+        left_arm: null,
+      },
+    ],
+    max: 3,
+    premium_max: 20,
+    hasPremium: false,
+    price: 50,
+  });
   routes['/game.php?window=inventory&action=switch_equip'] = () => ({
-    changes: [], speed: 1, wear: [54988000, 54990000, 54993000, 54997000, 54994000, 54989000, 54981000, 11118000], setItems: [], bonus: { allBonuspoints: {} },
+    changes: [],
+    speed: 1,
+    wear: [54988000, 54990000, 54993000, 54997000, 54994000, 54989000, 54981000, 11118000],
+    setItems: [],
+    bonus: { allBonuspoints: {} },
   });
   routes['/game.php?window=skill&action=save_skill_changes'] = () => ({ error: false, msg: 'Skills changed.' });
   routes['/game.php?window=building_quest&mode=get_open_quests'] = () => QUESTS;
-  routes['/game.php?window=building_quest&mode='] = () => ({ questEmployer: [{ key: 'barkeeper', name: 'Barkeeper' }] });
+  routes['/game.php?window=building_quest&mode='] = () => ({
+    questEmployer: [{ key: 'barkeeper', name: 'Barkeeper' }],
+  });
   routes['/game.php?window=building_quest'] = routes['/game.php?window=building_quest&mode='];
   routes['/game.php?window=quest&action=finish_quest'] = () => ({ error: false, msg: 'Done', allRewards: [] });
-  routes['/game.php?window=building_hotel&mode=get_data'] = () => ({ hotel_level: 1, town_name: 'Slobozia', own_hotel: true, rooms: { cubby: { name: 'Cubby', level: 1, available: true, free: true, energy: 20, health: 10 } } });
-  routes['/game.php?window=itemuse&action=use_item'] = () => ({ error: false, msg: { changes: [{ item_id: 2128000, count: 0, inv_id: 3000001, type: 'yield' }], effects: [{ type: 'energy', energy: 70 }] } });
+  routes['/game.php?window=building_hotel&mode=get_data'] = () => ({
+    hotel_level: 1,
+    town_name: 'Slobozia',
+    own_hotel: true,
+    rooms: { cubby: { name: 'Cubby', level: 1, available: true, free: true, energy: 20, health: 10 } },
+  });
+  routes['/game.php?window=itemuse&action=use_item'] = () => ({
+    error: false,
+    msg: {
+      changes: [{ item_id: 2128000, count: 0, inv_id: 3000001, type: 'yield' }],
+      effects: [{ type: 'energy', energy: 70 }],
+    },
+  });
   await state.loadQuests();
   // A usable, non-wearable item: Enter must offer Use, not Equip.
   state.items = ItemCatalog.fromRaw(ITEMS);
   state.inventory.retype(state.items);
-  state.items.add(slimItem({ item_id: 2128000, name: 'Coffee', type: 'yield', usetype: 'single', action: true, usebonus: ['Energy increase: 25%'], level: 0, price: 7, sell_price: 0 }));
+  state.items.add(
+    slimItem({
+      item_id: 2128000,
+      name: 'Coffee',
+      type: 'yield',
+      usetype: 'single',
+      action: true,
+      usebonus: ['Energy increase: 25%'],
+      level: 0,
+      price: 7,
+      sell_price: 0,
+    }),
+  );
   state.inventory.bag.set(2128000, { itemId: 2128000, count: 1, invId: 3000000, type: 'yield' });
   state.inventory.lastInvId = 3000000;
 
   const stdout = new PassThrough() as PassThrough & { columns: number; rows: number; isTTY: boolean };
   Object.assign(stdout, { columns: 120, rows: 36, isTTY: true });
-  const stdin = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (m: boolean) => void; ref: () => void; unref: () => void };
+  const stdin = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    setRawMode: (m: boolean) => void;
+    ref: () => void;
+    unref: () => void;
+  };
   Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
   let out = '';
   stdout.on('data', (d) => (out += d.toString()));
@@ -434,7 +786,12 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
       await settle();
     }
   };
-  const app = render(React.createElement(App, { state }), { stdout: stdout as any, stdin: stdin as any, exitOnCtrlC: false, patchConsole: false });
+  const app = render(React.createElement(App, { state }), {
+    stdout: stdout as any,
+    stdin: stdin as any,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
   try {
     await settle();
     assert.match(plain(), /1 quest\(s\) to finish/);
@@ -458,7 +815,10 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     await keys('\r');
     assert.match(plain(), /Use Coffee/);
     await keys('\r');
-    assert.equal(new URLSearchParams(calls.find((c) => c.url.includes('action=use_item'))!.body).get('item_id'), '2128000');
+    assert.equal(
+      new URLSearchParams(calls.find((c) => c.url.includes('action=use_item'))!.body).get('item_id'),
+      '2128000',
+    );
     // Sets tab: list the saved set and switch with Enter → y.
     await keys('\x1b[C');
     await settle(200);
@@ -488,7 +848,9 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     await settle(200);
     const save = calls.find((c) => c.url.includes('save_skill_changes'));
     assert.ok(save, 'skills saved');
-    assert.deepEqual((JSON.parse(new URLSearchParams(save.body).get('data')!) as any).skill_modifications, { trade: 1 });
+    assert.deepEqual((JSON.parse(new URLSearchParams(save.body).get('data')!) as any).skill_modifications, {
+      trade: 1,
+    });
 
     // Quests: finishable quest is listed first; Enter → confirm → finish_quest.
     await keys('\x1b');
@@ -522,19 +884,43 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
 test('quest item sources: jobs whose yields drop the item, nearest first; g marks them on the map', async () => {
   const state = makeState();
   const { JobCatalog } = await import('../src/game/jobs.ts');
-  state.catalog = new JobCatalog({ jobs: [
-    { id: 1, groupid: 12, name: 'Tending pigs', malus: 1, level: 4, yields: { 700000: { prop: 0.45 } }, skills: {} },
-    { id: 9, groupid: 3, name: 'Saddler', malus: 5, level: 10, yields: { 1987000: { prop: 0.12 } }, skills: {} },
-    { id: 7, groupid: 4, name: 'Leather work', malus: 5, level: 10, yields: { 1987000: { prop: 0.3 } }, skills: {} },
-  ] });
-  state.jobs = [...state.catalog.byId.values()].map((d) => ({ ...d, jobPoints: 50, workPoints: d.malus + 1, laborPoints: 49, motivation: 1, danger: 0, luckValue: [0, 0] as [number, number], values: {} }));
-  state.world.jobGroups = new Map([[3, [{ x: 150, y: 100 }]], [4, [{ x: 5000, y: 100 }]], [12, [{ x: 120, y: 100 }]]]);
-  assert.deepEqual(state.catalog.yielding(1987000).map((y) => y.job.id), [7, 9]); // best chance first
+  state.catalog = new JobCatalog({
+    jobs: [
+      { id: 1, groupid: 12, name: 'Tending pigs', malus: 1, level: 4, yields: { 700000: { prop: 0.45 } }, skills: {} },
+      { id: 9, groupid: 3, name: 'Saddler', malus: 5, level: 10, yields: { 1987000: { prop: 0.12 } }, skills: {} },
+      { id: 7, groupid: 4, name: 'Leather work', malus: 5, level: 10, yields: { 1987000: { prop: 0.3 } }, skills: {} },
+    ],
+  });
+  state.jobs = [...state.catalog.byId.values()].map((d) => ({
+    ...d,
+    jobPoints: 50,
+    workPoints: d.malus + 1,
+    laborPoints: 49,
+    motivation: 1,
+    danger: 0,
+    luckValue: [0, 0] as [number, number],
+    values: {},
+  }));
+  state.world.jobGroups = new Map([
+    [3, [{ x: 150, y: 100 }]],
+    [4, [{ x: 5000, y: 100 }]],
+    [12, [{ x: 120, y: 100 }]],
+  ]);
+  assert.deepEqual(
+    state.catalog.yielding(1987000).map((y) => y.job.id),
+    [7, 9],
+  ); // best chance first
   const horse = parseQuest(QUESTS.quests.find((q: any) => q.id === 3063));
   const reins = horse.requirements.find((r) => r.itemId === 1987000)!;
   assert.equal(reins.count, 2);
   const src = state.requirementSources(reins);
-  assert.deepEqual(src.map((s) => [s.job.name, s.chance]), [['Leather work', 0.3], ['Saddler', 0.12]]);
+  assert.deepEqual(
+    src.map((s) => [s.job.name, s.chance]),
+    [
+      ['Leather work', 0.3],
+      ['Saddler', 0.12],
+    ],
+  );
   const at = state.highlightQuest(horse);
   assert.deepEqual(at, { x: 150, y: 100 }); // nearest source location from the queue end (100,100)
   assert.deepEqual([...state.mapHighlight!.jobIds].sort(), [7, 9]);
@@ -551,13 +937,27 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
   routes['/game.php?window=building_quest&mode='] = () => ({ questEmployer: [] });
   routes['/game.php?window=building_quest'] = routes['/game.php?window=building_quest&mode='];
   state.items = ItemCatalog.fromRaw(ITEMS);
-  state.catalog = new JobCatalog({ jobs: [
-    { id: 1, groupid: 12, name: 'Tending pigs', malus: 1, level: 1, yields: { 700000: { prop: 45 } }, skills: {} },
-    { id: 9, groupid: 3, name: 'Saddler', malus: 500, level: 20, yields: { 1987000: { prop: 12 } }, skills: {} },
-    { id: 7, groupid: 4, name: 'Leather work', malus: 5, level: 10, yields: { 1987000: { prop: 30 } }, skills: {} },
-  ] });
-  const vals = (xp: number, money: number, luck: number, items: { itemId: number; expected: number; percent: number }[]) => ({
-    short: { duration: 15, energy: 1, money: 1, experience: 1, luck: 0, items: items.map((i) => ({ ...i, expected: i.expected / 50, percent: i.percent / 50 })) },
+  state.catalog = new JobCatalog({
+    jobs: [
+      { id: 1, groupid: 12, name: 'Tending pigs', malus: 1, level: 1, yields: { 700000: { prop: 45 } }, skills: {} },
+      { id: 9, groupid: 3, name: 'Saddler', malus: 500, level: 20, yields: { 1987000: { prop: 12 } }, skills: {} },
+      { id: 7, groupid: 4, name: 'Leather work', malus: 5, level: 10, yields: { 1987000: { prop: 30 } }, skills: {} },
+    ],
+  });
+  const vals = (
+    xp: number,
+    money: number,
+    luck: number,
+    items: { itemId: number; expected: number; percent: number }[],
+  ) => ({
+    short: {
+      duration: 15,
+      energy: 1,
+      money: 1,
+      experience: 1,
+      luck: 0,
+      items: items.map((i) => ({ ...i, expected: i.expected / 50, percent: i.percent / 50 })),
+    },
     long: { duration: 3600, energy: 12, money, experience: xp, luck, items },
   });
   const v: Record<number, any> = {
@@ -565,21 +965,62 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     9: vals(500, 900, 0.9, [{ itemId: 1987000, expected: 1, percent: 100 }]),
     7: vals(80, 300, 0.5, [{ itemId: 1987000, expected: 1.5, percent: 150 }]),
   };
-  state.jobs = [...state.catalog.byId.values()].map((d) => ({ ...d, jobPoints: d.id === 9 ? 0 : 50, workPoints: d.malus + 1, laborPoints: d.id === 9 ? -500 : 49, motivation: 1, danger: 0, luckValue: [0, { 1: 400, 9: 20, 7: 250 }[d.id]!] as [number, number], values: v[d.id] }))
+  state.jobs = [...state.catalog.byId.values()]
+    .map((d) => ({
+      ...d,
+      jobPoints: d.id === 9 ? 0 : 50,
+      workPoints: d.malus + 1,
+      laborPoints: d.id === 9 ? -500 : 49,
+      motivation: 1,
+      danger: 0,
+      luckValue: [0, { 1: 400, 9: 20, 7: 250 }[d.id]!] as [number, number],
+      values: v[d.id],
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  state.world.jobGroups = new Map([[3, [{ x: 150, y: 100 }]], [4, [{ x: 400, y: 100 }]], [12, [{ x: 120, y: 100 }]]]);
+  state.world.jobGroups = new Map([
+    [3, [{ x: 150, y: 100 }]],
+    [4, [{ x: 400, y: 100 }]],
+    [12, [{ x: 120, y: 100 }]],
+  ]);
   state.quests = QUESTS.quests.map((q: any) => parseQuest(q, (id: number) => state.itemName(id)));
   state.startup = { steps: [{ label: 'Jobs and map', status: 'running', startedAt: Date.now() }], done: false };
-  routes['/game.php?window=reports&action=get_reports'] = () => ({ count: 1, page: 1, reports: [
-    { report_id: 501, title: 'Job report: Tending pigs', hash: 'h', read: false, date_received: '10:12', popupData: 'You worked 1 hour' },
-  ] });
+  routes['/game.php?window=reports&action=get_reports'] = () => ({
+    count: 1,
+    page: 1,
+    reports: [
+      {
+        report_id: 501,
+        title: 'Job report: Tending pigs',
+        hash: 'h',
+        read: false,
+        date_received: '10:12',
+        popupData: 'You worked 1 hour',
+      },
+    ],
+  });
   // A 1 h job, a quarter done: home shows its progress and the long duration's rewards.
   const now = state.clock.now();
-  state.queue = [{ queueId: 5, type: 'job', start: now - 900, end: now + 2700, coords: { x: 120, y: 100 }, title: 'Tending pigs', jobId: 1, raw: {} }];
+  state.queue = [
+    {
+      queueId: 5,
+      type: 'job',
+      start: now - 900,
+      end: now + 2700,
+      coords: { x: 120, y: 100 },
+      title: 'Tending pigs',
+      jobId: 1,
+      raw: {},
+    },
+  ];
 
   const stdout = new PassThrough() as PassThrough & { columns: number; rows: number; isTTY: boolean };
   Object.assign(stdout, { columns: 130, rows: 40, isTTY: true });
-  const stdin = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (m: boolean) => void; ref: () => void; unref: () => void };
+  const stdin = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    setRawMode: (m: boolean) => void;
+    ref: () => void;
+    unref: () => void;
+  };
   Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
   let out = '';
   stdout.on('data', (d) => (out += d.toString()));
@@ -591,7 +1032,12 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
       await settle();
     }
   };
-  const app = render(React.createElement(App, { state }), { stdout: stdout as any, stdin: stdin as any, exitOnCtrlC: false, patchConsole: false });
+  const app = render(React.createElement(App, { state }), {
+    stdout: stdout as any,
+    stdin: stdin as any,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
   try {
     await settle();
     assert.match(plain(), /Jobs and map/);
@@ -600,8 +1046,8 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     await settle(200);
     // Starts on home; g j opens the jobs view. Jobs without enough labor points are hidden until `a`.
     assert.match(plain(), /Task queue \d+\/\d+/);
-    assert.match(plain(), / 25%  45:00 left/);
-    assert.match(plain(), /\+50 xp  \$90  luck \$0–\$400/);
+    assert.match(plain(), / 25% {2}45:00 left/);
+    assert.match(plain(), /\+50 xp {2}\$90 {2}luck \$0–\$400/);
     assert.match(plain(), /Drops: Ham 200%/);
     assert.match(plain(), /•Job report: Tending pigs/);
     assert.match(plain(), /measuring…/);
@@ -619,7 +1065,13 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     await settle(500);
     assert.match(plain(), /motiv 55%/);
     assert.match(plain(), /danger 37%/);
-    assert.equal(state.jobOptions('ham').map((o) => o.job.name).join(), 'Tending pigs');
+    assert.equal(
+      state
+        .jobOptions('ham')
+        .map((o) => o.job.name)
+        .join(),
+      'Tending pigs',
+    );
     await keys('/', '\x1b');
     await keys('a');
     assert.equal(state.jobOptions('', { showAll: true }).length, 3);
@@ -627,10 +1079,19 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     await keys('S');
     assert.match(plain(), /sort: XP \(S\)/);
     assert.match(plain(), /job +xp +\$ +LP +travel/);
-    assert.deepEqual(state.jobOptions('', { sort: 'xp', showAll: true }).map((o) => o.job.id), [9, 7, 1]);
-    assert.deepEqual(state.jobOptions('', { sort: 'money' }).map((o) => o.job.id), [7, 1]);
+    assert.deepEqual(
+      state.jobOptions('', { sort: 'xp', showAll: true }).map((o) => o.job.id),
+      [9, 7, 1],
+    );
+    assert.deepEqual(
+      state.jobOptions('', { sort: 'money' }).map((o) => o.job.id),
+      [7, 1],
+    );
     // Luck sorts by the $ value of a lucky find (maxLuck), not the duration's luck chance.
-    assert.deepEqual(state.jobOptions('', { sort: 'luck' }).map((o) => o.job.id), [1, 7]);
+    assert.deepEqual(
+      state.jobOptions('', { sort: 'luck' }).map((o) => o.job.id),
+      [1, 7],
+    );
     // Map layers.
     out = '';
     await keys('m', 'v');

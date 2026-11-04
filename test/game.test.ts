@@ -1,20 +1,20 @@
-import { afterEach, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { PassThrough } from 'node:stream';
-import React from 'react';
+import { afterEach, beforeEach, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { render } from 'ink';
-import { parseBootstrap, type Bootstrap } from '../src/auth/bootstrap.ts';
-import { CookieJar } from '../src/http/cookie-jar.ts';
-import { GameClient } from '../src/http/game-client.ts';
-import { resetThrottle, type HostPolicy } from '../src/http/throttle.ts';
-import { jqueryParam } from '../src/http/form.ts';
-import { GameState } from '../src/game/state.ts';
-import { ServerClock } from '../src/game/clock.ts';
+import React from 'react';
+import { type Bootstrap, parseBootstrap } from '../src/auth/bootstrap.ts';
 import { CharacterState, levelProgress, levelStartXp } from '../src/game/character.ts';
+import { ServerClock } from '../src/game/clock.ts';
 import { nearestLocation, parseDanger, parseJobDetail, wayTime } from '../src/game/jobs.ts';
+import { GameState } from '../src/game/state.ts';
 import { jobPost, parseQueue, TaskLimitError } from '../src/game/tasks.ts';
+import { CookieJar } from '../src/http/cookie-jar.ts';
+import { jqueryParam } from '../src/http/form.ts';
+import { GameClient } from '../src/http/game-client.ts';
+import { type HostPolicy, resetThrottle } from '../src/http/throttle.ts';
 import { App } from '../src/tui/app.ts';
 import { formatDuration, scrollWindow } from '../src/tui/format.ts';
 
@@ -22,8 +22,15 @@ const GAME_PHP = fileURLToPath(new URL('../../en32.the_west.net/en32.the-west.ne
 const HAVE_GAME = existsSync(GAME_PHP);
 const WORLD = 'https://en32.the-west.net';
 const FAST: HostPolicy = {
-  concurrency: 1, minIntervalMs: 0, jitterMs: 0, maxRetries: 0, baseBackoffMs: 0, maxBackoffMs: 0,
-  breakerThreshold: 100, breakerCooldownMs: 0, timeoutMs: 5_000,
+  concurrency: 1,
+  minIntervalMs: 0,
+  jitterMs: 0,
+  maxRetries: 0,
+  baseBackoffMs: 0,
+  maxBackoffMs: 0,
+  breakerThreshold: 100,
+  breakerCooldownMs: 0,
+  timeoutMs: 5_000,
 };
 
 /** Real bootstrap from the saved page, with the clock moved so the saved queue is still running. */
@@ -38,7 +45,10 @@ function realBootstrap(): Bootstrap {
   return b;
 }
 
-interface Call { url: string; body: string }
+interface Call {
+  url: string;
+  body: string;
+}
 let calls: Call[];
 let realFetch: typeof fetch;
 let addReply: (body: URLSearchParams) => unknown;
@@ -56,17 +66,24 @@ function fakeGame() {
     if (url === `${WORLD}/game.php?window=work&mode=index`) return new Response(fixture('work_index'));
     if (url === `${WORLD}/game.php?window=map&ajax=get_minimap`) return new Response(fixture('minimap'));
     if (url === `${WORLD}/game.php?window=map&ajax=get_complete_data`) return new Response(fixture('complete_data'));
-    if (url.startsWith(`${WORLD}/game.php?window=task&action=add&h=`)) return Response.json(addReply(new URLSearchParams(body)));
+    if (url.startsWith(`${WORLD}/game.php?window=task&action=add&h=`))
+      return Response.json(addReply(new URLSearchParams(body)));
     if (url.startsWith(`${WORLD}/game.php?window=task&action=cancel&h=`)) {
       return Response.json({ tasks: { 1: { extra: { energy: 50 } } }, queue: [] });
     }
     if (url === `${WORLD}/game.php?window=task&mode=get_tasks`) return Response.json({ queue: [] });
-    return new Response('unexpected ' + url, { status: 404 });
+    return new Response(`unexpected ${url}`, { status: 404 });
   }) as typeof fetch;
 }
 
 function makeState(b: Bootstrap): GameState {
-  const client = new GameClient({ worldUrl: WORLD, h: b.h, jar: new CookieJar(), identity: { userAgent: 'UA', acceptLanguage: 'en' }, policy: FAST });
+  const client = new GameClient({
+    worldUrl: WORLD,
+    h: b.h,
+    jar: new CookieJar(),
+    identity: { userAgent: 'UA', acceptLanguage: 'en' },
+    policy: FAST,
+  });
   return new GameState({ client, bootstrap: b }, async () => ({ client, bootstrap: b }));
 }
 
@@ -90,7 +107,16 @@ test('formatting helpers', () => {
 
 test('way time and nearest location follow GameMap.calcWayTime', () => {
   assert.equal(wayTime({ x: 0, y: 0 }, { x: 300, y: 400 }, 0.9, 0.5), 225);
-  assert.deepEqual(nearestLocation([{ x: 10, y: 0 }, { x: 2, y: 2 }], { x: 0, y: 0 }), { x: 2, y: 2 });
+  assert.deepEqual(
+    nearestLocation(
+      [
+        { x: 10, y: 0 },
+        { x: 2, y: 2 },
+      ],
+      { x: 0, y: 0 },
+    ),
+    { x: 2, y: 2 },
+  );
   assert.equal(nearestLocation([], { x: 0, y: 0 }), null);
 });
 
@@ -111,7 +137,9 @@ test('task/add body matches jQuery serialisation of TaskQueue.sendAdd', () => {
   );
 });
 
-test('character from the real Character.init: max HP formula and regen', { skip: !HAVE_GAME && 'game.php missing' }, () => {
+test('character from the real Character.init: max HP formula and regen', {
+  skip: !HAVE_GAME && 'game.php missing',
+}, () => {
   const b = realBootstrap();
   const clock = new ServerClock(Number(b.game!.sincepoch));
   const c = CharacterState.fromInit(b.character!, clock);
@@ -123,9 +151,14 @@ test('character from the real Character.init: max HP formula and regen', { skip:
   assert.ok(c.energy > e0);
 });
 
-test('level progress follows Character.calcLowerExp / getExperience4Level', { skip: !HAVE_GAME && 'game.php missing' }, () => {
+test('level progress follows Character.calcLowerExp / getExperience4Level', {
+  skip: !HAVE_GAME && 'game.php missing',
+}, () => {
   // Values the browser computes: calcLowerExp(1) = 0, (2) = 42, (30) = 29232, (31) = 32145; > 120 adds 1000·(l−120)^2.9.
-  assert.deepEqual([1, 2, 30, 31].map((l) => levelStartXp(l)), [0, 42, 29232, 32145]);
+  assert.deepEqual(
+    [1, 2, 30, 31].map((l) => levelStartXp(l)),
+    [0, 42, 29232, 32145],
+  );
   assert.equal(levelStartXp(121), Math.floor(((121 * 122 * 243) / 6 + 1220 - 21) * 3 + 1000));
   const b = realBootstrap();
   assert.equal(b.game!.maxLevel, 250);
@@ -148,7 +181,9 @@ test('real task queue entries parse', { skip: !HAVE_GAME && 'game.php missing' }
   assert.deepEqual(q[0]!.coords, { x: 29888, y: 15564 });
 });
 
-test('jobs load and startJob sends task/add with the next queue position and h', { skip: !HAVE_GAME && 'game.php missing' }, async () => {
+test('jobs load and startJob sends task/add with the next queue position and h', {
+  skip: !HAVE_GAME && 'game.php missing',
+}, async () => {
   fakeGame();
   const b = realBootstrap();
   b.premium = { premiumBoni: { automation: { expiration: Math.floor(Date.now() / 1000) + 3600 } } };
@@ -168,7 +203,17 @@ test('jobs load and startJob sends task/add with the next queue position and h',
     assert.equal(form.get(`tasks[${queued}][duration]`), '600');
     assert.equal(form.get(`tasks[${queued}][taskType]`), 'job');
     return {
-      tasks: { [queued]: { task: { queue_id: 99, type: 'job', date_start: 1, date_done: 2, data: { job_id: 1, title: 'Tending pigs', coords: { x: 29900, y: 15600 } } } } },
+      tasks: {
+        [queued]: {
+          task: {
+            queue_id: 99,
+            type: 'job',
+            date_start: 1,
+            date_done: 2,
+            data: { job_id: 1, title: 'Tending pigs', coords: { x: 29900, y: 15600 } },
+          },
+        },
+      },
       energy: 42,
     };
   };
@@ -178,10 +223,15 @@ test('jobs load and startJob sends task/add with the next queue position and h',
   assert.equal(state.queue.length, queued + 1);
   assert.equal(state.queue.at(-1)!.queueId, 99);
   assert.equal(state.character.energy, 42);
-  assert.deepEqual(state.log.filter((l) => l.level === 'error'), []);
+  assert.deepEqual(
+    state.log.filter((l) => l.level === 'error'),
+    [],
+  );
 });
 
-test('queue limit without automation premium is enforced before sending', { skip: !HAVE_GAME && 'game.php missing' }, async () => {
+test('queue limit without automation premium is enforced before sending', {
+  skip: !HAVE_GAME && 'game.php missing',
+}, async () => {
   fakeGame();
   const b = realBootstrap();
   b.premium = { premiumBoni: { automation: { expiration: 0 } } };
@@ -195,7 +245,9 @@ test('queue limit without automation premium is enforced before sending', { skip
   assert.ok(TaskLimitError);
 });
 
-test('TUI renders status, jobs and queue, and keys drive actions', { skip: !HAVE_GAME && 'game.php missing' }, async () => {
+test('TUI renders status, jobs and queue, and keys drive actions', {
+  skip: !HAVE_GAME && 'game.php missing',
+}, async () => {
   fakeGame();
   const b = realBootstrap();
   b.premium = { premiumBoni: { automation: { expiration: Math.floor(Date.now() / 1000) + 3600 } } };
@@ -204,14 +256,24 @@ test('TUI renders status, jobs and queue, and keys drive actions', { skip: !HAVE
 
   const stdout = new PassThrough() as PassThrough & { columns: number; rows: number; isTTY: boolean };
   Object.assign(stdout, { columns: 120, rows: 36, isTTY: true });
-  const stdin = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (m: boolean) => void; ref: () => void; unref: () => void };
+  const stdin = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    setRawMode: (m: boolean) => void;
+    ref: () => void;
+    unref: () => void;
+  };
   Object.assign(stdin, { isTTY: true, setRawMode: () => {}, ref: () => {}, unref: () => {} });
   let out = '';
   stdout.on('data', (d) => (out += d.toString()));
   const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
   const settle = () => new Promise((r) => setTimeout(r, 120));
 
-  const app = render(React.createElement(App, { state }), { stdout: stdout as any, stdin: stdin as any, exitOnCtrlC: false, patchConsole: false });
+  const app = render(React.createElement(App, { state }), {
+    stdout: stdout as any,
+    stdin: stdin as any,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
   try {
     await settle();
     assert.match(plain(), /shallax/);
@@ -226,7 +288,19 @@ test('TUI renders status, jobs and queue, and keys drive actions', { skip: !HAVE
 
     // Filter to "pigs", then start the middle duration with "2".
     const queued = state.queue.length;
-    addReply = () => ({ tasks: { [queued]: { task: { queue_id: 7, type: 'job', date_start: 1, date_done: 2, data: { job_id: 1, title: 'Tending pigs', coords: { x: 29900, y: 15600 } } } } } });
+    addReply = () => ({
+      tasks: {
+        [queued]: {
+          task: {
+            queue_id: 7,
+            type: 'job',
+            date_start: 1,
+            date_done: 2,
+            data: { job_id: 1, title: 'Tending pigs', coords: { x: 29900, y: 15600 } },
+          },
+        },
+      },
+    });
     for (const k of ['/', 'p', 'i', 'g', '\r', '2']) {
       stdin.write(k);
       await settle();
@@ -258,12 +332,30 @@ test('loading frame: the connect step shows as running with a timer, then as don
   stdout.on('data', (d) => (out += d.toString()));
   const plain = () => out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
   const t0 = Date.now() - 3_000;
-  const app = render(React.createElement(LoadingFrame, { width: 80, height: 20, steps: [{ label: 'Connecting to The West', status: 'running', startedAt: t0 }], keys: 'q quit' }), { stdout: stdout as any, patchConsole: false });
+  const app = render(
+    React.createElement(LoadingFrame, {
+      width: 80,
+      height: 20,
+      steps: [{ label: 'Connecting to The West', status: 'running', startedAt: t0 }],
+      keys: 'q quit',
+    }),
+    { stdout: stdout as any, patchConsole: false },
+  );
   try {
     await new Promise((r) => setTimeout(r, 50));
     assert.match(plain(), /Connecting to The West\s+3 s/);
     assert.match(plain(), /q quit/);
-    app.rerender(React.createElement(LoadingFrame, { width: 80, height: 20, steps: [{ label: 'Connecting to The West', status: 'done', startedAt: t0, endedAt: t0 + 1500 }, { label: 'Server clock', status: 'running', startedAt: Date.now() }], keys: 'Esc skip · q quit' }));
+    app.rerender(
+      React.createElement(LoadingFrame, {
+        width: 80,
+        height: 20,
+        steps: [
+          { label: 'Connecting to The West', status: 'done', startedAt: t0, endedAt: t0 + 1500 },
+          { label: 'Server clock', status: 'running', startedAt: Date.now() },
+        ],
+        keys: 'Esc skip · q quit',
+      }),
+    );
     await new Promise((r) => setTimeout(r, 50));
     assert.match(plain(), /✔ Connecting to The West\s+1\.5 s/);
     assert.match(plain(), /Server clock/);

@@ -43,23 +43,23 @@ npm run tw -- web     # local page for fingerprint + login
 In the TUI, press `?` for help on any screen. Keys are vim-like: `Esc` always goes back one step, `q` quits,
 `j k` move, and every screen is `g` + a letter (the nav bar shows them while `g` is pending).
 
-| Key | |
-|---|---|
-| `g h` | home: current job, XP/h and $/h, queue, minimap, reports, chat (the start screen) |
-| `g j` | jobs & queue (`1` `2` `3` start the selected job: short / medium / long) |
-| `m` or `g m` | map |
-| `g i` | character: inventory, equipment sets, skills |
-| `g t` | town: city hall, building levels, construction |
-| `g q` | quests: log, quest givers, routes |
-| `g r` | mail: reports & telegrams |
-| `g b` | trade: bank, shops, mobile trader, market, buy orders |
-| `g d` | duels: NPCs & players |
-| `g c` | full chat with whispers (`g L` turns live updates on) |
-| `g a` | autopilot |
-| `g x` | debug log: everything the client and autopilot did, with the data |
-| `g s` · `g p` | sleep in a hotel · points of interest |
-| `u` · `g R` | refresh · reload everything |
-| `g A` | account setup |
+| Key           |                                                                                   |
+| ------------- | --------------------------------------------------------------------------------- |
+| `g h`         | home: current job, XP/h and $/h, queue, minimap, reports, chat (the start screen) |
+| `g j`         | jobs & queue (`1` `2` `3` start the selected job: short / medium / long)          |
+| `m` or `g m`  | map                                                                               |
+| `g i`         | character: inventory, equipment sets, skills                                      |
+| `g t`         | town: city hall, building levels, construction                                    |
+| `g q`         | quests: log, quest givers, routes                                                 |
+| `g r`         | mail: reports & telegrams                                                         |
+| `g b`         | trade: bank, shops, mobile trader, market, buy orders                             |
+| `g d`         | duels: NPCs & players                                                             |
+| `g c`         | full chat with whispers (`g L` turns live updates on)                             |
+| `g a`         | autopilot                                                                         |
+| `g x`         | debug log: everything the client and autopilot did, with the data                 |
+| `g s` · `g p` | sleep in a hotel · points of interest                                             |
+| `u` · `g R`   | refresh · reload everything                                                       |
+| `g A`         | account setup                                                                     |
 
 ## Autopilot
 
@@ -87,8 +87,10 @@ Not yet: "Go to …", "Resolve / Accept: …" and "Lose against …" quest steps
 ```sh
 npm test          # tests (some skip without a saved game.php)
 npm run typecheck
+npm run lint      # Biome formatter + linter
+npm run format    # apply Biome's fixes
 npm run endpoints # list game endpoints from the client bundle → docs/endpoints.json
 ```
 
-GitHub Actions runs the typecheck and tests on every push to `main` and every pull request (badge above).
+GitHub Actions runs the typecheck, lint and tests on every push to `main` and every pull request (badge above).
 Coding agents: start with [`AGENTS.md`](AGENTS.md); game behaviour is in [`docs/`](docs/).

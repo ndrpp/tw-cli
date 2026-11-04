@@ -3,11 +3,12 @@
 // R: requirement parsing · B: chooseBuys (which source) · K: BuyCatalog (what a source costs) · P: planner
 // trips · S: GameState (what a quest needs, blockers, trips) · M: quest module buying against a fake server.
 // Walking: chooseBuys tests use travel = x (1 unit = 1 s) and a walk worth $0.25 / s ($15 / min, the default).
-import { afterEach, beforeEach, test } from 'node:test';
+
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterEach, beforeEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const home = mkdtempSync(join(tmpdir(), 'twcli-questbuy-'));
@@ -35,7 +36,8 @@ test.after(() => rmSync(home, { recursive: true, force: true }));
 
 // ---- R: requirement parsing --------------------------------------------------------------------------------
 
-const req = (info: string, jsInfo: unknown = null, solved = false) => parseQuest({ id: 1, title: 'Q', requirements: [{ solved, info, jsInfo }] }).requirements[0]!;
+const req = (info: string, jsInfo: unknown = null, solved = false) =>
+  parseQuest({ id: 1, title: 'Q', requirements: [{ solved, info, jsInfo }] }).requirements[0]!;
 
 test('R1 a time window is its own kind with its hours', () => {
   const r = req("This quest is only available between 06:00 and 11:00 o'clock.");
@@ -44,7 +46,10 @@ test('R1 a time window is its own kind with its hours', () => {
 });
 
 test('R2 single-digit hours are read as written', () => {
-  assert.deepEqual(req("This quest is only available between 6:00 and 9:30 o'clock.").window, { from: '6:00', to: '9:30' });
+  assert.deepEqual(req("This quest is only available between 6:00 and 9:30 o'clock.").window, {
+    from: '6:00',
+    to: '9:30',
+  });
 });
 
 test('R3 a solved window stays a window (solved)', () => {
@@ -67,20 +72,58 @@ test('R5 have / wear requirements carry the item and count from jsInfo', () => {
 });
 
 test('R6 "Go to …", "Resolve: …" and "Lose against …" stay other (nothing to buy)', () => {
-  for (const t of ['Go to The Mexican', 'Resolve: Discipline 1 (Pinkerton Agency)', 'Lose against Billy the blind eagle']) assert.equal(req(t).kind, 'other');
+  for (const t of [
+    'Go to The Mexican',
+    'Resolve: Discipline 1 (Pinkerton Agency)',
+    'Lose against Billy the blind eagle',
+  ])
+    assert.equal(req(t).kind, 'other');
 });
 
 // ---- B: chooseBuys -----------------------------------------------------------------------------------------
 
 const L: BuyLimits = { buyLimit: 3000, marketLimit: 5000, market: true, walkValue: 0.25, maxWalk: 3600 };
-const shop = (townId: number, x: number, price: number, key = 'general'): BuySource => ({ kind: 'shop', shop: key as any, townId, townName: `T${townId}`, at: { x, y: 0 }, price });
-const mobile = (price: number, limitedCount: number | null = null): BuySource =>
-  ({ kind: 'mobile', item: { itemId: 1000, tab: 'trader', prices: [{ currency: 'dollar', amount: price, base: price }], discount: 0, limitedAt: null, limitedCount, teaser: '' }, price });
-const offer = (id: number, price: number, count = 1, x = 50): BuySource =>
-  ({ kind: 'market', offer: { id, count, itemId: 1000, buyNow: price } as any, townId: 1000 + x, townName: `M${x}`, at: { x, y: 0 }, price });
+const shop = (townId: number, x: number, price: number, key = 'general'): BuySource => ({
+  kind: 'shop',
+  shop: key as any,
+  townId,
+  townName: `T${townId}`,
+  at: { x, y: 0 },
+  price,
+});
+const mobile = (price: number, limitedCount: number | null = null): BuySource => ({
+  kind: 'mobile',
+  item: {
+    itemId: 1000,
+    tab: 'trader',
+    prices: [{ currency: 'dollar', amount: price, base: price }],
+    discount: 0,
+    limitedAt: null,
+    limitedCount,
+    teaser: '',
+  },
+  price,
+});
+const offer = (id: number, price: number, count = 1, x = 50): BuySource => ({
+  kind: 'market',
+  offer: { id, count, itemId: 1000, buyNow: price } as any,
+  townId: 1000 + x,
+  townName: `M${x}`,
+  at: { x, y: 0 },
+  price,
+});
 const need = (count = 1, itemId = 1000, name = 'Jug') => ({ itemId, name, count });
-const choose = (needs: ReturnType<typeof need>[], src: BuySource[] | Record<number, BuySource[]>, limits: Partial<BuyLimits> = {}) =>
-  chooseBuys(needs, (id) => (Array.isArray(src) ? src : src[id] ?? []), { ...L, ...limits }, (at) => at.x);
+const choose = (
+  needs: ReturnType<typeof need>[],
+  src: BuySource[] | Record<number, BuySource[]>,
+  limits: Partial<BuyLimits> = {},
+) =>
+  chooseBuys(
+    needs,
+    (id) => (Array.isArray(src) ? src : (src[id] ?? [])),
+    { ...L, ...limits },
+    (at) => at.x,
+  );
 const kinds = (r: ReturnType<typeof choose>) => r.picks.map((p) => p.source.kind);
 const town = (r: ReturnType<typeof choose>, i = 0) => (r.picks[i]!.source as { townId: number }).townId;
 
@@ -138,7 +181,10 @@ test('B10 a shop over the $3,000 quest limit: the market under $5,000 instead', 
 
 test('B11 the shop limit is per quest: the second item goes to the market', () => {
   // A: shop $2,000. B: shop $1,500 would make $3,500 > $3,000; the market's $1,600 fits its own $5,000.
-  const r = choose([need(1, 1000, 'A'), need(1, 2000, 'B')], { 1000: [shop(1, 0, 2000)], 2000: [shop(1, 0, 1500), offer(9, 1600, 1, 0)] });
+  const r = choose([need(1, 1000, 'A'), need(1, 2000, 'B')], {
+    1000: [shop(1, 0, 2000)],
+    2000: [shop(1, 0, 1500), offer(9, 1600, 1, 0)],
+  });
   assert.equal(r.problem, null);
   assert.deepEqual(kinds(r), ['shop', 'market']);
 });
@@ -146,20 +192,32 @@ test('B11 the shop limit is per quest: the second item goes to the market', () =
 test('B12 the same without a market offer: B is the problem, and the message says why', () => {
   const r = choose([need(1, 1000, 'A'), need(1, 2000, 'B')], { 1000: [shop(1, 0, 2000)], 2000: [shop(1, 0, 1500)] });
   assert.equal(r.picks.length, 1);
-  assert.equal(r.problem, 'B: $1,500 (general store in T1), over the $3,000 quest buy limit (with $2,000 for the other items)');
+  assert.equal(
+    r.problem,
+    'B: $1,500 (general store in T1), over the $3,000 quest buy limit (with $2,000 for the other items)',
+  );
 });
 
 test('B13 the market limit is per quest too', () => {
-  const r = choose([need(1, 1000, 'A'), need(1, 2000, 'B')], { 1000: [offer(8, 3000, 1, 0)], 2000: [offer(9, 2500, 1, 0)] });
+  const r = choose([need(1, 1000, 'A'), need(1, 2000, 'B')], {
+    1000: [offer(8, 3000, 1, 0)],
+    2000: [offer(9, 2500, 1, 0)],
+  });
   assert.equal(r.problem, 'B: $2,500 on the market, over the $5,000 market limit (with $3,000 for the other items)');
 });
 
 test('B14 market off: a market-only item cannot be had', () => {
-  assert.equal(choose([need()], [offer(9, 10)], { market: false }).problem, 'Jug: no job drops it, and no shop in reach or the mobile trader sells it');
+  assert.equal(
+    choose([need()], [offer(9, 10)], { market: false }).problem,
+    'Jug: no job drops it, and no shop in reach or the mobile trader sells it',
+  );
 });
 
 test('B15 nowhere at all', () => {
-  assert.equal(choose([need()], []).problem, 'Jug: no job drops it, and no shop in reach, the mobile trader or the market sells it');
+  assert.equal(
+    choose([need()], []).problem,
+    'Jug: no job drops it, and no shop in reach, the mobile trader or the market sells it',
+  );
 });
 
 test('B16 the market has too few', () => {
@@ -176,18 +234,27 @@ test('B18 the cheapest combination, not the cheapest per item first', () => {
   // Y + Z is $111. All in one town, so the walk is the same.
   const r = choose([need(2)], [offer(1, 150, 3), offer(2, 55), offer(3, 56)]);
   assert.deepEqual(r.picks.map((p) => (p.source as any).offer.id).sort(), [2, 3]);
-  assert.equal(r.picks.reduce((a, p) => a + p.cost, 0), 111);
+  assert.equal(
+    r.picks.reduce((a, p) => a + p.cost, 0),
+    111,
+  );
 });
 
 test('B19 one pickup town beats two when the second is far', () => {
   // X 3 for $150 and Y 1 for $55 at x = 50; Z 1 for $56 at x = 1000. Y + Z = 111 + (50 + 1000) × 0.25 = 373.5;
   // X alone = 150 + 12.5 = 162.5.
   const r = choose([need(2)], [offer(1, 150, 3, 50), offer(2, 55, 1, 50), offer(3, 56, 1, 1000)]);
-  assert.deepEqual(r.picks.map((p) => (p.source as any).offer.id), [1]);
+  assert.deepEqual(
+    r.picks.map((p) => (p.source as any).offer.id),
+    [1],
+  );
 });
 
 test('B20 the first item it cannot get stops the quest (no half shopping)', () => {
-  const r = choose([need(1, 1000, 'A'), need(1, 2000, 'B'), need(1, 3000, 'C')], { 1000: [shop(1, 0, 10)], 3000: [shop(1, 0, 10)] });
+  const r = choose([need(1, 1000, 'A'), need(1, 2000, 'B'), need(1, 3000, 'C')], {
+    1000: [shop(1, 0, 10)],
+    3000: [shop(1, 0, 10)],
+  });
   assert.equal(r.picks.length, 1);
   assert.match(r.problem!, /^B: no job drops it/);
 });
@@ -231,24 +298,41 @@ test('B29 a market offer beyond the furthest trip is out of reach (it has to be 
 });
 
 test('B30 shop and market allowances are separate: $2,900 + $4,900 both fit', () => {
-  const r = choose([need(1, 1000, 'A'), need(1, 2000, 'B')], { 1000: [shop(1, 0, 2900)], 2000: [offer(9, 4900, 1, 0)] });
+  const r = choose([need(1, 1000, 'A'), need(1, 2000, 'B')], {
+    1000: [shop(1, 0, 2900)],
+    2000: [offer(9, 4900, 1, 0)],
+  });
   assert.equal(r.problem, null);
   assert.deepEqual(kinds(r), ['shop', 'market']);
 });
 
 // ---- K: BuyCatalog -----------------------------------------------------------------------------------------
 
-const towns = (id: number) => ({ 3: { name: 'Slobozia', at: { x: 1, y: 1 } } } as Record<number, { name: string; at: { x: number; y: number } }>)[id];
+const towns = (id: number) =>
+  (({ 3: { name: 'Slobozia', at: { x: 1, y: 1 } } }) as Record<number, { name: string; at: { x: number; y: number } }>)[
+    id
+  ];
 const marketTown = (at: { x: number }) => (at.x === 7 ? 4 : undefined);
-const src = (c: InstanceType<typeof BuyCatalog>, itemId = 300000, price = 10) => c.sources(itemId, () => price, towns, marketTown);
-const aShop = (o: Partial<{ items: number[]; charge: number; key: string }> = {}) =>
-  ({ key: (o.key ?? 'tailor') as any, townId: 3, townName: 'Slobozia', level: 1, charge: o.charge ?? 1.5, items: o.items ?? [300000] });
-const anOffer = (o: Record<string, unknown> = {}) => ({ id: 9, itemId: 300000, count: 1, buyNow: 25, direction: 'SELL', town: { name: 'Far', x: 7, y: 7 }, ...o } as any);
+const src = (c: InstanceType<typeof BuyCatalog>, itemId = 300000, price = 10) =>
+  c.sources(itemId, () => price, towns, marketTown);
+const aShop = (o: Partial<{ items: number[]; charge: number; key: string }> = {}) => ({
+  key: (o.key ?? 'tailor') as any,
+  townId: 3,
+  townName: 'Slobozia',
+  level: 1,
+  charge: o.charge ?? 1.5,
+  items: o.items ?? [300000],
+});
+const anOffer = (o: Record<string, unknown> = {}) =>
+  ({ id: 9, itemId: 300000, count: 1, buyNow: 25, direction: 'SELL', town: { name: 'Far', x: 7, y: 7 }, ...o }) as any;
 
-test('K1 shop price = item price × the shop\'s charge, rounded', () => {
+test("K1 shop price = item price × the shop's charge, rounded", () => {
   const c = new BuyCatalog();
   c.setShops(3, [aShop()]);
-  assert.deepEqual(src(c).map((s) => [s.kind, s.price, (s as any).townName]), [['shop', 15, 'Slobozia']]);
+  assert.deepEqual(
+    src(c).map((s) => [s.kind, s.price, (s as any).townName]),
+    [['shop', 15, 'Slobozia']],
+  );
 });
 
 test('K2 no charge: the item price', () => {
@@ -283,30 +367,50 @@ test('K6 shops that could not be read sell nothing', () => {
 
 test('K7 the mobile trader only in dollars: nugget-only offers are left out', () => {
   const c = new BuyCatalog();
-  c.setMobile({ changesAt: null, items: [
-    parseMobileTraderItem({ item_id: 300000, currency: 2, price_nuggets: 5 }),
-    parseMobileTraderItem({ item_id: 300000, currency: 6, price_nuggets: 5, price_dollar: 700 }),
-  ] });
-  assert.deepEqual(src(c).map((s) => [s.kind, s.price]), [['mobile', 700]]);
+  c.setMobile({
+    changesAt: null,
+    items: [
+      parseMobileTraderItem({ item_id: 300000, currency: 2, price_nuggets: 5 }),
+      parseMobileTraderItem({ item_id: 300000, currency: 6, price_nuggets: 5, price_dollar: 700 }),
+    ],
+  });
+  assert.deepEqual(
+    src(c).map((s) => [s.kind, s.price]),
+    [['mobile', 700]],
+  );
 });
 
 test('K8 a mobile discount lowers the price', () => {
   // 20 % off $1,000.
   const c = new BuyCatalog();
-  c.setMobile({ changesAt: null, items: [parseMobileTraderItem({ item_id: 300000, currency: 4, price_dollar: 1000, reduced_value: 20 })] });
+  c.setMobile({
+    changesAt: null,
+    items: [parseMobileTraderItem({ item_id: 300000, currency: 4, price_dollar: 1000, reduced_value: 20 })],
+  });
   assert.equal(src(c)[0]!.price, 800);
 });
 
 test('K9 a sold-out mobile offer (limited to 0) is left out', () => {
   const c = new BuyCatalog();
-  c.setMobile({ changesAt: null, items: [parseMobileTraderItem({ item_id: 300000, currency: 4, price_dollar: 10, limited_count: 0 })] });
+  c.setMobile({
+    changesAt: null,
+    items: [parseMobileTraderItem({ item_id: 300000, currency: 4, price_dollar: 10, limited_count: 0 })],
+  });
   assert.deepEqual(src(c), []);
 });
 
 test('K10 market: only buy-now offers selling this item', () => {
   const c = new BuyCatalog();
-  c.setMarket(300000, [anOffer(), anOffer({ id: 10, buyNow: null }), anOffer({ id: 11, direction: 'BUY' }), anOffer({ id: 12, itemId: 205000 })]);
-  assert.deepEqual(src(c).map((s) => (s as any).offer.id), [9]);
+  c.setMarket(300000, [
+    anOffer(),
+    anOffer({ id: 10, buyNow: null }),
+    anOffer({ id: 11, direction: 'BUY' }),
+    anOffer({ id: 12, itemId: 205000 }),
+  ]);
+  assert.deepEqual(
+    src(c).map((s) => (s as any).offer.id),
+    [9],
+  );
 });
 
 test('K11 a market offer in a town not on the map is left out', () => {
@@ -347,21 +451,75 @@ const N = 1_000_000;
 type Pt = { x: number; y: number };
 const P = (x: number, y = 0): Pt => ({ x, y });
 const way = (a: Pt, b: Pt) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-const J1 = (at = P(0)) => ({ id: 1, groupid: 1, name: 'J1', jobPoints: 10, workPoints: 1, motivation: 1, danger: null,
-  values: { long: { duration: 3600, energy: 12, experience: 100, money: 0, luck: 0, items: [] } }, at: [at] });
-const trip = (townId: number, x: number, cost = 60, what = [`Jug of water for "Q${townId}"`]) => ({ townId, name: `T${townId}`, at: P(x), cost, what });
-function plan(o: { trips?: any[]; config?: (c: typeof DEFAULT_CONFIG) => void; start?: Record<string, unknown>; jobs?: any[]; towns?: any[];
-  hotels?: any[]; homeTownId?: number; budget?: number; skip?: string[]; rules?: Partial<typeof EMPTY_RULES> } = {}) {
+const J1 = (at = P(0)) => ({
+  id: 1,
+  groupid: 1,
+  name: 'J1',
+  jobPoints: 10,
+  workPoints: 1,
+  motivation: 1,
+  danger: null,
+  values: { long: { duration: 3600, energy: 12, experience: 100, money: 0, luck: 0, items: [] } },
+  at: [at],
+});
+const trip = (townId: number, x: number, cost = 60, what = [`Jug of water for "Q${townId}"`]) => ({
+  townId,
+  name: `T${townId}`,
+  at: P(x),
+  cost,
+  what,
+});
+function plan(
+  o: {
+    trips?: any[];
+    config?: (c: typeof DEFAULT_CONFIG) => void;
+    start?: Record<string, unknown>;
+    jobs?: any[];
+    towns?: any[];
+    hotels?: any[];
+    homeTownId?: number;
+    budget?: number;
+    skip?: string[];
+    rules?: Partial<typeof EMPTY_RULES>;
+  } = {},
+) {
   const config = structuredClone(DEFAULT_CONFIG);
   config.modules.quests = true;
   o.config?.(config);
   const jobs = o.jobs ?? [J1()];
   return planAutopilot({
-    start: { now: N, at: P(0), energy: 50, maxEnergy: 100, health: 500, maxHealth: 500, energyRegen: 0.1, healthRegen: 0.1, level: 32,
-      experience: levelStartXp(32), maxLevel: 250, cash: 0, ...o.start },
-    fixed: [], jobs, locations: (g) => jobs.find((j) => j.groupid === g)?.at, wayTime: way, config, rules: { ...structuredClone(EMPTY_RULES), ...o.rules },
-    needs: [], itemValue: () => 0, hotels: o.hotels ?? [], consumables: [], homeTownId: o.homeTownId ?? 9, towns: o.towns ?? [],
-    buyTrips: o.trips, budget: o.budget ?? 1000, skip: new Set(o.skip ?? []), maxJobs: 3, motivation: { perRun: 0, perHour: 0 },
+    start: {
+      now: N,
+      at: P(0),
+      energy: 50,
+      maxEnergy: 100,
+      health: 500,
+      maxHealth: 500,
+      energyRegen: 0.1,
+      healthRegen: 0.1,
+      level: 32,
+      experience: levelStartXp(32),
+      maxLevel: 250,
+      cash: 0,
+      ...o.start,
+    },
+    fixed: [],
+    jobs,
+    locations: (g) => jobs.find((j) => j.groupid === g)?.at,
+    wayTime: way,
+    config,
+    rules: { ...structuredClone(EMPTY_RULES), ...o.rules },
+    needs: [],
+    itemValue: () => 0,
+    hotels: o.hotels ?? [],
+    consumables: [],
+    homeTownId: o.homeTownId ?? 9,
+    towns: o.towns ?? [],
+    buyTrips: o.trips,
+    budget: o.budget ?? 1000,
+    skip: new Set(o.skip ?? []),
+    maxJobs: 3,
+    motivation: { perRun: 0, perHour: 0 },
   });
 }
 const keys = (p: ReturnType<typeof plan>, n = 6) => p.tasks.slice(0, n).map((t) => t.key);
@@ -395,7 +553,10 @@ test('P6 a trip dearer than what is left of the daily budget is not planned', ()
 
 test('P7 two $600 trips with $1,000 left: only the nearer one', () => {
   const p = plan({ trips: [trip(3, 100, 600), trip(4, 200, 600)] });
-  assert.deepEqual(p.tasks.filter((t) => t.action?.type === 'buy').map((t) => t.key), ['buy:3']);
+  assert.deepEqual(
+    p.tasks.filter((t) => t.action?.type === 'buy').map((t) => t.key),
+    ['buy:3'],
+  );
 });
 
 test('P8 a trip that keeps failing (skipped) is not planned', () => {
@@ -406,7 +567,7 @@ test('P9 Quests module off: no shopping', () => {
   assert.equal(keys(plan({ trips: [trip(3, 300)], config: (c) => (c.modules.quests = false) }))[0], 'job:1:long');
 });
 
-test('P10 the purchase leaves the timeline\'s cash lower by its cost', () => {
+test("P10 the purchase leaves the timeline's cash lower by its cost", () => {
   const p = plan({ trips: [trip(3, 300)], start: { cash: 500 } });
   assert.equal(p.timeline.steps[1]!.cash, 440);
 });
@@ -424,12 +585,22 @@ test('P12 banking comes before shopping', () => {
 });
 
 test('P13 bank and shop in the same town: one walk', () => {
-  const p = plan({ trips: [trip(3, 300)], towns: [{ id: 3, name: 'T3', at: P(300) }], homeTownId: 3, start: { cash: 5000 } });
+  const p = plan({
+    trips: [trip(3, 300)],
+    towns: [{ id: 3, name: 'T3', at: P(300) }],
+    homeTownId: 3,
+    start: { cash: 5000 },
+  });
   assert.deepEqual(keys(p, 3), ['walk:3', 'bank:3', 'buy:3']);
 });
 
 test('P14 HP first: a low-HP sleep goes before shopping', () => {
-  const hotel = { townId: 2, name: 'T2', at: P(0), rooms: [{ key: 'room', name: 'room', cost: 0, energyRate: 0.2, healthRate: 0.5 }] };
+  const hotel = {
+    townId: 2,
+    name: 'T2',
+    at: P(0),
+    rooms: [{ key: 'room', name: 'room', cost: 0, energyRate: 0.2, healthRate: 0.5 }],
+  };
   const p = plan({ trips: [trip(3, 300)], hotels: [hotel], start: { health: 200 } });
   assert.equal(p.tasks[0]!.module, 'hpSleep');
   assert.ok(keys(p).includes('buy:3'));
@@ -446,8 +617,13 @@ test('P16 each trip once per plan', () => {
 });
 
 test('P17 the reason lists what is bought for which quest', () => {
-  const p = plan({ trips: [trip(3, 300, 70, ['2× Jug of water (general store) for "Party"', 'Grey rags (tailor) for "Clothing"'])] });
-  assert.equal(p.tasks[1]!.why, 'quest items: 2× Jug of water (general store) for "Party"; Grey rags (tailor) for "Clothing"');
+  const p = plan({
+    trips: [trip(3, 300, 70, ['2× Jug of water (general store) for "Party"', 'Grey rags (tailor) for "Clothing"'])],
+  });
+  assert.equal(
+    p.tasks[1]!.why,
+    'quest items: 2× Jug of water (general store) for "Party"; Grey rags (tailor) for "Clothing"',
+  );
 });
 
 test('P18 queuing jobs off: the shopping is still planned', () => {
@@ -455,7 +631,12 @@ test('P18 queuing jobs off: the shopping is still planned', () => {
 });
 
 test('P19 your inserted sleep at its time comes before shopping', () => {
-  const hotel = { townId: 2, name: 'T2', at: P(0), rooms: [{ key: 'room', name: 'room', cost: 0, energyRate: 0.5, healthRate: 0.2 }] };
+  const hotel = {
+    townId: 2,
+    name: 'T2',
+    at: P(0),
+    rooms: [{ key: 'room', name: 'room', cost: 0, energyRate: 0.5, healthRate: 0.2 }],
+  };
   const p = plan({ trips: [trip(3, 300)], hotels: [hotel], rules: { inserts: [{ at: N, kind: 'sleep' }] } });
   assert.match(p.tasks[0]!.key, /^insert:sleep/);
   assert.equal(p.tasks[1]!.key, 'walk:3');
@@ -470,7 +651,12 @@ test('P20 the walk is a server task to the town', () => {
 
 test('P21 a paid HP sleep uses up the budget first: no money left to shop', () => {
   // Sleep $900 of $1,000; the $200 trip no longer fits.
-  const hotel = { townId: 2, name: 'T2', at: P(0), rooms: [{ key: 'room', name: 'room', cost: 900, energyRate: 0.2, healthRate: 0.5 }] };
+  const hotel = {
+    townId: 2,
+    name: 'T2',
+    at: P(0),
+    rooms: [{ key: 'room', name: 'room', cost: 900, energyRate: 0.2, healthRate: 0.5 }],
+  };
   const p = plan({ trips: [trip(3, 300, 200)], hotels: [hotel], start: { health: 200 } });
   assert.ok(!p.tasks.some((t) => t.action?.type === 'buy'));
 });
@@ -484,56 +670,159 @@ test('P22 out of energy does not stop the walk to the shop (walking costs none)'
 // 1200 s, Far (4) 5000 s (past the 1 h furthest trip).
 
 const WORLD = 'https://en32.the-west.net';
-const FAST = { concurrency: 1, minIntervalMs: 0, jitterMs: 0, maxRetries: 0, baseBackoffMs: 0, maxBackoffMs: 0, breakerThreshold: 100, breakerCooldownMs: 0, timeoutMs: 5_000 };
+const FAST = {
+  concurrency: 1,
+  minIntervalMs: 0,
+  jitterMs: 0,
+  maxRetries: 0,
+  baseBackoffMs: 0,
+  maxBackoffMs: 0,
+  breakerThreshold: 100,
+  breakerCooldownMs: 0,
+  timeoutMs: 5_000,
+};
 const ITEMS = [
-  { id: 1856, name: 'Jug of water', type: 'yield', price: 30 }, { id: 300, name: 'Grey rags', type: 'body', price: 10 },
-  { id: 605, name: 'Quarter Horse', type: 'animal', price: 2800 }, { id: 603, name: 'White horse', type: 'animal', price: 1250 },
-  { id: 787, name: 'Saddle', type: 'yield', price: 80 }, { id: 2737, name: 'Honey', type: 'yield', price: 135 },
+  { id: 1856, name: 'Jug of water', type: 'yield', price: 30 },
+  { id: 300, name: 'Grey rags', type: 'body', price: 10 },
+  { id: 605, name: 'Quarter Horse', type: 'animal', price: 2800 },
+  { id: 603, name: 'White horse', type: 'animal', price: 1250 },
+  { id: 787, name: 'Saddle', type: 'yield', price: 80 },
+  { id: 2737, name: 'Honey', type: 'yield', price: 135 },
 ];
 const TOWNS = [
-  { id: 3, x: 100, y: 400, name: 'Slobozia' }, { id: 5, x: 400, y: 100, name: 'Marketville' },
-  { id: 6, x: 100, y: 1300, name: 'Hilltop' }, { id: 4, x: 100, y: 5100, name: 'Far' },
+  { id: 3, x: 100, y: 400, name: 'Slobozia' },
+  { id: 5, x: 400, y: 100, name: 'Marketville' },
+  { id: 6, x: 100, y: 1300, name: 'Hilltop' },
+  { id: 4, x: 100, y: 5100, name: 'Far' },
 ].map((t) => ({ ...t, members: 1, npc: false, points: 0 }));
 const JUG = 1856;
 
 function makeState(o: { bag?: Record<number, number> } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const bootstrap: any = {
-    h: 'abc123', game: { sincepoch: now, travelSpeed: 1, currentWorldName: 'Quebec', jobs: [] }, premium: null, bag: [],
-    character: { playerId: 42, name: 'tester', level: 30, charClass: { type: 'adventurer' }, experience: 1000, cash: 1000, deposit: 10, nuggets: 0,
-      pos: { x: 100, y: 100 }, town: { id: 3, coords: { x: 100, y: 400 } }, charSpeed: 1, maxEnergy: 100, energy: 40, health: 300,
-      healthRegenFactor: 0, energyRegenFactor: 0, taskQueue: [], taskLimit: { normal: 4, premium: 9 }, skillData: {}, lpPerPoint: 10 },
+    h: 'abc123',
+    game: { sincepoch: now, travelSpeed: 1, currentWorldName: 'Quebec', jobs: [] },
+    premium: null,
+    bag: [],
+    character: {
+      playerId: 42,
+      name: 'tester',
+      level: 30,
+      charClass: { type: 'adventurer' },
+      experience: 1000,
+      cash: 1000,
+      deposit: 10,
+      nuggets: 0,
+      pos: { x: 100, y: 100 },
+      town: { id: 3, coords: { x: 100, y: 400 } },
+      charSpeed: 1,
+      maxEnergy: 100,
+      energy: 40,
+      health: 300,
+      healthRegenFactor: 0,
+      energyRegenFactor: 0,
+      taskQueue: [],
+      taskLimit: { normal: 4, premium: 9 },
+      skillData: {},
+      lpPerPoint: 10,
+    },
   };
-  const client = new GameClient({ worldUrl: WORLD, h: bootstrap.h, jar: new CookieJar(), identity: { userAgent: 'UA', acceptLanguage: 'en' }, policy: FAST });
+  const client = new GameClient({
+    worldUrl: WORLD,
+    h: bootstrap.h,
+    jar: new CookieJar(),
+    identity: { userAgent: 'UA', acceptLanguage: 'en' },
+    policy: FAST,
+  });
   const s = new GameState({ client, bootstrap }, async () => ({ client, bootstrap }));
   s.autopilot = parseAutopilotFile(null);
   s.items = ItemCatalog.fromSlim(ITEMS as any);
   s.inventory.bag.clear();
-  for (const [id, n] of Object.entries(o.bag ?? {})) s.inventory.applyChanges([{ item_id: Number(id) * 1000, count: n, inv_id: 100 + Number(id), type: 'yield' }]);
+  for (const [id, n] of Object.entries(o.bag ?? {}))
+    s.inventory.applyChanges([{ item_id: Number(id) * 1000, count: n, inv_id: 100 + Number(id), type: 'yield' }]);
   s.world.towns = TOWNS;
   return s;
 }
 const name = (id: number) => ITEMS.find((i) => i.id === id)!.name;
-const has = (id: number, count: number, solved = false) => ({ solved, info: `${name(id)} 0/${count}`, itemId: id * 1000, count, kind: 'item' });
-const wears = (id: number) => ({ solved: false, info: `Equip ${name(id)} 0/1`, itemId: id * 1000, count: 1, kind: 'wear' });
+const has = (id: number, count: number, solved = false) => ({
+  solved,
+  info: `${name(id)} 0/${count}`,
+  itemId: id * 1000,
+  count,
+  kind: 'item',
+});
+const wears = (id: number) => ({
+  solved: false,
+  info: `Equip ${name(id)} 0/1`,
+  itemId: id * 1000,
+  count: 1,
+  kind: 'wear',
+});
 const bought = (item: string) => ({ solved: false, info: `Item '${item}' bought`, kind: 'bought', buy: item });
 const other = (info: string) => ({ solved: false, info, kind: 'other' });
-const windowReq = () => ({ solved: false, info: "This quest is only available between 06:00 and 11:00 o'clock.", kind: 'window', window: { from: '06:00', to: '11:00' } });
-const quest = (id: number, requirements: any[], o: Record<string, unknown> = {}) => ({ id, title: `Q${id}`, soloTitle: `Q${id}`, groupId: 1, group: 'Chain',
-  employer: 'e', employerName: 'E', employerAt: null, accepted: true, acceptable: false, finishable: false, requirements, rewards: [], rewardOptions: [],
-  description: '', hint: '', limited: '', ...o }) as any;
+const windowReq = () => ({
+  solved: false,
+  info: "This quest is only available between 06:00 and 11:00 o'clock.",
+  kind: 'window',
+  window: { from: '06:00', to: '11:00' },
+});
+const quest = (id: number, requirements: any[], o: Record<string, unknown> = {}) =>
+  ({
+    id,
+    title: `Q${id}`,
+    soloTitle: `Q${id}`,
+    groupId: 1,
+    group: 'Chain',
+    employer: 'e',
+    employerName: 'E',
+    employerAt: null,
+    accepted: true,
+    acceptable: false,
+    finishable: false,
+    requirements,
+    rewards: [],
+    rewardOptions: [],
+    description: '',
+    hint: '',
+    limited: '',
+    ...o,
+  }) as any;
 const sells = (s: InstanceType<typeof GameState>, townId: number, ids: number[], key = 'general', charge = 1) =>
-  s.buyCatalog.setShops(townId, [{ key: key as any, townId, townName: TOWNS.find((t) => t.id === townId)!.name, level: 1, charge, items: ids.map((i) => i * 1000) }]);
+  s.buyCatalog.setShops(townId, [
+    {
+      key: key as any,
+      townId,
+      townName: TOWNS.find((t) => t.id === townId)!.name,
+      level: 1,
+      charge,
+      items: ids.map((i) => i * 1000),
+    },
+  ]);
 const mobileSells = (s: InstanceType<typeof GameState>, id: number, price: number) =>
-  s.buyCatalog.setMobile({ changesAt: null, items: [parseMobileTraderItem({ item_id: id * 1000, currency: 4, price_dollar: price })] });
+  s.buyCatalog.setMobile({
+    changesAt: null,
+    items: [parseMobileTraderItem({ item_id: id * 1000, currency: 4, price_dollar: price })],
+  });
 const marketSells = (s: InstanceType<typeof GameState>, id: number, price: number, count = 1, offerId = 77) =>
-  s.buyCatalog.setMarket(id * 1000, [{ id: offerId, itemId: id * 1000, count, buyNow: price, direction: 'SELL', town: { name: 'Marketville', x: 400, y: 100 } } as any]);
+  s.buyCatalog.setMarket(id * 1000, [
+    {
+      id: offerId,
+      itemId: id * 1000,
+      count,
+      buyNow: price,
+      direction: 'SELL',
+      town: { name: 'Marketville', x: 400, y: 100 },
+    } as any,
+  ]);
 const trips = (s: InstanceType<typeof GameState>) => s.buyTrips().map((t) => [t.townId, t.cost, t.what]);
 
 test('S1 nothing sells it: blocked, and the blocker says so', () => {
   const s = makeState();
   s.quests = [quest(1, [has(JUG, 2)])];
-  assert.equal(s.questBlocker(s.quests[0]!), 'Jug of water: no job drops it, and no shop in reach, the mobile trader or the market sells it');
+  assert.equal(
+    s.questBlocker(s.quests[0]!),
+    'Jug of water: no job drops it, and no shop in reach, the mobile trader or the market sells it',
+  );
 });
 
 test('S2 a shop 5 min away sells it: in scope, one trip for 2 × $30', () => {
@@ -560,9 +849,24 @@ test('S4 enough in the bag: nothing to buy', () => {
 });
 
 function withJob(s: InstanceType<typeof GameState>, doable: boolean) {
-  s.catalog = new JobCatalog({ jobs: [{ id: 7, groupid: 1, name: 'Fetch water', yields: { [JUG * 1000]: { prop: 0.3 } } }] });
-  s.jobs = [{ id: 7, groupid: 1, name: 'Fetch water', jobPoints: doable ? 10 : 0, workPoints: 1, laborPoints: 9, motivation: 1, danger: null, durations: {}, luckValue: [0, 0],
-    values: { long: { duration: 3600, energy: 12, money: 10, experience: 50, luck: 0, items: [] } } } as any];
+  s.catalog = new JobCatalog({
+    jobs: [{ id: 7, groupid: 1, name: 'Fetch water', yields: { [JUG * 1000]: { prop: 0.3 } } }],
+  });
+  s.jobs = [
+    {
+      id: 7,
+      groupid: 1,
+      name: 'Fetch water',
+      jobPoints: doable ? 10 : 0,
+      workPoints: 1,
+      laborPoints: 9,
+      motivation: 1,
+      danger: null,
+      durations: {},
+      luckValue: [0, 0],
+      values: { long: { duration: 3600, energy: 12, money: 10, experience: 50, luck: 0, items: [] } },
+    } as any,
+  ];
   s.world.jobGroups = new Map([[1, [{ x: 110, y: 100 }]]]);
 }
 
@@ -647,7 +951,10 @@ test('S15 market off and only the market has it: blocked', () => {
   s.quests = [quest(1, [has(JUG, 1)])];
   marketSells(s, JUG, 40);
   s.autopilot.config.quests.market = false;
-  assert.equal(s.questBlocker(s.quests[0]!), 'Jug of water: no job drops it, and no shop in reach or the mobile trader sells it');
+  assert.equal(
+    s.questBlocker(s.quests[0]!),
+    'Jug of water: no job drops it, and no shop in reach or the mobile trader sells it',
+  );
 });
 
 test('S16 only a town past the furthest trip sells it: blocked, no trip', () => {
@@ -670,7 +977,9 @@ test('S18 two quests want 2 jugs each: one stop buys 4', () => {
   const s = makeState();
   s.quests = [quest(1, [has(JUG, 2)]), quest(2, [has(JUG, 2)])];
   sells(s, 3, [JUG]);
-  assert.deepEqual(trips(s), [[3, 120, ['2× Jug of water (general store) for "Q1"', '2× Jug of water (general store) for "Q2"']]]);
+  assert.deepEqual(trips(s), [
+    [3, 120, ['2× Jug of water (general store) for "Q1"', '2× Jug of water (general store) for "Q2"']],
+  ]);
 });
 
 test('S19 two jugs in the bag go to the first quest; the second buys its own', () => {
@@ -698,7 +1007,17 @@ test('S21 a solved requirement still counts on its items (they go when it is han
 test('S22 market goods to pick up are a trip even with buying off (already paid)', () => {
   const s = makeState();
   s.autopilot.config.quests.buy = false;
-  s.autopilot.pickups = [{ offerId: 77, itemId: JUG * 1000, count: 2, townId: 5, townName: 'Marketville', at: { x: 400, y: 100 }, quest: 'Q1' }];
+  s.autopilot.pickups = [
+    {
+      offerId: 77,
+      itemId: JUG * 1000,
+      count: 2,
+      townId: 5,
+      townName: 'Marketville',
+      at: { x: 400, y: 100 },
+      quest: 'Q1',
+    },
+  ];
   assert.deepEqual(trips(s), [[5, 0, ['pick up 2× Jug of water (market) for "Q1"']]]);
 });
 
@@ -731,7 +1050,10 @@ test('S26 where you are decides what is in reach', () => {
   s.quests = [quest(1, [has(JUG, 1)])];
   sells(s, 3, [JUG]);
   s.buyCatalog.setShops(4, [{ key: 'general', townId: 4, townName: 'Far', level: 1, charge: 1, items: [JUG * 1000] }]);
-  assert.deepEqual(trips(s).map((t) => t[0]), [4]);
+  assert.deepEqual(
+    trips(s).map((t) => t[0]),
+    [4],
+  );
 });
 
 test('S27 the mobile trader has it: in scope, no walk to plan', () => {
@@ -756,7 +1078,10 @@ test('S29 a dearer shop nearby beats a cheap one 20 min away', () => {
   s.quests = [quest(1, [has(JUG, 2)])];
   sells(s, 3, [JUG], 'general', 2);
   sells(s, 6, [JUG]);
-  assert.deepEqual(trips(s).map((t) => [t[0], t[1]]), [[3, 120]]);
+  assert.deepEqual(
+    trips(s).map((t) => [t[0], t[1]]),
+    [[3, 120]],
+  );
 });
 
 test('S30 walking worth $0: the cheaper shop, however far', () => {
@@ -765,12 +1090,18 @@ test('S30 walking worth $0: the cheaper shop, however far', () => {
   sells(s, 3, [JUG], 'general', 2);
   sells(s, 6, [JUG]);
   s.autopilot.config.quests.walkValue = 0;
-  assert.deepEqual(trips(s).map((t) => [t[0], t[1]]), [[6, 60]]);
+  assert.deepEqual(
+    trips(s).map((t) => [t[0], t[1]]),
+    [[6, 60]],
+  );
 });
 
 // ---- M: buying (quest module against a fake server) --------------------------------------------------------
 
-interface Call { url: string; body: string }
+interface Call {
+  url: string;
+  body: string;
+}
 let calls: Call[];
 let routes: Record<string, (body: string) => unknown>;
 let realFetch: typeof fetch;
@@ -787,7 +1118,7 @@ beforeEach(() => {
     const body = typeof init.body === 'string' ? init.body : '';
     calls.push({ url, body });
     const route = routes[url.replace(WORLD, '').replace(/&h=\w+/, '')];
-    return route ? Response.json(route(body)) : new Response('unexpected ' + url, { status: 404 });
+    return route ? Response.json(route(body)) : new Response(`unexpected ${url}`, { status: 404 });
   }) as typeof fetch;
 });
 afterEach(() => {
@@ -798,8 +1129,14 @@ function quests(s: InstanceType<typeof GameState>, o: { budget?: number; skip?: 
   const spent: number[] = [];
   const fails: [string, string][] = [];
   const m = new QuestModule({
-    state: s, get config() { return s.autopilot.config; }, budget: () => o.budget ?? 10_000,
-    spend: (n) => spent.push(n), skipped: () => new Set(o.skip ?? []), fail: (k, msg) => fails.push([k, msg]),
+    state: s,
+    get config() {
+      return s.autopilot.config;
+    },
+    budget: () => o.budget ?? 10_000,
+    spend: (n) => spent.push(n),
+    skipped: () => new Set(o.skip ?? []),
+    fail: (k, msg) => fails.push([k, msg]),
   });
   return { m, spent, fails };
 }
@@ -809,12 +1146,15 @@ const shopRoute = (price: number, start = 1000) => {
   routes['/game.php?window=building_general&action=buy'] = (body) => {
     n++;
     const id = Number(params(body).get('item_id'));
-    return { changes: [{ item_id: id, count: n, inv_id: 500 + n, type: 'yield' }], money: { barrows: start - price * n, deposit: 10 } };
+    return {
+      changes: [{ item_id: id, count: n, inv_id: 500 + n, type: 'yield' }],
+      money: { barrows: start - price * n, deposit: 10 },
+    };
   };
 };
 const settle = () => new Promise((r) => setTimeout(r, 20));
 
-test('M1 in the shop\'s town: buys the jugs one by one, bag and cash follow, the spend is counted', async () => {
+test("M1 in the shop's town: buys the jugs one by one, bag and cash follow, the spend is counted", async () => {
   const s = makeState();
   inSlobozia(s);
   s.quests = [quest(1, [has(JUG, 2)])];
@@ -831,7 +1171,7 @@ test('M1 in the shop\'s town: buys the jugs one by one, bag and cash follow, the
   assert.deepEqual(fails, []);
 });
 
-test('M2 not in the shop\'s town: nothing is bought (the planner walks there)', async () => {
+test("M2 not in the shop's town: nothing is bought (the planner walks there)", async () => {
   const s = makeState();
   s.quests = [quest(1, [has(JUG, 2)])];
   sells(s, 3, [JUG]);
@@ -849,7 +1189,10 @@ test('M3 the mobile trader: bought from anywhere, in dollars, then the trader an
   assert.equal(await m.buyHere(), true);
   const buys = callTo('shop_trader&action=buy');
   assert.equal(buys.length, 2);
-  assert.deepEqual(['item_id', 'category', 'currency'].map((k) => params(buys[0]!.body).get(k)), ['1856000', 'trader', 'dollar']);
+  assert.deepEqual(
+    ['item_id', 'category', 'currency'].map((k) => params(buys[0]!.body).get(k)),
+    ['1856000', 'trader', 'dollar'],
+  );
   assert.deepEqual(spent, [80]);
   assert.equal(s.buyCatalog.mobile, null);
   assert.equal(callTo('inventory_changed').length, 1);
@@ -859,12 +1202,27 @@ test('M4 a market offer: bought at its buy-now price with cash, recorded for pic
   const s = makeState();
   s.quests = [quest(1, [has(JUG, 2)])];
   marketSells(s, JUG, 50, 2);
-  routes['/game.php?window=building_market&action=bid'] = () => ({ msg: { instantBuy: true, money: 950, deposit: 10 } });
+  routes['/game.php?window=building_market&action=bid'] = () => ({
+    msg: { instantBuy: true, money: 950, deposit: 10 },
+  });
   const { m, spent } = quests(s);
   assert.equal(await m.buyHere(), true);
   const bid = params(callTo('building_market&action=bid')[0]!.body);
-  assert.deepEqual(['bidtype', 'bid', 'market_offer_id', 'direction'].map((k) => bid.get(k)), ['0', '50', '77', 'SELL']);
-  assert.deepEqual(s.autopilot.pickups, [{ offerId: 77, itemId: JUG * 1000, count: 2, townId: 5, townName: 'Marketville', at: { x: 400, y: 100 }, quest: 'Q1' }]);
+  assert.deepEqual(
+    ['bidtype', 'bid', 'market_offer_id', 'direction'].map((k) => bid.get(k)),
+    ['0', '50', '77', 'SELL'],
+  );
+  assert.deepEqual(s.autopilot.pickups, [
+    {
+      offerId: 77,
+      itemId: JUG * 1000,
+      count: 2,
+      townId: 5,
+      townName: 'Marketville',
+      at: { x: 400, y: 100 },
+      quest: 'Q1',
+    },
+  ]);
   assert.deepEqual(spent, [50]);
   assert.equal(s.buyCatalog.market.get(JUG)!.offers.length, 0, 'the offer is gone');
 });
@@ -892,7 +1250,15 @@ test('M6 the market took a bid instead of selling: a failure, no pickup, no spen
   assert.match(fails[0]![1], /did not sell at its buy-now price/);
 });
 
-const pickup = { offerId: 77, itemId: JUG * 1000, count: 2, townId: 5, townName: 'Marketville', at: { x: 400, y: 100 }, quest: 'Q1' };
+const pickup = {
+  offerId: 77,
+  itemId: JUG * 1000,
+  count: 2,
+  townId: 5,
+  townName: 'Marketville',
+  at: { x: 400, y: 100 },
+  quest: 'Q1',
+};
 
 test('M7 in the market town: the goods are picked up and the record dropped', async () => {
   const s = makeState();
@@ -915,7 +1281,7 @@ test('M8 a pickup that fails is left to you, once (no endless walking back)', as
   assert.ok(s.log.some((l) => l.level === 'error' && /Pick it up on the market tab/.test(l.msg)));
 });
 
-test('M9 the rest of today\'s spend cap is short: nothing bought, said once', async () => {
+test("M9 the rest of today's spend cap is short: nothing bought, said once", async () => {
   const s = makeState();
   inSlobozia(s);
   s.quests = [quest(1, [has(JUG, 2)])];
@@ -959,10 +1325,16 @@ test('M13 one purchase per tick: the jug now, the honey next time', async () => 
   shopRoute(30);
   const { m } = quests(s);
   await m.buyHere();
-  assert.deepEqual(callTo('action=buy').map((c) => params(c.body).get('item_id')), ['1856000']);
+  assert.deepEqual(
+    callTo('action=buy').map((c) => params(c.body).get('item_id')),
+    ['1856000'],
+  );
   await settle(); // the runner skips ticks while the quest log refresh holds the busy lock
   await m.buyHere();
-  assert.deepEqual(callTo('action=buy').map((c) => params(c.body).get('item_id')), ['1856000', '2737000']);
+  assert.deepEqual(
+    callTo('action=buy').map((c) => params(c.body).get('item_id')),
+    ['1856000', '2737000'],
+  );
 });
 
 test('M14 the shop refuses: a failure under the item key with the reason', async () => {
@@ -983,7 +1355,10 @@ test('M15 two quests each want a jug: the second buys its own after the first ha
   mobileSells(s, JUG, 40);
   let n = 0;
   routes['/game.php?window=shop_trader&action=buy'] = () => ({ cash: 1000 - 40 * ++n });
-  routes['/game.php?window=inventory&action=inventory_changed'] = () => ({ changes: [{ item_id: JUG * 1000, count: n, inv_id: 900 + n, type: 'yield' }], wear: {} });
+  routes['/game.php?window=inventory&action=inventory_changed'] = () => ({
+    changes: [{ item_id: JUG * 1000, count: n, inv_id: 900 + n, type: 'yield' }],
+    wear: {},
+  });
   const { m, spent } = quests(s);
   await m.buyHere();
   await settle();
@@ -996,8 +1371,15 @@ test('M15 two quests each want a jug: the second buys its own after the first ha
   assert.equal(await m.buyHere(), false, 'both covered now');
 });
 
-const rawWindowQuest = { id: 9, title: 'Afternoon in the saloon', accepted: true, finishable: false,
-  requirements: [{ solved: false, info: "This quest is only available between 06:00 and 11:00 o'clock.", jsInfo: null }] };
+const rawWindowQuest = {
+  id: 9,
+  title: 'Afternoon in the saloon',
+  accepted: true,
+  finishable: false,
+  requirements: [
+    { solved: false, info: "This quest is only available between 06:00 and 11:00 o'clock.", jsInfo: null },
+  ],
+};
 
 test('M16 waiting only for the time window: the quest log is re-read, then not again for 10 min', async () => {
   const s = makeState();

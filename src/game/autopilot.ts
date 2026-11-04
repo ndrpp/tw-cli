@@ -3,12 +3,19 @@
 // sleeps when sleeping gets the energy sooner than waiting. Pure: no requests; the runner in state.ts sends.
 // Job value: each goal's gain per cost, normalised by the best candidate for that goal, weighted by the
 // ranking (autopilot-config.ts). Cost: energy (+ walking at the energy it would regenerate meanwhile) or time.
+
+import {
+  type AutopilotConfig,
+  type AutopilotRules,
+  type Goal,
+  goalWeights,
+  type PlannedTask,
+} from './autopilot-config.ts';
 import { levelStartXp, type Position } from './character.ts';
 import { DURATION_KEYS, type DurationKey, type JobInfo } from './jobs.ts';
-import { runGains, type RouteNeed } from './route.ts';
+import { type RouteNeed, runGains } from './route.ts';
 import { jobPost, sleepPost, walkPost } from './tasks.ts';
 import { projectTimeline, regenSeconds, type Timeline, type TimelineStart, type TimelineStep } from './timeline.ts';
-import { goalWeights, type AutopilotConfig, type AutopilotRules, type Goal, type PlannedTask } from './autopilot-config.ts';
 
 export interface HotelOption {
   townId: number;
@@ -18,20 +25,40 @@ export interface HotelOption {
 }
 
 /** A single-use item's effect, from its usebonus text ("Energy increase: 15%", "Health point bonus: 20%"). */
-export interface ConsumableEffect { energy: number; health: number; motivation: number }
+export interface ConsumableEffect {
+  energy: number;
+  health: number;
+  motivation: number;
+}
 
 export function parseConsumable(usebonus: string[], usetype: string): ConsumableEffect | null {
   if (usetype !== 'single') return null;
   const pct = (re: RegExp) => usebonus.reduce((a, t) => a + Number(t.match(re)?.[1] ?? 0), 0) / 100;
-  const e = { energy: pct(/^Energy increase: (\d+)%/i), health: pct(/^Health point bonus: (\d+)%/i), motivation: pct(/^Work motivation increase: (\d+)%/i) };
+  const e = {
+    energy: pct(/^Energy increase: (\d+)%/i),
+    health: pct(/^Health point bonus: (\d+)%/i),
+    motivation: pct(/^Work motivation increase: (\d+)%/i),
+  };
   return e.energy || e.health || e.motivation ? e : null;
 }
 
 /** A town to walk to for quest items: shop purchases (`cost`) and market pickups; `what` says what and for which quest. */
-export interface BuyTrip { townId: number; name: string; at: Position; cost: number; what: string[] }
+export interface BuyTrip {
+  townId: number;
+  name: string;
+  at: Position;
+  cost: number;
+  what: string[];
+}
 
 /** An item in the bag the autopilot may use: `count` is what is left above the reserve; `value` its shop price. */
-export interface Consumable { itemId: number; name: string; count: number; value: number; effect: ConsumableEffect }
+export interface Consumable {
+  itemId: number;
+  name: string;
+  count: number;
+  value: number;
+  effect: ConsumableEffect;
+}
 
 export interface PlanInput {
   start: TimelineStart;
@@ -92,19 +119,29 @@ export interface Plan {
 }
 
 /** A cancel-check alternative: keep the first `from` queued tasks, replan the rest. */
-export interface CancelOption { from: number; value: number; walk: number }
+export interface CancelOption {
+  from: number;
+  value: number;
+  walk: number;
+}
 
 /**
  * Which cut to cancel at, if any: one better than the queue by `margin`, else one worth at most `sameWithin`
  * less that walks `walkSaved` s less. Highest value wins; on a tie the later cut (cancel less).
  */
-export function chooseCancel<T extends CancelOption>(cur: CancelOption, cuts: T[], c: AutopilotConfig['cancel']): (T & { why: 'better' | 'walk' }) | null {
+export function chooseCancel<T extends CancelOption>(
+  cur: CancelOption,
+  cuts: T[],
+  c: AutopilotConfig['cancel'],
+): (T & { why: 'better' | 'walk' }) | null {
   const top = (list: T[]) => list.reduce<T | undefined>((a, b) => (!a || b.value >= a.value - 1e-9 ? b : a), undefined);
   const best = top(cuts);
   // A queue worth nothing: anything worth something is better.
   if (cur.value <= 0) return best && best.value > 0 ? { ...best, why: 'better' } : null;
   if (best && best.value > cur.value * (1 + c.margin)) return { ...best, why: 'better' };
-  const lessWalk = top(cuts.filter((o) => o.value >= cur.value * (1 - c.sameWithin) && cur.walk - o.walk >= c.walkSaved));
+  const lessWalk = top(
+    cuts.filter((o) => o.value >= cur.value * (1 - c.sameWithin) && cur.walk - o.walk >= c.walkSaved),
+  );
   return lessWalk ? { ...lessWalk, why: 'walk' } : null;
 }
 
@@ -152,7 +189,12 @@ function closestDuration(job: JobInfo, seconds: number): DurationKey | undefined
   return found;
 }
 
-const GOAL_WORD: Record<Goal, string> = { quests: 'quest progress', xp: 'XP', money: 'money', products: 'products to sell' };
+const GOAL_WORD: Record<Goal, string> = {
+  quests: 'quest progress',
+  xp: 'XP',
+  money: 'money',
+  products: 'products to sell',
+};
 
 export function planAutopilot(input: PlanInput): Plan {
   const { config: cfg, start, wayTime } = input;
@@ -171,7 +213,10 @@ export function planAutopilot(input: PlanInput): Plan {
   // Per hour: a run takes its duration, but its energy must be regenerated too. Base regen runs while you
   // work (max), a hotel room only while you sleep (added); whichever gets the energy back sooner counts.
   const perEnergyBase = start.energyRegen > 0 ? 3600 / (start.maxEnergy * start.energyRegen) : Infinity;
-  const bestRoom = Math.max(0, ...input.hotels.flatMap((h) => h.rooms.filter((r) => r.cost <= input.budget).map((r) => r.energyRate)));
+  const bestRoom = Math.max(
+    0,
+    ...input.hotels.flatMap((h) => h.rooms.filter((r) => r.cost <= input.budget).map((r) => r.energyRate)),
+  );
   const perEnergyRoom = bestRoom > 0 ? 3600 / (start.maxEnergy * bestRoom) : Infinity;
   const runSeconds = (duration: number, energy: number) => {
     const t = Math.min(Math.max(duration, energy * perEnergyBase), duration + energy * perEnergyRoom);
@@ -191,7 +236,8 @@ export function planAutopilot(input: PlanInput): Plan {
     const dur = job && closestDuration(job, st.duration);
     if (!job || !dur) continue;
     runs.set(job.id, (runs.get(job.id) ?? 0) + 1);
-    for (const [k, g] of Object.entries(runGains(job, dur, input.needs))) if ((remaining[k] ?? 0) > 0) remaining[k] = Math.max(0, remaining[k]! - g);
+    for (const [k, g] of Object.entries(runGains(job, dur, input.needs)))
+      if ((remaining[k] ?? 0) > 0) remaining[k] = Math.max(0, (remaining[k] ?? 0) - g);
   }
   const needInfo = new Map(input.needs.map((n) => [n.key, n]));
   let rates: Record<Goal, number> | null = input.rates ?? null;
@@ -212,8 +258,15 @@ export function planAutopilot(input: PlanInput): Plan {
   const useTask = (c: Consumable, why: string): PlannedTask => {
     stock.set(c.itemId, (stock.get(c.itemId) ?? 0) - 1);
     return {
-      module: 'consumables', key: `use:${c.itemId}`, why,
-      step: { kind: 'action', title: `Use ${c.name}`, energy: c.effect.energy * start.maxEnergy, health: c.effect.health * start.maxHealth },
+      module: 'consumables',
+      key: `use:${c.itemId}`,
+      why,
+      step: {
+        kind: 'action',
+        title: `Use ${c.name}`,
+        energy: c.effect.energy * start.maxEnergy,
+        health: c.effect.health * start.maxHealth,
+      },
       action: { type: 'use', itemId: c.itemId },
     };
   };
@@ -230,7 +283,13 @@ export function planAutopilot(input: PlanInput): Plan {
    * level-up refund (a level-up refills energy: each XP point brings maxEnergy ÷ XP-per-level of it back);
    * `hours` from now sets the projected motivation.
    */
-  const candidates = (from: Position, health: number, level = start.level, hours = 0, done = { remaining, runs }): Candidate[] => {
+  const candidates = (
+    from: Position,
+    health: number,
+    level = start.level,
+    hours = 0,
+    done = { remaining, runs },
+  ): Candidate[] => {
     const list: Candidate[] = [];
     const xpPerLevel = levelStartXp(level + 1, start.maxLevel) - levelStartXp(level, start.maxLevel);
     const refundPerXp = xpPerLevel > 0 ? start.maxEnergy / xpPerLevel : 0;
@@ -238,7 +297,9 @@ export function planAutopilot(input: PlanInput): Plan {
       if (!doable(job) || excluded.has(job.id)) continue;
       const locs = input.locations(job.groupid);
       if (!locs?.length) continue;
-      let at = locs[0]!;
+      const firstLoc = locs[0];
+      if (!firstLoc) continue;
+      let at = firstLoc;
       let travel = wayTime(from, at);
       for (const p of locs) {
         const t = wayTime(from, p);
@@ -276,11 +337,22 @@ export function planAutopilot(input: PlanInput): Plan {
         // Energy net of the level-up refund; at least a quarter (the refill only tops up to the max).
         const energy = Math.max(0.25 * v.energy, v.energy - (xp + rewardXp) * refundPerXp);
         const extra = (Number.isFinite(hpSeconds) ? hpSeconds : 0) + slotCost;
-        const cost = cfg.per === 'energy'
-          ? energy + (travel + extra) * walkWeight
-          : runSeconds(v.duration, energy) + travel + extra;
+        const cost =
+          cfg.per === 'energy'
+            ? energy + (travel + extra) * walkWeight
+            : runSeconds(v.duration, energy) + travel + extra;
         list.push({
-          job, duration, at, travel, energy: v.energy, hpLoss, xp, gains, cost: Math.max(cost, 1e-6), score: 0, by: { quests: 0, xp: 0, money: 0, products: 0 },
+          job,
+          duration,
+          at,
+          travel,
+          energy: v.energy,
+          hpLoss,
+          xp,
+          gains,
+          cost: Math.max(cost, 1e-6),
+          score: 0,
+          by: { quests: 0, xp: 0, money: 0, products: 0 },
           raw: { quests, xp: xp + rewardXp, money: v.money * fade + rewardMoney, products: products * fade },
         });
       }
@@ -301,12 +373,16 @@ export function planAutopilot(input: PlanInput): Plan {
 
   /** What a run does for open quests, before it is counted: `Cotton for "Farmer's woes" (5 left)`. */
   const questParts = (gains: Record<string, number>): string[] =>
-    input.needs.filter((n) => (gains[n.key] ?? 0) > 0 && (remaining[n.key] ?? 0) > 1e-9).map((n) => {
-      const left = remaining[n.key]!;
-      const amount = n.unit === 'seconds' ? `${Math.ceil(left / 60)} min` : String(Math.ceil(left));
-      const quest = n.quests.length ? ` for "${n.quests[0]}"${n.quests.length > 1 ? ` +${n.quests.length - 1}` : ''}` : '';
-      return `${n.label}${quest} (${amount} left)`;
-    });
+    input.needs
+      .filter((n) => (gains[n.key] ?? 0) > 0 && (remaining[n.key] ?? 0) > 1e-9)
+      .map((n) => {
+        const left = remaining[n.key] ?? 0;
+        const amount = n.unit === 'seconds' ? `${Math.ceil(left / 60)} min` : String(Math.ceil(left));
+        const quest = n.quests.length
+          ? ` for "${n.quests[0]}"${n.quests.length > 1 ? ` +${n.quests.length - 1}` : ''}`
+          : '';
+        return `${n.label}${quest} (${amount} left)`;
+      });
 
   /** Energy to reach the next level with the best XP-per-energy job; null when out of reach of one refill. */
   const levelUpEnergy = (from: Position, health: number, experience: number, level: number): number | null => {
@@ -323,17 +399,25 @@ export function planAutopilot(input: PlanInput): Plan {
   };
 
   /** A sleep that reaches the wake targets soonest (own town first when close), with when it is done and the walk there. */
-  const sleepPlan = (reason: 'hp' | 'energy', minEnergy: number, next?: { title: string; xp: number }): { task: PlannedTask; ready: number; travel: number; energy: number } | null => {
+  const sleepPlan = (
+    reason: 'hp' | 'energy',
+    minEnergy: number,
+    next?: { title: string; xp: number },
+  ): { task: PlannedTask; ready: number; travel: number; energy: number } | null => {
     const s = tl.final;
     const wake = cfg.wake;
     let energy = s.energy;
     const reasons: string[] = [];
     // The run after the sleep levels up by itself: its energy is enough, the level-up refills the rest.
-    const nextLevels = wake.levelUp && !!next && s.level < (start.maxLevel ?? Infinity) && s.experience + next.xp >= levelStartXp(s.level + 1, start.maxLevel);
+    const nextLevels =
+      wake.levelUp &&
+      !!next &&
+      s.level < (start.maxLevel ?? Infinity) &&
+      s.experience + next.xp >= levelStartXp(s.level + 1, start.maxLevel);
     const lvl = wake.levelUp && !nextLevels ? levelUpEnergy(s.at, s.health, s.experience, s.level) : null;
     if (nextLevels) {
       energy = Math.max(energy, minEnergy);
-      reasons.push(`enough for ${next!.title}, which levels up`);
+      reasons.push(`enough for ${next?.title ?? 'the next job'}, which levels up`);
     } else if (lvl !== null && lvl > energy) {
       energy = lvl;
       reasons.push('enough to level up');
@@ -368,11 +452,21 @@ export function planAutopilot(input: PlanInput): Plan {
         const better = !best || (own && !best.own) || (own === best.own && ready < best.ready);
         if (!better) continue;
         best = {
-          own, ready, travel,
+          own,
+          ready,
+          travel,
           task: {
             module: reason === 'hp' ? 'hpSleep' : 'energySleep',
             key: `sleep:${h.townId}:${r.key}`,
-            step: { kind: 'sleep', title: `Sleep: ${h.name} ${r.name}`, at: h.at, energyRate: r.energyRate, healthRate: r.healthRate, seconds: secs, cost: r.cost },
+            step: {
+              kind: 'sleep',
+              title: `Sleep: ${h.name} ${r.name}`,
+              at: h.at,
+              energyRate: r.energyRate,
+              healthRate: r.healthRate,
+              seconds: secs,
+              cost: r.cost,
+            },
             post: sleepPost(h.townId, r.key),
             wake: { energy, health },
             why: `${reason === 'hp' ? `HP low (${Math.round(s.health)}/${start.maxHealth})` : `energy low (${Math.floor(s.energy)})`}: sleep until ${reasons.join(' + ')}`,
@@ -389,22 +483,35 @@ export function planAutopilot(input: PlanInput): Plan {
     const named = input.towns.filter((t) => !skip.has(`bank:${t.id}`));
     if (!named.length) return null;
     const home = named.find((t) => t.id === input.homeTownId);
-    let town = named.find((t) => t.id === townId) ?? (home && wayTime(s.at, home.at) <= cfg.ownTownWithin ? home : undefined);
+    let town =
+      named.find((t) => t.id === townId) ?? (home && wayTime(s.at, home.at) <= cfg.ownTownWithin ? home : undefined);
     if (!town) {
       town = named.reduce((a, b) => (wayTime(s.at, b.at) < wayTime(s.at, a.at) ? b : a));
       if (!anyDistance && wayTime(s.at, town.at) > cfg.bank.maxDetour) return null; // bank when the route passes a town
     }
     const cash = `$${Math.round(s.cash).toLocaleString('en-US')}`;
-    const why = s.cash > cfg.bank.above
-      ? `cash ${cash} is over $${cfg.bank.above.toLocaleString('en-US')}: banking it`
-      : `the queued bank walk ends here: depositing ${cash}`;
+    const why =
+      s.cash > cfg.bank.above
+        ? `cash ${cash} is over $${cfg.bank.above.toLocaleString('en-US')}: banking it`
+        : `the queued bank walk ends here: depositing ${cash}`;
     const deposit: PlannedTask = {
-      module: 'bank', key: `bank:${town.id}`, why,
+      module: 'bank',
+      key: `bank:${town.id}`,
+      why,
       step: { kind: 'action', title: `Deposit at ${town.name}`, cash: -s.cash },
       action: { type: 'deposit', townId: town.id },
     };
     if (s.at.x === town.at.x && s.at.y === town.at.y) return [deposit];
-    return [{ module: 'bank', key: `walk:${town.id}`, why, step: { kind: 'walk', title: `Walk to ${town.name} (bank)`, at: town.at }, post: walkPost(town.id, 'town') }, deposit];
+    return [
+      {
+        module: 'bank',
+        key: `walk:${town.id}`,
+        why,
+        step: { kind: 'walk', title: `Walk to ${town.name} (bank)`, at: town.at },
+        post: walkPost(town.id, 'town'),
+      },
+      deposit,
+    ];
   };
 
   /** The nearest shopping trip within the buy trip and the budget: walk there, then buy / pick up. */
@@ -419,16 +526,32 @@ export function planAutopilot(input: PlanInput): Plan {
       [best, bestWay] = [i, w];
     }
     if (best < 0) return null;
-    const t = trips.splice(best, 1)[0]!;
+    const t = trips.splice(best, 1)[0];
+    if (!t) return null;
     budget -= t.cost;
     const why = `quest items: ${t.what.join('; ')}`;
     const buy: PlannedTask = {
-      module: 'quests', key: `buy:${t.townId}`, why,
-      step: { kind: 'action', title: `Buy at ${t.name}${t.cost ? ` ($${Math.round(t.cost).toLocaleString('en-US')})` : ''}`, cash: -t.cost },
+      module: 'quests',
+      key: `buy:${t.townId}`,
+      why,
+      step: {
+        kind: 'action',
+        title: `Buy at ${t.name}${t.cost ? ` ($${Math.round(t.cost).toLocaleString('en-US')})` : ''}`,
+        cash: -t.cost,
+      },
       action: { type: 'buy', townId: t.townId },
     };
     if (s.at.x === t.at.x && s.at.y === t.at.y) return [buy];
-    return [{ module: 'quests', key: `walk:${t.townId}`, why, step: { kind: 'walk', title: `Walk to ${t.name} (quest items)`, at: t.at }, post: walkPost(t.townId, 'town') }, buy];
+    return [
+      {
+        module: 'quests',
+        key: `walk:${t.townId}`,
+        why,
+        step: { kind: 'walk', title: `Walk to ${t.name} (quest items)`, at: t.at },
+        post: walkPost(t.townId, 'town'),
+      },
+      buy,
+    ];
   };
 
   // Exchange rates: fixed for the whole plan, from where the server queue ends (unless passed in).
@@ -443,12 +566,20 @@ export function planAutopilot(input: PlanInput): Plan {
     const self = tl.steps[i];
     if (!job || !dur || !self) return;
     const prev = tl.steps[i - 1];
-    const c = candidates(prev?.at ?? start.at, prev?.health ?? start.health, prev?.level ?? start.level, Math.max(0, self.depart - start.now) / 3600, beforeQueue)
-      .find((x) => x.job.id === job.id && x.duration === dur);
-    const inside = self.end <= horizonEnd ? 1 : Math.max(0, (horizonEnd - self.start) / Math.max(1, self.end - self.start));
+    const c = candidates(
+      prev?.at ?? start.at,
+      prev?.health ?? start.health,
+      prev?.level ?? start.level,
+      Math.max(0, self.depart - start.now) / 3600,
+      beforeQueue,
+    ).find((x) => x.job.id === job.id && x.duration === dur);
+    const inside =
+      self.end <= horizonEnd ? 1 : Math.max(0, (horizonEnd - self.start) / Math.max(1, self.end - self.start));
     if (c) queuedValue += c.score * c.cost * inside;
     beforeQueue.runs.set(job.id, (beforeQueue.runs.get(job.id) ?? 0) + 1);
-    for (const [k, g] of Object.entries(runGains(job, dur, input.needs))) if ((beforeQueue.remaining[k] ?? 0) > 0) beforeQueue.remaining[k] = Math.max(0, beforeQueue.remaining[k]! - g);
+    for (const [k, g] of Object.entries(runGains(job, dur, input.needs)))
+      if ((beforeQueue.remaining[k] ?? 0) > 0)
+        beforeQueue.remaining[k] = Math.max(0, (beforeQueue.remaining[k] ?? 0) - g);
   });
 
   // Your inserted sleeps / bank stops, in time order: each goes in once the plan reaches its time.
@@ -456,17 +587,22 @@ export function planAutopilot(input: PlanInput): Plan {
   let value = 0;
   while (tasks.length < maxTasks && jobsPlanned < planJobs && tl.end < horizonEnd) {
     const s = tl.final;
-    if (inserts.length && inserts[0]!.at <= tl.end) {
-      const ins = inserts.shift()!;
+    if (inserts.length && (inserts[0]?.at ?? Number.POSITIVE_INFINITY) <= tl.end) {
+      const ins = inserts.shift();
+      if (!ins) continue;
       const key = `insert:${ins.kind}:${ins.at}`;
       const got = ins.kind === 'sleep' ? sleepPlan('energy', 0)?.task : bankPlan(true)?.[0];
       if (got) push({ ...got, key, why: `you inserted a ${ins.kind === 'sleep' ? 'sleep' : 'bank stop'} here` });
-      if (ins.kind === 'bank' && got?.step.kind === 'walk') push(bankPlan(true)!.at(-1)!);
+      const lastBank = bankPlan(true)?.at(-1);
+      if (ins.kind === 'bank' && got?.step.kind === 'walk' && lastBank) push(lastBank);
       continue;
     }
     if (mods.hpSleep && s.health < cfg.hp.sleepBelow * start.maxHealth) {
       // A health item that lifts HP back over the threshold beats walking to a hotel.
-      const item = useMod && cfg.consumables.health ? pickItem('health', (cfg.hp.sleepBelow * start.maxHealth - s.health) / start.maxHealth) : null;
+      const item =
+        useMod && cfg.consumables.health
+          ? pickItem('health', (cfg.hp.sleepBelow * start.maxHealth - s.health) / start.maxHealth)
+          : null;
       if (item) {
         push(useTask(item, `HP ${Math.round(s.health)}/${start.maxHealth}: use ${item.name} instead of sleeping`));
         continue;
@@ -478,7 +614,10 @@ export function planAutopilot(input: PlanInput): Plan {
         continue;
       }
     }
-    const bankDue = input.bankTownId !== undefined && s.cash > 0 && input.towns.some((t) => t.id === input.bankTownId && t.at.x === s.at.x && t.at.y === s.at.y);
+    const bankDue =
+      input.bankTownId !== undefined &&
+      s.cash > 0 &&
+      input.towns.some((t) => t.id === input.bankTownId && t.at.x === s.at.x && t.at.y === s.at.y);
     if (mods.bank && !banked && (s.cash > cfg.bank.above || bankDue)) {
       // Once per plan (the next replan, after depositing, looks again); no town in reach yet: try after each step.
       const b = bankPlan(false, bankDue ? input.bankTownId : undefined);
@@ -502,7 +641,10 @@ export function planAutopilot(input: PlanInput): Plan {
     if (useMod && cfg.consumables.motivation && c.job.motivation < 0.75) {
       const item = pickItem('motivation', 0.01);
       if (item && !tasks.some((t) => t.key === `use:${item.itemId}` && t.step.title.includes(c.job.name))) {
-        push({ ...useTask(item, `${c.job.name} motivation ${Math.round(c.job.motivation * 100)}%: use ${item.name}`), step: { kind: 'action', title: `Use ${item.name} (${c.job.name})` } });
+        push({
+          ...useTask(item, `${c.job.name} motivation ${Math.round(c.job.motivation * 100)}%: use ${item.name}`),
+          step: { kind: 'action', title: `Use ${item.name} (${c.job.name})` },
+        });
         c.job = { ...c.job, motivation: Math.min(1, c.job.motivation + item.effect.motivation) };
       }
     }
@@ -512,9 +654,17 @@ export function planAutopilot(input: PlanInput): Plan {
       // A hotel within the own-town distance beats an item; else an item when it saves at least 30 minutes.
       const hotelNear = !!sl && sl.travel <= cfg.ownTownWithin;
       const other = Math.min(wait, sl ? sl.ready : Infinity);
-      const item = useMod && cfg.consumables.energy && !hotelNear ? pickItem('energy', (c.energy - s.energy) / start.maxEnergy) : null;
+      const item =
+        useMod && cfg.consumables.energy && !hotelNear
+          ? pickItem('energy', (c.energy - s.energy) / start.maxEnergy)
+          : null;
       if (item && other >= 1800) {
-        push(useTask(item, `energy ${Math.floor(s.energy)}: use ${item.name} (saves ${Math.round(Math.min(other, 86400) / 60)} min)`));
+        push(
+          useTask(
+            item,
+            `energy ${Math.floor(s.energy)}: use ${item.name} (saves ${Math.round(Math.min(other, 86400) / 60)} min)`,
+          ),
+        );
         continue;
       }
     }
@@ -527,29 +677,46 @@ export function planAutopilot(input: PlanInput): Plan {
         continue;
       }
     }
-    const v = c.job.values[c.duration]!;
+    const v = c.job.values[c.duration];
+    if (!v) continue;
     const goal = (Object.keys(c.by) as Goal[]).reduce((a, b) => (c.by[b] > c.by[a] ? b : a));
     const forQuests = questParts(c.gains);
     push({
       module: 'jobs',
       key: `job:${c.job.id}:${c.duration}`,
-      step: { kind: 'job', title: c.job.name, jobId: c.job.id, at: c.at, duration: v.duration, energy: v.energy, xp: v.experience, money: v.money, hpLoss: c.hpLoss },
+      step: {
+        kind: 'job',
+        title: c.job.name,
+        jobId: c.job.id,
+        at: c.at,
+        duration: v.duration,
+        energy: v.energy,
+        xp: v.experience,
+        money: v.money,
+        hpLoss: c.hpLoss,
+      },
       post: jobPost(c.job.id, c.at, v.duration),
       value: c.score * c.cost,
-      why: goal === 'quests' && forQuests.length
-        ? `quest: ${forQuests.join('; ')}`
-        : `best ${GOAL_WORD[goal]} per ${cfg.per === 'energy' ? 'energy' : 'hour'}${forQuests.length ? ` · also ${forQuests.join('; ')}` : ''}`,
+      why:
+        goal === 'quests' && forQuests.length
+          ? `quest: ${forQuests.join('; ')}`
+          : `best ${GOAL_WORD[goal]} per ${cfg.per === 'energy' ? 'energy' : 'hour'}${forQuests.length ? ` · also ${forQuests.join('; ')}` : ''}`,
     });
-    const last = tl.steps[tl.steps.length - 1]!;
+    const last = tl.steps[tl.steps.length - 1];
+    if (!last) continue;
     // Value inside the horizon; a run crossing it counts for its share.
-    const inside = last.end <= horizonEnd ? 1 : Math.max(0, (horizonEnd - last.start) / Math.max(1, last.end - last.start));
+    const inside =
+      last.end <= horizonEnd ? 1 : Math.max(0, (horizonEnd - last.start) / Math.max(1, last.end - last.start));
     value += c.score * c.cost * inside;
     runs.set(c.job.id, (runs.get(c.job.id) ?? 0) + 1);
     jobsPlanned++;
-    for (const [k, g] of Object.entries(c.gains)) if ((remaining[k] ?? 0) > 1e-9) remaining[k] = Math.max(0, remaining[k]! - g);
+    for (const [k, g] of Object.entries(c.gains))
+      if ((remaining[k] ?? 0) > 1e-9) remaining[k] = Math.max(0, (remaining[k] ?? 0) - g);
   }
   const first = tasks[0];
-  const why = first?.why ?? (!mods.jobs ? 'Queue jobs is off.' : 'Nothing worth doing (no doable job, or everything is excluded).');
+  const why =
+    first?.why ??
+    (!mods.jobs ? 'Queue jobs is off.' : 'Nothing worth doing (no doable job, or everything is excluded).');
   const walk = tl.steps.reduce((a, st) => a + Math.max(0, Math.min(st.depart + st.travel, horizonEnd) - st.depart), 0);
   return { tasks, timeline: tl, why, value, queuedValue, walk, rates };
 }

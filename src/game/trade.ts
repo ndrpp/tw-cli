@@ -37,23 +37,40 @@
 //     seller_name, seller_player_id, market_town_name, market_town_x, market_town_y, is_highest_bidder,
 //     bidder_name, direction, description}
 import type { GameClient } from '../http/game-client.ts';
+import { arr, type JsonObject, obj, objs } from '../util/json.ts';
 import { plainText } from './quests.ts';
-import { arr, obj, objs, type JsonObject } from '../util/json.ts';
 
-const errText = (json: JsonObject, what: string) => plainText(json.msg ?? (typeof json.error === 'string' ? json.error : '')) || `${what} failed`;
+const errText = (json: JsonObject, what: string) =>
+  plainText(json.msg ?? (typeof json.error === 'string' ? json.error : '')) || `${what} failed`;
 const optNum = (v: unknown) => (typeof v === 'number' ? v : undefined);
 
 // ---- bank ----------------------------------------------------------------------------------
 
-export interface Bank { townId: number; townName: string; fee: number; deposit: number; cash: number }
+export interface Bank {
+  townId: number;
+  townName: string;
+  fee: number;
+  deposit: number;
+  cash: number;
+}
 
 export async function fetchBank(client: GameClient, townId: number): Promise<Bank> {
   const json = await client.remoteCallMode('building_bank', 'get_data', { town_id: townId });
   if (json.error) throw new Error(errText(json, 'Bank'));
-  return { townId, townName: plainText(json.town_name), fee: Number(json.deposit_fee) || 0, deposit: Number(json.deposit) || 0, cash: Number(json.own_money) || 0 };
+  return {
+    townId,
+    townName: plainText(json.town_name),
+    fee: Number(json.deposit_fee) || 0,
+    deposit: Number(json.deposit) || 0,
+    cash: Number(json.own_money) || 0,
+  };
 }
 
-export async function deposit(client: GameClient, townId: number, amount: number): Promise<{ deposit: number; cash: number; fee: number }> {
+export async function deposit(
+  client: GameClient,
+  townId: number,
+  amount: number,
+): Promise<{ deposit: number; cash: number; fee: number }> {
   const json = await client.remoteCall('building_bank', 'deposit', { town_id: townId, amount });
   if (json.error) throw new Error(errText(json, 'Deposit'));
   return { deposit: Number(json.deposit) || 0, cash: Number(json.own_money) || 0, fee: Number(json.fee) || 0 };
@@ -70,39 +87,88 @@ export const SHOPS = [
   { key: 'gunsmith', window: 'building_gunsmith', label: 'Gunsmith' },
 ] as const;
 export type ShopKey = (typeof SHOPS)[number]['key'];
-const shopWindow = (k: ShopKey) => SHOPS.find((s) => s.key === k)!.window;
+const shopWindow = (k: ShopKey): string => SHOPS.find((s) => s.key === k)?.window ?? SHOPS[0].window;
 
-export interface Shop { key: ShopKey; townId: number; townName: string; level: number; charge: number; items: number[] }
+export interface Shop {
+  key: ShopKey;
+  townId: number;
+  townName: string;
+  level: number;
+  charge: number;
+  items: number[];
+}
 
 export async function fetchShop(client: GameClient, key: ShopKey, townId: number): Promise<Shop> {
   // Trader.open: remoteCallMode(window + '&town_id=' + id, '') → game.php?window=building_x&town_id=N
   const json = await client.request(client.buildUrl({ window: `${shopWindow(key)}&town_id=${townId}` }), {});
   if (json.error) throw new Error(errText(json, 'Shop'));
   return {
-    key, townId, townName: plainText(json.town_name), level: Number(json.level) || 0,
+    key,
+    townId,
+    townName: plainText(json.town_name),
+    level: Number(json.level) || 0,
     charge: json.charge !== undefined ? Number(json.charge) : 1,
     items: objs(json.trader_inv).map((r) => Number(r.item_id)),
   };
 }
 
-export interface MoneyChange { changes: unknown[]; cash?: number | undefined; deposit?: number | undefined }
-
-export async function shopBuy(client: GameClient, key: ShopKey, townId: number, itemId: number, lastInvId: number): Promise<MoneyChange> {
-  const json = await client.remoteCall(shopWindow(key), 'buy', { item_id: itemId, town_id: townId, last_inv_id: lastInvId });
-  if (json.error) throw new Error(errText(json, 'Buy'));
-  if (json.expressoffer) throw new Error('You are not in this town; walk there first (express delivery costs nuggets and is not offered here).');
-  return { changes: arr(json.changes), cash: optNum(obj(json.money).barrows), deposit: optNum(obj(json.money).deposit) };
+export interface MoneyChange {
+  changes: unknown[];
+  cash?: number | undefined;
+  deposit?: number | undefined;
 }
 
-export async function shopSell(client: GameClient, key: ShopKey, townId: number, item: { itemId: number; invId: number }, count: number, lastInvId: number): Promise<MoneyChange> {
-  const json = await client.remoteCall(shopWindow(key), 'sell', { inv_id: item.invId, town_id: townId, item_id: item.itemId, count, last_inv_id: lastInvId });
+export async function shopBuy(
+  client: GameClient,
+  key: ShopKey,
+  townId: number,
+  itemId: number,
+  lastInvId: number,
+): Promise<MoneyChange> {
+  const json = await client.remoteCall(shopWindow(key), 'buy', {
+    item_id: itemId,
+    town_id: townId,
+    last_inv_id: lastInvId,
+  });
+  if (json.error) throw new Error(errText(json, 'Buy'));
+  if (json.expressoffer)
+    throw new Error(
+      'You are not in this town; walk there first (express delivery costs nuggets and is not offered here).',
+    );
+  return {
+    changes: arr(json.changes),
+    cash: optNum(obj(json.money).barrows),
+    deposit: optNum(obj(json.money).deposit),
+  };
+}
+
+export async function shopSell(
+  client: GameClient,
+  key: ShopKey,
+  townId: number,
+  item: { itemId: number; invId: number },
+  count: number,
+  lastInvId: number,
+): Promise<MoneyChange> {
+  const json = await client.remoteCall(shopWindow(key), 'sell', {
+    inv_id: item.invId,
+    town_id: townId,
+    item_id: item.itemId,
+    count,
+    last_inv_id: lastInvId,
+  });
   if (json.error) throw new Error(errText(json, 'Sell'));
   return { changes: arr(json.changes), cash: optNum(json.money) };
 }
 
 // ---- item use ------------------------------------------------------------------------------
 
-export interface UseResult { changes: unknown[]; effects: string[]; energy?: number | undefined; health?: number | undefined }
+export interface UseResult {
+  changes: unknown[];
+  effects: string[];
+  energy?: number | undefined;
+  health?: number | undefined;
+}
 
 /** ItemUse.doIt effect messages (texts as the web shows them). */
 export function effectText(m: JsonObject, itemName: (id: number) => string): string[] {
@@ -124,10 +190,17 @@ export function effectText(m: JsonObject, itemName: (id: number) => string): str
     case 'work_motivation':
       return ['Your work motivation has increased.'];
     case 'buff':
-      return [Number(buff.duration) > 0 ? 'Buffed:' : `Raised for ${String(buff.charge ?? '?')} action(s):`, ...arr(buff.description).map((d) => plainText(d))];
+      return [
+        Number(buff.duration) > 0 ? 'Buffed:' : `Raised for ${String(buff.charge ?? '?')} action(s):`,
+        ...arr(buff.description).map((d) => plainText(d)),
+      ];
     case 'content':
     case 'lottery':
-      return [`You get: ${objs(m.items).map((i) => `${Number(i.count) > 1 ? `${Number(i.count)}× ` : ''}${itemName(Number(i.item_id))}`).join(', ')}`];
+      return [
+        `You get: ${objs(m.items)
+          .map((i) => `${Number(i.count) > 1 ? `${Number(i.count)}× ` : ''}${itemName(Number(i.item_id))}`)
+          .join(', ')}`,
+      ];
     case 'learn_recipe':
       return ['You learned a new recipe.'];
     default:
@@ -135,7 +208,13 @@ export function effectText(m: JsonObject, itemName: (id: number) => string): str
   }
 }
 
-export async function useItem(client: GameClient, itemId: number, count: number, lastInvId: number, itemName: (id: number) => string): Promise<UseResult> {
+export async function useItem(
+  client: GameClient,
+  itemId: number,
+  count: number,
+  lastInvId: number,
+  itemName: (id: number) => string,
+): Promise<UseResult> {
   const json = await client.remoteCall('itemuse', 'use_item', { item_id: itemId, item_count: count, lastInvId });
   if (json.error) throw new Error(errText(json, 'Use item'));
   const msg = obj(json.msg);
@@ -151,9 +230,18 @@ export async function useItem(client: GameClient, itemId: number, count: number,
 // ---- mobile trader -------------------------------------------------------------------------
 
 /** Currency bit → name, from shop_trader/index `currencies` (verified live: {1:bonds, 2:nuggets, 4:dollar, 8:veteran}). */
-const SHOP_CURRENCIES: [number, string][] = [[1, 'bonds'], [2, 'nuggets'], [4, 'dollar'], [8, 'veteran']];
+const SHOP_CURRENCIES: [number, string][] = [
+  [1, 'bonds'],
+  [2, 'nuggets'],
+  [4, 'dollar'],
+  [8, 'veteran'],
+];
 
-export interface MobileTraderPrice { currency: string; amount: number; base: number }
+export interface MobileTraderPrice {
+  currency: string;
+  amount: number;
+  base: number;
+}
 
 export interface MobileTraderItem {
   itemId: number;
@@ -193,7 +281,8 @@ export function parseMobileTraderItem(r: JsonObject): MobileTraderItem {
     prices,
     discount,
     limitedAt,
-    limitedCount: Number.isFinite(limited) && r.limited_count !== null && r.limited_count !== undefined ? limited : null,
+    limitedCount:
+      Number.isFinite(limited) && r.limited_count !== null && r.limited_count !== undefined ? limited : null,
     teaser: plainText(String(r.teaser ?? '')),
   };
 }
@@ -203,13 +292,19 @@ export async function fetchMobileTrader(client: GameClient): Promise<MobileTrade
   const json = await client.remoteCallMode('shop_trader', 'index', {});
   if (json.error) throw new Error(errText(json, 'Mobile trader'));
   return {
-    items: objs(obj(json.inventory).trader).map(parseMobileTraderItem).filter((i) => i.prices.length > 0),
+    items: objs(obj(json.inventory).trader)
+      .map(parseMobileTraderItem)
+      .filter((i) => i.prices.length > 0),
     changesAt: Number(json.traderTime) || null,
   };
 }
 
 /** Buys one mobile-trader offer. The reply has no bag changes; refresh the inventory afterwards. */
-export async function buyMobileTrader(client: GameClient, item: MobileTraderItem, currency = item.prices[0]?.currency): Promise<{ cash?: number | undefined; deposit?: number | undefined; bonds?: number | undefined; message: string }> {
+export async function buyMobileTrader(
+  client: GameClient,
+  item: MobileTraderItem,
+  currency = item.prices[0]?.currency,
+): Promise<{ cash?: number | undefined; deposit?: number | undefined; bonds?: number | undefined; message: string }> {
   if (!currency) throw new Error('This offer has no price.');
   const json = await client.remoteCall('shop_trader', 'buy', { item_id: item.itemId, category: item.tab, currency });
   if (json.error) throw new Error(errText(json, 'Mobile trader buy'));
@@ -225,9 +320,18 @@ export async function buyMobileTrader(client: GameClient, item: MobileTraderItem
 
 /** Market item categories (MarketWindow category accordion), as item `type`s. */
 export const MARKET_CATEGORIES: { type: string; label: string }[] = [
-  { type: '', label: 'all' }, { type: 'belt', label: 'Belt' }, { type: 'body', label: 'Clothing' }, { type: 'right_arm', label: 'Duelling weapon' },
-  { type: 'head', label: 'Headgear' }, { type: 'left_arm', label: 'Left hand' }, { type: 'neck', label: 'Neckband' }, { type: 'pants', label: 'Pants' },
-  { type: 'yield', label: 'Product' }, { type: 'recipe', label: 'Recipe' }, { type: 'animal', label: 'Animal' }, { type: 'foot', label: 'Shoes' },
+  { type: '', label: 'all' },
+  { type: 'belt', label: 'Belt' },
+  { type: 'body', label: 'Clothing' },
+  { type: 'right_arm', label: 'Duelling weapon' },
+  { type: 'head', label: 'Headgear' },
+  { type: 'left_arm', label: 'Left hand' },
+  { type: 'neck', label: 'Neckband' },
+  { type: 'pants', label: 'Pants' },
+  { type: 'yield', label: 'Product' },
+  { type: 'recipe', label: 'Recipe' },
+  { type: 'animal', label: 'Animal' },
+  { type: 'foot', label: 'Shoes' },
 ];
 
 export interface MarketFilter {
@@ -242,7 +346,14 @@ export interface MarketFilter {
   buyOrders: boolean;
 }
 
-export const DEFAULT_FILTER: MarketFilter = { type: '', levelMin: 0, levelMax: 0, usable: false, consumable: false, buyOrders: false };
+export const DEFAULT_FILTER: MarketFilter = {
+  type: '',
+  levelMin: 0,
+  levelMax: 0,
+  usable: false,
+  consumable: false,
+  buyOrders: false,
+};
 
 export interface MarketOffer {
   id: number;
@@ -271,15 +382,25 @@ export function parseOffer(o: JsonObject): MarketOffer {
   const bid = o.current_bid ?? o.auction_price;
   const ends = Number(o.auction_ends_in) || 0;
   return {
-    id: Number(o.market_offer_id), itemId: Number(o.item_id), count: Number(o.item_count) || 1,
+    id: Number(o.market_offer_id),
+    itemId: Number(o.item_id),
+    count: Number(o.item_count) || 1,
     bid: bid === null || bid === undefined || bid === '' ? null : Number(bid),
-    startPrice: o.auction_price === null || o.auction_price === undefined || o.auction_price === '' ? null : Number(o.auction_price),
-    currentBid: o.current_bid === null || o.current_bid === undefined || o.current_bid === '' ? null : Number(o.current_bid),
+    startPrice:
+      o.auction_price === null || o.auction_price === undefined || o.auction_price === ''
+        ? null
+        : Number(o.auction_price),
+    currentBid:
+      o.current_bid === null || o.current_bid === undefined || o.current_bid === '' ? null : Number(o.current_bid),
     buyNow: o.max_price === null || o.max_price === undefined || o.max_price === '' ? null : Number(o.max_price),
-    endsIn: Math.max(0, ends), seller: o.seller_name ? String(o.seller_name) : 'Deleted', sellerId: Number(o.seller_player_id) || 0,
+    endsIn: Math.max(0, ends),
+    seller: o.seller_name ? String(o.seller_name) : 'Deleted',
+    sellerId: Number(o.seller_player_id) || 0,
     bidder: o.bidder_name ? String(o.bidder_name) : '',
     town: { name: String(o.market_town_name ?? ''), x: Number(o.market_town_x) || 0, y: Number(o.market_town_y) || 0 },
-    highestBidder: !!o.is_highest_bidder, direction: o.direction === 'BUY' ? 'BUY' : 'SELL', finished: ends <= 0,
+    highestBidder: !!o.is_highest_bidder,
+    direction: o.direction === 'BUY' ? 'BUY' : 'SELL',
+    finished: ends <= 0,
     description: o.description ? plainText(String(o.description)) : '',
   };
 }
@@ -294,7 +415,14 @@ export function suggestedBid(o: MarketOffer): number {
 }
 
 /** The fee the market window shows before putting up an offer or buy order (showMarketFees). */
-export function marketFee(o: { startPrice?: number | undefined; buyNow?: number | undefined; days: number; stage?: number | undefined; homeTown: boolean; auctions?: number | undefined }): number {
+export function marketFee(o: {
+  startPrice?: number | undefined;
+  buyNow?: number | undefined;
+  days: number;
+  stage?: number | undefined;
+  homeTown: boolean;
+  auctions?: number | undefined;
+}): number {
   const a = o.startPrice || 0;
   const b = o.buyNow || 0;
   if (!a && !b) return 0;
@@ -304,13 +432,18 @@ export function marketFee(o: { startPrice?: number | undefined; buyNow?: number 
 }
 
 /** calcUnitPrice: the buy-now price if set, else the starting price, per item (rounded up). */
-export const unitPrice = (startPrice: number | undefined, buyNow: number | undefined, count: number) => Math.ceil((buyNow || startPrice || 0) / Math.max(1, count));
+export const unitPrice = (startPrice: number | undefined, buyNow: number | undefined, count: number) =>
+  Math.ceil((buyNow || startPrice || 0) / Math.max(1, count));
 
 /** putupOffer's checks for a buy order; returns the error text or null. */
-export function buyOrderProblem(o: { maxBid?: number | undefined; instant?: number | undefined; count: number }, itemSellPrice: number): string | null {
+export function buyOrderProblem(
+  o: { maxBid?: number | undefined; instant?: number | undefined; count: number },
+  itemSellPrice: number,
+): string | null {
   if (!o.maxBid && !o.instant) return 'Set an instant price or a maximum bid.';
   if (o.maxBid && o.instant && o.instant >= o.maxBid) return 'The maximum bid must be higher than the instant price.';
-  if (unitPrice(o.maxBid, o.instant, o.count) < itemSellPrice) return `The price per item must be at least the shop sell price ($ ${itemSellPrice}).`;
+  if (unitPrice(o.maxBid, o.instant, o.count) < itemSellPrice)
+    return `The price per item must be at least the shop sell price ($ ${itemSellPrice}).`;
   return null;
 }
 
@@ -321,11 +454,26 @@ export class MarketApi {
     this.client = client;
   }
 
-  async search(pattern: string, page = 1, filter: MarketFilter = DEFAULT_FILTER, nav: 'first' | 'next' | 'prev' = page > 1 ? 'next' : 'first'): Promise<{ offers: MarketOffer[]; next: boolean }> {
+  async search(
+    pattern: string,
+    page = 1,
+    filter: MarketFilter = DEFAULT_FILTER,
+    nav: 'first' | 'next' | 'prev' = page > 1 ? 'next' : 'first',
+  ): Promise<{ offers: MarketOffer[]; next: boolean }> {
     const json = await this.client.remoteCall('building_market', 'search', {
-      pattern, nav: page > 1 ? nav : 'first', page, sort: 'bid', order: 'asc', type: filter.type,
-      level_range_min: String(filter.levelMin || 0), level_range_max: filter.levelMax ? String(filter.levelMax) : '',
-      usable: filter.usable, has_effect: filter.consumable, visibility: 2, direction_sell: !filter.buyOrders, direction_buy: filter.buyOrders,
+      pattern,
+      nav: page > 1 ? nav : 'first',
+      page,
+      sort: 'bid',
+      order: 'asc',
+      type: filter.type,
+      level_range_min: String(filter.levelMin || 0),
+      level_range_max: filter.levelMax ? String(filter.levelMax) : '',
+      usable: filter.usable,
+      has_effect: filter.consumable,
+      visibility: 2,
+      direction_sell: !filter.buyOrders,
+      direction_buy: filter.buyOrders,
     });
     if (json.error) throw new Error(errText(json, 'Market search'));
     return { offers: offers(json).filter((o) => !o.finished), next: !!obj(json.msg).next };
@@ -335,11 +483,25 @@ export class MarketApi {
    * Bids `amount` on an offer. On goods for sale, ≥ the buy-now price buys instantly; on a buy order you sell
    * your item, and ≤ the instant price sells instantly at that price. bidtype 0 pays cash, 1 the bank account.
    */
-  async bid(offer: MarketOffer, amount: number, fromBank: boolean): Promise<{ instant: boolean; cash?: number | undefined; deposit?: number | undefined; changes: unknown[] }> {
-    const json = await this.client.remoteCall('building_market', 'bid', { bidtype: fromBank ? 1 : 0, bid: amount, market_offer_id: offer.id, direction: offer.direction });
+  async bid(
+    offer: MarketOffer,
+    amount: number,
+    fromBank: boolean,
+  ): Promise<{ instant: boolean; cash?: number | undefined; deposit?: number | undefined; changes: unknown[] }> {
+    const json = await this.client.remoteCall('building_market', 'bid', {
+      bidtype: fromBank ? 1 : 0,
+      bid: amount,
+      market_offer_id: offer.id,
+      direction: offer.direction,
+    });
     if (json.error) throw new Error(errText(json, 'Bid'));
     const m = obj(json.msg);
-    return { instant: !!(m.instantBuy ?? json.instantBuy), cash: optNum(m.money) || undefined, deposit: optNum(m.deposit) || undefined, changes: arr(m.changes) };
+    return {
+      instant: !!(m.instantBuy ?? json.instantBuy),
+      cash: optNum(m.money) || undefined,
+      deposit: optNum(m.deposit) || undefined,
+      changes: arr(m.changes),
+    };
   }
 
   async myBids(): Promise<MarketOffer[]> {
@@ -377,29 +539,87 @@ export class MarketApi {
 
   /** Withdraws one of your sell offers or buy orders; returns the refunded fee (0 when none). */
   async withdraw(offer: MarketOffer): Promise<{ refund: number }> {
-    const json = await this.client.remoteCall('building_market', 'offtake', { offer_id: offer.id, direction: offer.direction });
+    const json = await this.client.remoteCall('building_market', 'offtake', {
+      offer_id: offer.id,
+      direction: offer.direction,
+    });
     if (json.error) throw new Error(errText(json, 'Withdraw'));
-    const m = Number(json.money);
-    return { refund: m > 0 ? m : 0 };
+    const refund = Number(json.money);
+    return { refund: Number.isFinite(refund) ? Math.max(0, refund) : 0 };
   }
 
   /** Puts items up for sale in a town's market (MarketWindow.Offer.getOfferObject). */
-  async sell(o: { townId: number; itemId: number; count: number; days: number; startPrice?: number | undefined; buyNow?: number | undefined; description?: string | undefined }): Promise<{ fee: number; cash?: number | undefined; deposit?: number | undefined }> {
+  async sell(o: {
+    townId: number;
+    itemId: number;
+    count: number;
+    days: number;
+    startPrice?: number | undefined;
+    buyNow?: number | undefined;
+    description?: string | undefined;
+  }): Promise<{ fee: number; cash?: number | undefined; deposit?: number | undefined }> {
     if (!o.startPrice && !o.buyNow) throw new Error('Set a starting bid or a buy-now price.');
-    return this.putup({ townId: o.townId, itemId: o.itemId, count: o.count, days: o.days, auctionprice: o.startPrice, maxprice: o.buyNow, description: o.description, direction: 'SELL', bidtype: 0 });
+    return this.putup({
+      townId: o.townId,
+      itemId: o.itemId,
+      count: o.count,
+      days: o.days,
+      auctionprice: o.startPrice,
+      maxprice: o.buyNow,
+      description: o.description,
+      direction: 'SELL',
+      bidtype: 0,
+    });
   }
 
   /** Places a buy order: you pay at most `maxBid` (auction) or `instant` (sells to you at once). */
-  async buyOrder(o: { townId: number; itemId: number; count: number; days: number; maxBid?: number | undefined; instant?: number | undefined; fromBank: boolean; description?: string | undefined }): Promise<{ fee: number; cash?: number | undefined; deposit?: number | undefined }> {
+  async buyOrder(o: {
+    townId: number;
+    itemId: number;
+    count: number;
+    days: number;
+    maxBid?: number | undefined;
+    instant?: number | undefined;
+    fromBank: boolean;
+    description?: string | undefined;
+  }): Promise<{ fee: number; cash?: number | undefined; deposit?: number | undefined }> {
     if (!o.maxBid && !o.instant) throw new Error('Set an instant price or a maximum bid.');
-    if (o.maxBid && o.instant && o.instant >= o.maxBid) throw new Error('The maximum bid must be higher than the instant price.');
-    return this.putup({ townId: o.townId, itemId: o.itemId, count: o.count, days: o.days, auctionprice: o.maxBid, maxprice: o.instant, description: o.description, direction: 'BUY', bidtype: o.fromBank ? 1 : 0 });
+    if (o.maxBid && o.instant && o.instant >= o.maxBid)
+      throw new Error('The maximum bid must be higher than the instant price.');
+    return this.putup({
+      townId: o.townId,
+      itemId: o.itemId,
+      count: o.count,
+      days: o.days,
+      auctionprice: o.maxBid,
+      maxprice: o.instant,
+      description: o.description,
+      direction: 'BUY',
+      bidtype: o.fromBank ? 1 : 0,
+    });
   }
 
-  private async putup(o: { townId: number; itemId: number; count: number; days: number; auctionprice?: number | undefined; maxprice?: number | undefined; description?: string | undefined; direction: 'SELL' | 'BUY'; bidtype: 0 | 1 }) {
+  private async putup(o: {
+    townId: number;
+    itemId: number;
+    count: number;
+    days: number;
+    auctionprice?: number | undefined;
+    maxprice?: number | undefined;
+    description?: string | undefined;
+    direction: 'SELL' | 'BUY';
+    bidtype: 0 | 1;
+  }) {
     const post: Record<string, string | number> = {
-      town_id: o.townId, item_id: o.itemId, itemcount: o.count, auctioncount: 1, sellrights: 2, auctionlength: o.days,
-      description: o.description ?? '', direction: o.direction, bidtype: o.bidtype,
+      town_id: o.townId,
+      item_id: o.itemId,
+      itemcount: o.count,
+      auctioncount: 1,
+      sellrights: 2,
+      auctionlength: o.days,
+      description: o.description ?? '',
+      direction: o.direction,
+      bidtype: o.bidtype,
     };
     if (o.auctionprice) post.auctionprice = o.auctionprice;
     if (o.maxprice) post.maxprice = o.maxprice;

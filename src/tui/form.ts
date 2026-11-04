@@ -1,11 +1,12 @@
 // Small form for the TUI: a few labelled fields edited in place (telegrams, bank deposit, bids, market offers).
 // Typing edits the focused field; Tab / ↑ ↓ move; Enter goes to the next field and submits on the last one;
 // choice fields cycle with ← → or Space; Esc cancels.
-import React from 'react';
+
 import { Box, Text } from 'ink';
-import { truncate } from './format.ts';
+import React from 'react';
 import type { Segment } from '../game/chatlinks.ts';
 import { defined } from '../util/defined.ts';
+import { truncate } from './format.ts';
 
 const h = React.createElement;
 
@@ -28,11 +29,22 @@ export interface FormState {
 }
 
 export interface KeyLike {
-  return?: boolean; escape?: boolean; tab?: boolean; shift?: boolean; backspace?: boolean; delete?: boolean;
-  upArrow?: boolean; downArrow?: boolean; leftArrow?: boolean; rightArrow?: boolean; ctrl?: boolean; meta?: boolean;
+  return?: boolean;
+  escape?: boolean;
+  tab?: boolean;
+  shift?: boolean;
+  backspace?: boolean;
+  delete?: boolean;
+  upArrow?: boolean;
+  downArrow?: boolean;
+  leftArrow?: boolean;
+  rightArrow?: boolean;
+  ctrl?: boolean;
+  meta?: boolean;
 }
 
-export const formValues = (f: FormState): Record<string, string> => Object.fromEntries(f.fields.map((x) => [x.key, x.value]));
+export const formValues = (f: FormState): Record<string, string> =>
+  Object.fromEntries(f.fields.map((x) => [x.key, x.value]));
 
 export function makeForm(title: string, fields: FormField[], note?: FormState['note']): FormState {
   return { title, fields, focus: 0, note };
@@ -41,10 +53,18 @@ export function makeForm(title: string, fields: FormField[], note?: FormState['n
 /** Applies one key press. Returns the new form, 'submit', or 'cancel'. */
 export function formKey(f: FormState, input: string, key: KeyLike): FormState | 'submit' | 'cancel' {
   if (key.escape) return 'cancel';
-  const field = f.fields[f.focus]!;
-  const set = (value: string): FormState => ({ ...f, fields: f.fields.map((x, i) => (i === f.focus ? { ...x, value } : x)) });
+  const field = f.fields[f.focus];
+  if (!field) return 'cancel';
+  const set = (value: string): FormState => ({
+    ...f,
+    fields: f.fields.map((x, i) => (i === f.focus ? { ...x, value } : x)),
+  });
   if (key.return) return f.focus >= f.fields.length - 1 ? 'submit' : { ...f, focus: f.focus + 1 };
-  if (key.tab || key.downArrow) return { ...f, focus: key.shift ? (f.focus + f.fields.length - 1) % f.fields.length : (f.focus + 1) % f.fields.length };
+  if (key.tab || key.downArrow)
+    return {
+      ...f,
+      focus: key.shift ? (f.focus + f.fields.length - 1) % f.fields.length : (f.focus + 1) % f.fields.length,
+    };
   if (key.upArrow) return { ...f, focus: (f.focus + f.fields.length - 1) % f.fields.length };
   if (field.kind === 'choice') {
     const opts = field.options ?? [];
@@ -65,15 +85,24 @@ export function formKey(f: FormState, input: string, key: KeyLike): FormState | 
 export function FormView({ form, width }: { form: FormState; width: number }) {
   const labelW = Math.min(14, Math.max(...form.fields.map((x) => x.label.length)) + 1);
   const note = form.note?.(formValues(form));
-  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'yellow', paddingX: 1, width },
+  return h(
+    Box,
+    { flexDirection: 'column', borderStyle: 'round', borderColor: 'yellow', paddingX: 1, width },
     h(Text, { bold: true, color: 'yellow', wrap: 'truncate' }, form.title),
     ...form.fields.map((x, i) => {
       const focused = i === form.focus;
       const shown = x.kind === 'choice' ? `‹ ${x.value} ›` : `${x.value}${focused ? '▏' : ''}`;
-      return h(Text, { key: x.key, wrap: 'truncate' },
+      return h(
+        Text,
+        { key: x.key, wrap: 'truncate' },
         h(Text, defined({ color: focused ? 'cyan' : undefined, bold: focused }), `${x.label.padEnd(labelW)} `),
-        h(Text, { inverse: focused && x.kind === 'choice' }, truncate(shown, Math.max(4, width - labelW - 5)).trimEnd()),
-        x.hint && focused ? h(Text, { dimColor: true }, `  ${x.hint}`) : '');
+        h(
+          Text,
+          { inverse: focused && x.kind === 'choice' },
+          truncate(shown, Math.max(4, width - labelW - 5)).trimEnd(),
+        ),
+        x.hint && focused ? h(Text, { dimColor: true }, `  ${x.hint}`) : '',
+      );
     }),
     note ? h(Text, { color: 'cyan', wrap: 'truncate' }, note) : null,
     h(Text, { dimColor: true, wrap: 'truncate' }, 'Enter next/submit · Tab ↑↓ field · ← → choice · Esc cancel'),
@@ -92,7 +121,12 @@ export function wrapSegments(segs: Segment[], width: number): Segment[][] {
     else line.push({ text, color });
     len += text.length;
   };
-  const words = segs.flatMap((s) => s.text.split(/\s+/).filter(Boolean).map((w) => ({ w, color: s.color })));
+  const words = segs.flatMap((s) =>
+    s.text
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => ({ w, color: s.color })),
+  );
   for (const { w, color } of words) {
     for (let i = 0; i < w.length; i += width) {
       const piece = w.slice(i, i + width);

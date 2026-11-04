@@ -1,9 +1,13 @@
 // Character state from Character.init (game.php) plus the client's own regen ticker
 // (Character.tick4Character @723978) and max-health formula (calcMaxHealth @723529).
-import type { ServerClock } from './clock.ts';
-import { isObj, nums, obj, type JsonObject } from '../util/json.ts';
 
-export interface Position { x: number; y: number }
+import { isObj, type JsonObject, nums, obj } from '../util/json.ts';
+import type { ServerClock } from './clock.ts';
+
+export interface Position {
+  x: number;
+  y: number;
+}
 
 /**
  * Total XP at which `level` starts (Character.calcLowerExp @717300): floor((Σk² for k≤level + 10·(level+1) − 21) · 3)
@@ -11,7 +15,9 @@ export interface Position { x: number; y: number }
  */
 export function levelStartXp(level: number, maxLevel = 250): number {
   const l = Math.min(level, maxLevel);
-  return Math.floor(((l * (l + 1) * (2 * l + 1)) / 6 + (l + 1) * 10 - 21) * 3 + (l > 120 ? 1000 * Math.pow(l - 120, 2.9) : 0));
+  return Math.floor(
+    ((l * (l + 1) * (2 * l + 1)) / 6 + (l + 1) * 10 - 21) * 3 + (l > 120 ? 1000 * (l - 120) ** 2.9 : 0),
+  );
 }
 
 export interface LevelProgress {
@@ -96,7 +102,8 @@ export class CharacterState {
     c.maxEnergy = Number(data.maxEnergy);
     c.healthRegen = Number(data.healthRegenFactor ?? 0);
     c.energyRegen = Number(data.energyRegenFactor ?? 0);
-    if (isObj(data.taskLimit)) c.taskLimit = { normal: Number(data.taskLimit.normal) || 4, premium: Number(data.taskLimit.premium) || 9 };
+    if (isObj(data.taskLimit))
+      c.taskLimit = { normal: Number(data.taskLimit.normal) || 4, premium: Number(data.taskLimit.premium) || 9 };
     c.skills = nums(obj(data.skillData).skills);
     c.skillBonus = nums(obj(data.skillData).skillBonus);
     const lp = Number(data.lpPerPoint ?? 0);

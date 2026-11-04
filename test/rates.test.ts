@@ -1,5 +1,5 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import { RateTracker } from '../src/game/rates.ts';
 
 test('rates: null until 5 min of data, then per hour over the session', () => {

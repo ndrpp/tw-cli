@@ -2,7 +2,11 @@
 // player would read them off the header. Pure: the caller passes the time and values (GameState.tick).
 // Money is net: purchases, fees and duel losses count against it; deposits and withdrawals do not.
 
-export interface RateSample { t: number; xp: number; money: number }
+export interface RateSample {
+  t: number;
+  xp: number;
+  money: number;
+}
 
 export interface Rates {
   xpH: number;
@@ -36,7 +40,8 @@ export class RateTracker {
     const last = this.samples[this.samples.length - 1];
     if (last && t - last.t < SAMPLE_S) return;
     this.samples.push(s);
-    while (this.samples.length > 2 && this.samples[1]!.t <= t - this.keepS) this.samples.shift();
+    while (this.samples.length > 2 && (this.samples[1]?.t ?? Number.POSITIVE_INFINITY) <= t - this.keepS)
+      this.samples.shift();
   }
 
   /** Rates over the last `windowS` up to `now` with the current values; null until MIN_SPAN_S of data. */

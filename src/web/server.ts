@@ -9,11 +9,16 @@ import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { dirname } from 'node:path';
-import { FingerprintProfileError, readProfileRaw, validateProfile, type FingerprintProfile } from '../fingerprint/profile.ts';
-import { PROFILE_FILE } from '../auth/session-store.ts';
 import { DEFAULT_WORLD, ensureGame } from '../auth/session.ts';
-import { page } from './page.ts';
+import { PROFILE_FILE } from '../auth/session-store.ts';
+import {
+  type FingerprintProfile,
+  FingerprintProfileError,
+  readProfileRaw,
+  validateProfile,
+} from '../fingerprint/profile.ts';
 import { obj } from '../util/json.ts';
+import { page } from './page.ts';
 
 const FP_LIB = readFileSync(new URL('./assets/fingerprint2.js', import.meta.url), 'utf8');
 const MAX_BODY = 256 * 1024;
@@ -28,7 +33,11 @@ export interface WebOptions {
   /** Called after a fingerprint was verified and saved. */
   onFingerprint?: (fp: string) => void;
   /** Replaces the default login (the TUI passes one that keeps the opened game). */
-  login?: (name: string, password: string, profile: FingerprintProfile) => Promise<{ name: string; level: number; world: string }>;
+  login?: (
+    name: string,
+    password: string,
+    profile: FingerprintProfile,
+  ) => Promise<{ name: string; level: number; world: string }>;
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -54,20 +63,28 @@ function send(res: ServerResponse, status: number, type: string, body: string): 
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
     // Everything is served from here; nothing may be loaded from elsewhere.
-    'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'none'; frame-ancestors 'none'",
+    'content-security-policy':
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'none'; frame-ancestors 'none'",
   });
   res.end(body);
 }
 
-const json = (res: ServerResponse, status: number, data: unknown) => send(res, status, 'application/json; charset=utf-8', JSON.stringify(data));
+const json = (res: ServerResponse, status: number, data: unknown) =>
+  send(res, status, 'application/json; charset=utf-8', JSON.stringify(data));
 
 async function defaultLogin(name: string, password: string, profile: FingerprintProfile) {
   const game = await ensureGame({ forceLogin: true, profile, credentials: async () => ({ name, password }) });
   const c = game.bootstrap.character ?? {};
-  return { name: String(c.name ?? '?'), level: Number(c.level ?? 0), world: String(game.bootstrap.game?.currentWorldName ?? DEFAULT_WORLD.url) };
+  return {
+    name: String(c.name ?? '?'),
+    level: Number(c.level ?? 0),
+    world: String(game.bootstrap.game?.currentWorldName ?? DEFAULT_WORLD.url),
+  };
 }
 
-export function startWebServer(opts: WebOptions): Promise<{ url: string; token: string; close: () => Promise<void>; done: Promise<void> }> {
+export function startWebServer(
+  opts: WebOptions,
+): Promise<{ url: string; token: string; close: () => Promise<void>; done: Promise<void> }> {
   const token = randomBytes(18).toString('base64url');
   const profileFile = opts.profileFile ?? PROFILE_FILE;
   const log = opts.log ?? ((m: string) => console.error(m));
@@ -84,16 +101,29 @@ export function startWebServer(opts: WebOptions): Promise<{ url: string; token: 
       const allowed = new Set(['localhost', '127.0.0.1', '[::1]', opts.host]);
       if (!allowed.has(host) && opts.host !== '0.0.0.0') return send(res, 421, 'text/plain', 'wrong host');
       const auth = url.searchParams.get('t') ?? req.headers['x-tw-token'];
-      if (auth !== token) return send(res, 403, 'text/plain', 'Open the exact URL printed in the terminal (it contains a one-time token).');
+      if (auth !== token)
+        return send(
+          res,
+          403,
+          'text/plain',
+          'Open the exact URL printed in the terminal (it contains a one-time token).',
+        );
 
       if (req.method === 'GET' && url.pathname === '/') {
         const existing = readProfileRaw(profileFile);
-        return send(res, 200, 'text/html; charset=utf-8', page({ token, world: DEFAULT_WORLD.url, existingFp: existing?.fp ?? null }));
+        return send(
+          res,
+          200,
+          'text/html; charset=utf-8',
+          page({ token, world: DEFAULT_WORLD.url, existingFp: existing?.fp ?? null }),
+        );
       }
-      if (req.method === 'GET' && url.pathname === '/fingerprint2.js') return send(res, 200, 'text/javascript; charset=utf-8', FP_LIB);
+      if (req.method === 'GET' && url.pathname === '/fingerprint2.js')
+        return send(res, 200, 'text/javascript; charset=utf-8', FP_LIB);
 
       if (req.method === 'POST' && (url.pathname === '/api/fingerprint' || url.pathname === '/api/login')) {
-        if (!(req.headers['content-type'] ?? '').startsWith('application/json')) return json(res, 415, { error: 'JSON only' });
+        if (!(req.headers['content-type'] ?? '').startsWith('application/json'))
+          return json(res, 415, { error: 'JSON only' });
         const body = obj(JSON.parse(await readBody(req)));
 
         if (url.pathname === '/api/fingerprint') {
@@ -105,9 +135,11 @@ export function startWebServer(opts: WebOptions): Promise<{ url: string; token: 
           }
           const previous = readProfileRaw(profileFile)?.fp ?? null;
           mkdirSync(dirname(profileFile), { recursive: true, mode: 0o700 });
-          writeFileSync(profileFile, JSON.stringify(profile, null, 2) + '\n', { mode: 0o600 });
+          writeFileSync(profileFile, `${JSON.stringify(profile, null, 2)}\n`, { mode: 0o600 });
           chmodSync(profileFile, 0o600);
-          log(`Fingerprint saved: ${profile.fp} (${profile.components.length} components)${previous && previous !== profile.fp ? `, replaced ${previous}` : ''}`);
+          log(
+            `Fingerprint saved: ${profile.fp} (${profile.components.length} components)${previous && previous !== profile.fp ? `, replaced ${previous}` : ''}`,
+          );
           opts.onFingerprint?.(profile.fp);
           return json(res, 200, { ok: true, fp: profile.fp, previous });
         }

@@ -24,12 +24,12 @@ export function bar(value: number, max: number, width: number): string {
 }
 
 export function money(n: number): string {
-  return '$' + Math.round(n).toLocaleString('en-US');
+  return `$${Math.round(n).toLocaleString('en-US')}`;
 }
 
 export function truncate(s: string, width: number): string {
   if (width <= 0) return '';
-  return s.length <= width ? s.padEnd(width) : s.slice(0, Math.max(0, width - 1)) + '…';
+  return s.length <= width ? s.padEnd(width) : `${s.slice(0, Math.max(0, width - 1))}…`;
 }
 
 /** Keeps the selected row visible inside a window of `height` rows. */

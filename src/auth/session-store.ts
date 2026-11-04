@@ -3,7 +3,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { CookieJar, type Cookie } from '../http/cookie-jar.ts';
+import { type Cookie, CookieJar } from '../http/cookie-jar.ts';
 
 export const CONFIG_DIR = process.env.TW_CLI_HOME ?? join(homedir(), '.config', 'tw-cli');
 export const SESSION_FILE = join(CONFIG_DIR, 'session.json');

@@ -62,13 +62,24 @@ function jobRequirementAmount(r: QuestRequirement): { amount: number; unit: 'run
   const frac = r.info.match(/\((\d+)\s*\/\s*(\d+)\)/);
   if (frac) return { amount: Math.max(0, Number(frac[2]) - Number(frac[1])), unit: 'runs' };
   const time = r.info.match(/(\d+)\s*(second|minute|hour)/i);
-  if (time) return { amount: Number(time[1]) * ({ second: 1, minute: 60, hour: 3600 } as Record<string, number>)[time[2]!.toLowerCase()]!, unit: 'seconds' };
+  if (time) {
+    const unitSeconds = { second: 1, minute: 60, hour: 3600 } as Record<string, number>;
+    return {
+      amount: Number(time[1]) * (unitSeconds[time[2]?.toLowerCase() ?? ''] ?? 1),
+      unit: 'seconds',
+    };
+  }
   const n = r.count ?? 1;
   return n >= 15 ? { amount: n, unit: 'seconds' } : { amount: n, unit: 'runs' };
 }
 
 /** Outstanding needs of these quests, summed per item / job; items already in the bag are subtracted. */
-export function questNeeds(quests: Quest[], have: (itemId: number) => number, itemName: (id: number) => string, jobName: (id: number) => string): RouteNeed[] {
+export function questNeeds(
+  quests: Quest[],
+  have: (itemId: number) => number,
+  itemName: (id: number) => string,
+  jobName: (id: number) => string,
+): RouteNeed[] {
   const needs = new Map<string, RouteNeed>();
   const add = (n: Omit<RouteNeed, 'quests'>, quest: string) => {
     const cur = needs.get(n.key);
@@ -80,14 +91,29 @@ export function questNeeds(quests: Quest[], have: (itemId: number) => number, it
   for (const q of quests) {
     for (const r of q.requirements) {
       if (r.solved) continue;
-      if (r.itemId !== undefined) add({ key: `item:${baseOf(r.itemId)}`, label: itemName(r.itemId), amount: r.count ?? 1, unit: 'items', itemId: r.itemId }, q.soloTitle || q.title);
+      if (r.itemId !== undefined)
+        add(
+          {
+            key: `item:${baseOf(r.itemId)}`,
+            label: itemName(r.itemId),
+            amount: r.count ?? 1,
+            unit: 'items',
+            itemId: r.itemId,
+          },
+          q.soloTitle || q.title,
+        );
       else if (r.jobId !== undefined) {
         const { amount, unit } = jobRequirementAmount(r);
-        if (amount > 0) add({ key: `job:${r.jobId}:${unit}`, label: jobName(r.jobId), amount, unit, jobId: r.jobId }, q.soloTitle || q.title);
+        if (amount > 0)
+          add(
+            { key: `job:${r.jobId}:${unit}`, label: jobName(r.jobId), amount, unit, jobId: r.jobId },
+            q.soloTitle || q.title,
+          );
       }
     }
   }
-  for (const n of needs.values()) if (n.unit === 'items' && n.itemId !== undefined) n.amount = Math.max(0, n.amount - have(n.itemId));
+  for (const n of needs.values())
+    if (n.unit === 'items' && n.itemId !== undefined) n.amount = Math.max(0, n.amount - have(n.itemId));
   return [...needs.values()].filter((n) => n.amount > 0);
 }
 
@@ -118,14 +144,19 @@ export function runGains(job: JobInfo, duration: DurationKey, needs: RouteNeed[]
   if (!v) return out;
   for (const n of needs) {
     if (n.unit === 'items' && n.itemId !== undefined) {
-      const y = v.items?.find((i) => baseOf(i.itemId) === baseOf(n.itemId!));
+      const itemId = n.itemId;
+      const y = v.items?.find((i) => baseOf(i.itemId) === baseOf(itemId));
       if (y && y.expected > 0) out[n.key] = y.expected;
     } else if (n.jobId === job.id) out[n.key] = n.unit === 'runs' ? 1 : v.duration;
   }
   return out;
 }
 
-function nearest(locs: Position[] | undefined, from: Position, way: (a: Position, b: Position) => number): { at: Position; travel: number } | null {
+function nearest(
+  locs: Position[] | undefined,
+  from: Position,
+  way: (a: Position, b: Position) => number,
+): { at: Position; travel: number } | null {
   let best: { at: Position; travel: number } | null = null;
   for (const at of locs ?? []) {
     const t = way(from, at);
@@ -157,8 +188,17 @@ export function planRoute(input: PlanInput): RoutePlan {
     let why = 'no job drops it (buy it, or it comes from another quest)';
     if (n.jobId !== undefined) {
       const j = jobs.find((x) => x.id === n.jobId);
-      why = !j ? 'job unknown' : !doable(j) ? `not enough labor points (${j.laborPoints})` : 'job has no known location';
-    } else if (jobs.some((j) => Object.values(j.values).some((v) => v?.items?.some((i) => baseOf(i.itemId) === baseOf(n.itemId!))))) {
+      why = !j
+        ? 'job unknown'
+        : !doable(j)
+          ? `not enough labor points (${j.laborPoints})`
+          : 'job has no known location';
+    } else if (
+      n.itemId !== undefined &&
+      jobs.some((j) =>
+        Object.values(j.values).some((v) => v?.items?.some((i) => baseOf(i.itemId) === baseOf(n.itemId ?? 0))),
+      )
+    ) {
       why = 'only jobs you lack labor points for drop it';
     }
     unmet.push({ need: n, why });
@@ -176,13 +216,15 @@ export function planRoute(input: PlanInput): RoutePlan {
       for (const [k, g] of Object.entries(c.gains)) {
         const rem = remaining[k] ?? 0;
         if (rem <= 1e-9) continue;
-        const total = needs.find((n) => n.key === k)!.amount;
+        const total = needs.find((n) => n.key === k)?.amount;
+        if (!total) continue;
         progress += Math.min(rem, g) / total; // fraction of the need this run closes
       }
       if (progress <= 0) continue;
       const loc = nearest(input.locations(c.job.groupid), pos, wayTime);
       if (!loc) continue;
-      const v = c.job.values[c.duration]!;
+      const v = c.job.values[c.duration];
+      if (!v) continue;
       // Energy is what limits a day of jobs; travel costs time only, weighted by the energy regenerated meanwhile.
       const cost = objective === 'energy' ? v.energy + loc.travel * walkWeight : v.duration + loc.travel;
       let score = progress / Math.max(cost, 1e-6);
@@ -191,22 +233,36 @@ export function planRoute(input: PlanInput): RoutePlan {
     }
     if (!best) break;
     const { c, at, travel } = best;
-    const v = c.job.values[c.duration]!;
+    const v = c.job.values[c.duration];
+    if (!v) break;
     const last = stops[stops.length - 1];
     if (last && last.job.id === c.job.id && last.duration === c.duration && last.at.x === at.x && last.at.y === at.y) {
       last.runs++;
     } else {
-      stops.push({ job: c.job, at, duration: c.duration, runs: 1, travel, gains: {}, energy: 0, seconds: 0, xp: 0, money: 0 });
+      stops.push({
+        job: c.job,
+        at,
+        duration: c.duration,
+        runs: 1,
+        travel,
+        gains: {},
+        energy: 0,
+        seconds: 0,
+        xp: 0,
+        money: 0,
+      });
     }
-    const s = stops[stops.length - 1]!;
+    const s = stops[stops.length - 1];
+    if (!s) break;
     s.energy += v.energy;
     s.seconds += v.duration;
     s.xp += v.experience;
     s.money += v.money;
     for (const [k, g] of Object.entries(c.gains)) {
       if ((remaining[k] ?? 0) <= 1e-9) continue;
-      const used = Math.min(remaining[k]!, g);
-      remaining[k] = remaining[k]! - used;
+      const left = remaining[k] ?? 0;
+      const used = Math.min(left, g);
+      remaining[k] = left - used;
       s.gains[k] = (s.gains[k] ?? 0) + g;
     }
     pos = at;
@@ -214,7 +270,14 @@ export function planRoute(input: PlanInput): RoutePlan {
   }
   const leftover = Object.fromEntries(Object.entries(remaining).filter(([, r]) => r > 1e-9));
   const totals = stops.reduce(
-    (t, s) => ({ energy: t.energy + s.energy, seconds: t.seconds + s.seconds + s.travel, travel: t.travel + s.travel, xp: t.xp + s.xp, money: t.money + s.money, runs: t.runs + s.runs }),
+    (t, s) => ({
+      energy: t.energy + s.energy,
+      seconds: t.seconds + s.seconds + s.travel,
+      travel: t.travel + s.travel,
+      xp: t.xp + s.xp,
+      money: t.money + s.money,
+      runs: t.runs + s.runs,
+    }),
     { energy: 0, seconds: 0, travel: 0, xp: 0, money: 0, runs: 0 },
   );
   let fitRuns = totals.runs;

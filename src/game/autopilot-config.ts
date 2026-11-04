@@ -6,8 +6,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { CONFIG_DIR } from '../auth/session-store.ts';
 import type { FormValue } from '../http/form.ts';
-import type { TimelineStep } from './timeline.ts';
 import { arr, isObj, mergeDefaults, obj, objs } from '../util/json.ts';
+import type { TimelineStep } from './timeline.ts';
 
 export type Goal = 'quests' | 'xp' | 'money' | 'products';
 export const GOALS: Goal[] = ['quests', 'xp', 'money', 'products'];
@@ -37,8 +37,15 @@ export interface AutopilotConfig {
    * is worth when comparing sources (a shop 10 min further must be 10 × that cheaper).
    */
   quests: {
-    repeatable: boolean; unfinishable: boolean; excludedChains: string[];
-    buy: boolean; market: boolean; buyLimit: number; marketLimit: number; buyTrip: number; walkValue: number;
+    repeatable: boolean;
+    unfinishable: boolean;
+    excludedChains: string[];
+    buy: boolean;
+    market: boolean;
+    buyLimit: number;
+    marketLimit: number;
+    buyTrip: number;
+    walkValue: number;
   };
   duels: { forXp: boolean; levelMargin: number };
   /** walkSaved / sameWithin: also cancel for a plan that walks walkSaved s less and is worth at most sameWithin less. */
@@ -56,13 +63,32 @@ export const DEFAULT_CONFIG: AutopilotConfig = {
   priority: ['quests', 'xp', 'money', 'products'],
   per: 'energy',
   customWeights: null,
-  modules: { jobs: true, energySleep: true, hpSleep: true, consumables: false, bank: true, quests: false, npcDuels: false, dryRun: false },
+  modules: {
+    jobs: true,
+    energySleep: true,
+    hpSleep: true,
+    consumables: false,
+    bank: true,
+    quests: false,
+    npcDuels: false,
+    dryRun: false,
+  },
   wake: { levelUp: true, stretch: false, hpSafe: true, full: false },
   hp: { sleepBelow: 0.5, wakeAbove: 0.7 },
   ownTownWithin: 3600,
   bank: { above: 4500, maxDetour: 1800 },
   consumables: { energy: true, health: true, motivation: false, reserve: 2 },
-  quests: { repeatable: false, unfinishable: false, excludedChains: [], buy: true, market: true, buyLimit: 3000, marketLimit: 5000, buyTrip: 3600, walkValue: 15 },
+  quests: {
+    repeatable: false,
+    unfinishable: false,
+    excludedChains: [],
+    buy: true,
+    market: true,
+    buyLimit: 3000,
+    marketLimit: 5000,
+    buyTrip: 3600,
+    walkValue: 15,
+  },
   duels: { forXp: true, levelMargin: 0 },
   cancel: { horizon: 6 * 3600, margin: 0.1, cooldown: 900, walkSaved: 600, sameWithin: 0.02 },
   slotCost: 600,
@@ -113,9 +139,23 @@ export interface AutopilotFile {
   pickups: MarketPickup[];
 }
 
-export interface MarketPickup { offerId: number; itemId: number; count: number; townId: number; townName: string; at: { x: number; y: number }; quest: string }
+export interface MarketPickup {
+  offerId: number;
+  itemId: number;
+  count: number;
+  townId: number;
+  townName: string;
+  at: { x: number; y: number };
+  quest: string;
+}
 
-export interface DuelRecord { at: number; level: number; won: boolean; xp: number; energy: number }
+export interface DuelRecord {
+  at: number;
+  level: number;
+  won: boolean;
+  xp: number;
+  energy: number;
+}
 
 export const AUTOPILOT_FILE = () => join(CONFIG_DIR, 'autopilot.json');
 
@@ -126,22 +166,42 @@ export function parseAutopilotFile(json: unknown): AutopilotFile {
   const ranked = arr(obj(raw.config).priority).filter((g): g is Goal => GOALS.some((goal) => goal === g));
   config.priority = [...new Set([...ranked, ...GOALS])];
   const rules = mergeDefaults(EMPTY_RULES, raw.rules);
-  const plan = isObj(raw.plan) && typeof raw.plan.fingerprint === 'string' && Array.isArray(raw.plan.tasks)
-    ? { fingerprint: raw.plan.fingerprint, savedAt: Number(raw.plan.savedAt) || 0, tasks: raw.plan.tasks as PlannedTask[] }
-    : null;
-  const spent = isObj(raw.spent) && typeof raw.spent.day === 'string' ? { day: raw.spent.day, amount: Number(raw.spent.amount) || 0 } : { day: '', amount: 0 };
+  const plan =
+    isObj(raw.plan) && typeof raw.plan.fingerprint === 'string' && Array.isArray(raw.plan.tasks)
+      ? {
+          fingerprint: raw.plan.fingerprint,
+          savedAt: Number(raw.plan.savedAt) || 0,
+          tasks: raw.plan.tasks as PlannedTask[],
+        }
+      : null;
+  const spent =
+    isObj(raw.spent) && typeof raw.spent.day === 'string'
+      ? { day: raw.spent.day, amount: Number(raw.spent.amount) || 0 }
+      : { day: '', amount: 0 };
   const duels: DuelRecord[] = objs(raw.duels)
     .filter((d) => Number.isFinite(d.level))
     .slice(-200)
-    .map((d) => ({ at: Number(d.at) || 0, level: Number(d.level), won: !!d.won, xp: Number(d.xp) || 0, energy: Number(d.energy) || 0 }));
-  const bankWalk = isObj(raw.bankWalk) && Number.isFinite(raw.bankWalk.queueId) && Number.isFinite(raw.bankWalk.townId)
-    ? { queueId: Number(raw.bankWalk.queueId), townId: Number(raw.bankWalk.townId) }
-    : null;
+    .map((d) => ({
+      at: Number(d.at) || 0,
+      level: Number(d.level),
+      won: !!d.won,
+      xp: Number(d.xp) || 0,
+      energy: Number(d.energy) || 0,
+    }));
+  const bankWalk =
+    isObj(raw.bankWalk) && Number.isFinite(raw.bankWalk.queueId) && Number.isFinite(raw.bankWalk.townId)
+      ? { queueId: Number(raw.bankWalk.queueId), townId: Number(raw.bankWalk.townId) }
+      : null;
   const pickups: MarketPickup[] = objs(raw.pickups)
     .filter((p) => Number.isFinite(p.offerId) && Number.isFinite(p.townId) && isObj(p.at))
     .map((p) => ({
-      offerId: Number(p.offerId), itemId: Number(p.itemId) || 0, count: Number(p.count) || 0, townId: Number(p.townId),
-      townName: String(p.townName ?? ''), at: { x: Number(obj(p.at).x) || 0, y: Number(obj(p.at).y) || 0 }, quest: String(p.quest ?? ''),
+      offerId: Number(p.offerId),
+      itemId: Number(p.itemId) || 0,
+      count: Number(p.count) || 0,
+      townId: Number(p.townId),
+      townName: String(p.townName ?? ''),
+      at: { x: Number(obj(p.at).x) || 0, y: Number(obj(p.at).y) || 0 },
+      quest: String(p.quest ?? ''),
     }));
   return { config, rules, plan, spent, duels, bankWalk, pickups };
 }
@@ -174,21 +234,39 @@ export function duelOutlook(record: DuelRecord[], level: number, now: number): {
   const wins = near.filter((d) => d.won);
   if (near.length < 2 || wins.length < near.length * 0.9) return null;
   const avg = (f: (d: DuelRecord) => number) => wins.reduce((a, d) => a + f(d), 0) / wins.length;
-  return { xp: avg((d) => d.xp), energy: Math.max(1, avg((d) => d.energy)) };
+  return {
+    xp: avg((d) => d.xp),
+    energy: Math.max(
+      1,
+      avg((d) => d.energy),
+    ),
+  };
 }
 
 export function goalWeights(config: AutopilotConfig): Record<Goal, number> {
-  if (config.customWeights) return Object.fromEntries(GOALS.map((g) => [g, Math.max(0, config.customWeights![g] ?? 0)])) as Record<Goal, number>;
+  if (config.customWeights)
+    return Object.fromEntries(GOALS.map((g) => [g, Math.max(0, config.customWeights?.[g] ?? 0)])) as Record<
+      Goal,
+      number
+    >;
   return Object.fromEntries(config.priority.map((g, i) => [g, RANK_WEIGHTS[i] ?? 0])) as Record<Goal, number>;
 }
 
 function stable(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(stable);
-  if (isObj(v)) return Object.fromEntries(Object.keys(v).sort().map((k) => [k, stable(v[k])]));
+  if (isObj(v))
+    return Object.fromEntries(
+      Object.keys(v)
+        .sort()
+        .map((k) => [k, stable(v[k])]),
+    );
   return v;
 }
 
 /** Hash of the planner's inputs (key order does not matter); equal hashes mean no replan is needed. */
 export function fingerprint(inputs: unknown): string {
-  return createHash('sha1').update(JSON.stringify(stable(inputs))).digest('hex').slice(0, 16);
+  return createHash('sha1')
+    .update(JSON.stringify(stable(inputs)))
+    .digest('hex')
+    .slice(0, 16);
 }

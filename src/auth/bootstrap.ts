@@ -6,16 +6,16 @@ import { isObj, type JsonObject } from '../util/json.ts';
 
 /** The parsed argument, or null when the call is missing or its argument is not JSON. */
 export function extractInitArg(html: string, call: string): unknown {
-  const at = html.indexOf(call + '(');
+  const at = html.indexOf(`${call}(`);
   if (at < 0) return null;
   let i = at + call.length + 1;
-  while (i < html.length && /\s/.test(html[i]!)) i++;
+  while (i < html.length && /\s/.test(html[i] ?? '')) i++;
   if (html[i] !== '{' && html[i] !== '[') return null;
   const start = i;
   let depth = 0;
   let inStr: string | null = null;
   for (; i < html.length; i++) {
-    const ch = html[i]!;
+    const ch = html[i] ?? '';
     if (inStr) {
       if (ch === '\\') i++;
       else if (ch === inStr) inStr = null;

@@ -8,13 +8,23 @@
 //   quests: {tx:{ty:[[{...}, {x,y,employer:[{key,name,visible,...}]}]]}} | null
 // Response shapes checked against a live reply (dynamic) and the saved sample game-38d090cd2e3a4.php (quests).
 import type { GameClient } from '../http/game-client.ts';
+import { arr, isObj, type JsonObject, objs, vals } from '../util/json.ts';
 import type { Position } from './character.ts';
 import { TILE, WORLD_H, WORLD_W } from './world.ts';
-import { arr, isObj, objs, vals, type JsonObject } from '../util/json.ts';
 
-export interface SpecialJob extends Position { jobId: number; groupId: number; gold: boolean; silver: boolean }
-export interface QuestGiver extends Position { names: string[]; employers: { key: string; name: string }[] }
-export interface Crowd extends Position { count: number }
+export interface SpecialJob extends Position {
+  jobId: number;
+  groupId: number;
+  gold: boolean;
+  silver: boolean;
+}
+export interface QuestGiver extends Position {
+  names: string[];
+  employers: { key: string; name: string }[];
+}
+export interface Crowd extends Position {
+  count: number;
+}
 
 const TTL_MS = 60_000;
 const MAX_TILES_PER_REQUEST = 25;
@@ -48,7 +58,9 @@ export class TileCache {
     if (!tiles.length) return false;
     this.inflight = true;
     try {
-      const json = await client.get('map', 'get_complete_data', { tiles: JSON.stringify(tiles.slice(0, MAX_TILES_PER_REQUEST)) });
+      const json = await client.get('map', 'get_complete_data', {
+        tiles: JSON.stringify(tiles.slice(0, MAX_TILES_PER_REQUEST)),
+      });
       this.ingest(json, tiles.slice(0, MAX_TILES_PER_REQUEST));
       return true;
     } finally {
@@ -77,7 +89,14 @@ export class TileCache {
             const y = Number(d.y);
             const key = `${x},${y}`;
             if (d.job_id !== undefined && (d.gold || d.silver)) {
-              this.specialJobs.set(`${key}#${String(d.job_id)}`, { x, y, jobId: Number(d.job_id), groupId: Number(d.group_id), gold: !!d.gold, silver: !!d.silver });
+              this.specialJobs.set(`${key}#${String(d.job_id)}`, {
+                x,
+                y,
+                jobId: Number(d.job_id),
+                groupId: Number(d.group_id),
+                gold: !!d.gold,
+                silver: !!d.silver,
+              });
             } else if (d.count !== undefined && d.town_id === undefined) {
               this.crowds.set(key, { x, y, count: Number(d.count) });
             }
@@ -92,7 +111,12 @@ export class TileCache {
           if (!isObj(d)) continue;
           const employers = objs(d.employer)
             .filter((em) => em.visible !== false)
-            .map((em) => ({ key: String(em.key), name: String(em.name).replace(/&#039;/g, "'").replace(/&amp;/g, '&') }));
+            .map((em) => ({
+              key: String(em.key),
+              name: String(em.name)
+                .replace(/&#039;/g, "'")
+                .replace(/&amp;/g, '&'),
+            }));
           const x = Number(d.x);
           const y = Number(d.y);
           this.questGivers.set(`${x},${y}`, { x, y, names: employers.map((em) => em.name), employers });

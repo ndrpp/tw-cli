@@ -9,10 +9,11 @@
 //          reply: {tasks: {<queuePos>: {extra?, error?, msg?}}, queue: [...]}
 //  list:   task/get_tasks (mode) → {queue: [...]}
 // Queue entries: {queue_id, date_start, date_done (epoch s), type, data|data_obj:{coords, wayData?, ...}}
-import type { GameClient } from '../http/game-client.ts';
+
 import type { FormValue } from '../http/form.ts';
+import type { GameClient } from '../http/game-client.ts';
+import { type JsonObject, obj, objs, vals } from '../util/json.ts';
 import type { Position } from './character.ts';
-import { obj, objs, vals, type JsonObject } from '../util/json.ts';
 
 export interface TaskWay {
   queueId: number;
@@ -41,7 +42,12 @@ export function parseQueueEntry(t: JsonObject): QueuedTask {
   if (data.wayData) {
     const w = obj(data.wayData);
     const wd = obj(w.data_obj ?? w.data);
-    way = { queueId: Number(w.queue_id), start: Number(w.date_start), end: Number(w.date_done), to: coordsOf(wd.coords) };
+    way = {
+      queueId: Number(w.queue_id),
+      start: Number(w.date_start),
+      end: Number(w.date_done),
+      to: coordsOf(wd.coords),
+    };
   }
   return {
     queueId: Number(t.queue_id),
@@ -109,7 +115,9 @@ export class TaskApi {
     if (room <= 0) throw new TaskLimitError(`Task queue is full (${queueLength}/${limit})`);
     const batch = posts.slice(0, room);
     const tasks: Record<string, FormValue> = {};
-    batch.forEach((p, i) => (tasks[String(queueLength + i)] = p));
+    batch.forEach((p, i) => {
+      tasks[String(queueLength + i)] = p;
+    });
     const json = await this.client.remoteCall('task', 'add', { tasks });
     const result: AddResult = { added: [], errors: [] };
     for (const q of vals(json.tasks).map(obj)) {
@@ -122,7 +130,10 @@ export class TaskApi {
   }
 
   /** Cancels tasks by queue position. Returns the server's new queue. */
-  async cancel(queue: QueuedTask[], positions: number[]): Promise<{ queue: QueuedTask[]; errors: string[]; energy?: number | undefined; money?: number | undefined }> {
+  async cancel(
+    queue: QueuedTask[],
+    positions: number[],
+  ): Promise<{ queue: QueuedTask[]; errors: string[]; energy?: number | undefined; money?: number | undefined }> {
     const tasks: Record<string, FormValue> = {};
     for (const pos of positions) {
       const t = queue[pos];

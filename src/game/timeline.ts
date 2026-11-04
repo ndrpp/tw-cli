@@ -207,7 +207,22 @@ export function projectTimeline(start: TimelineStart, steps: TimelineStep[], opt
     }
     t = end;
     at = target;
-    out.push({ step, depart, start: begin, end, travel, waited, at, energyBefore, energy, health, experience, level, cash, levelUp });
+    out.push({
+      step,
+      depart,
+      start: begin,
+      end,
+      travel,
+      waited,
+      at,
+      energyBefore,
+      energy,
+      health,
+      experience,
+      level,
+      cash,
+      levelUp,
+    });
   }
   return {
     steps: out,

@@ -1,5 +1,5 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import { chatSegments } from '../src/game/chatlinks.ts';
 import { wrapSegments } from '../src/tui/form.ts';
 
@@ -24,7 +24,10 @@ test('chat item and quest links become coloured names', () => {
 
 test('wrapSegments keeps colours across line breaks', () => {
   const lines = wrapSegments([{ text: 'Ang: wtb ' }, { text: '[Golden gun]', color: 'yellow' }, { text: ' now' }], 12);
-  assert.deepEqual(lines.map((l) => l.map((s) => s.text).join('')), ['Ang: wtb', '[Golden gun]', 'now']);
+  assert.deepEqual(
+    lines.map((l) => l.map((s) => s.text).join('')),
+    ['Ang: wtb', '[Golden gun]', 'now'],
+  );
   assert.deepEqual(lines[1], [{ text: '[Golden gun]', color: 'yellow' }]);
   assert.deepEqual(wrapSegments([], 10), [[]]);
 });

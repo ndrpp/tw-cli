@@ -5,10 +5,11 @@
 //     build_skills:{skills:[{skill, coefficient}], malus}, jobPoints, build_point, build_point_limit, deposit,
 //     motivation, jobDurationData:{<seconds>:{calcduration, formatted, expCalc:{min, max}}}, defaultData, singleDuration}
 //   TaskBuild (tw2game @689326): task/add post {x, y, building_key, duration, deposit ('town' | 'player'), taskType:'build'}.
-import type { GameClient } from '../http/game-client.ts';
+
 import type { FormValue } from '../http/form.ts';
+import type { GameClient } from '../http/game-client.ts';
+import { type JsonObject, obj, objs, vals } from '../util/json.ts';
 import { plainText } from './quests.ts';
-import { obj, objs, vals, type JsonObject } from '../util/json.ts';
 
 export interface TownBuilding {
   key: string;
@@ -36,7 +37,10 @@ export interface BuildDuration {
   xpMax: number;
 }
 
-export interface BuildSkill { skill: string; coefficient: number }
+export interface BuildSkill {
+  skill: string;
+  coefficient: number;
+}
 
 export interface Construction {
   townId: number;
@@ -58,7 +62,8 @@ export interface Construction {
   singleDuration: boolean;
 }
 
-const errText = (json: JsonObject, what: string) => plainText(json.msg ?? (typeof json.error === 'string' ? json.error : '')) || `${what} failed`;
+const errText = (json: JsonObject, what: string) =>
+  plainText(json.msg ?? (typeof json.error === 'string' ? json.error : '')) || `${what} failed`;
 
 export async function fetchTownHall(client: GameClient, townId: number): Promise<TownHall> {
   const json = await client.remoteCall('building_cityhall', '', { town_id: townId });
@@ -110,18 +115,28 @@ export function parseConstruction(json: JsonObject): Construction {
     })),
     malus: Number(skills.malus) || 0,
     durations,
-    defaultDuration: durations.some((d) => d.seconds === def) ? def : durations[0]?.seconds ?? null,
+    defaultDuration: durations.some((d) => d.seconds === def) ? def : (durations[0]?.seconds ?? null),
     singleDuration: !!json.singleDuration,
   };
 }
 
-export async function fetchConstruction(client: GameClient, x: number, y: number, building: string): Promise<Construction> {
+export async function fetchConstruction(
+  client: GameClient,
+  x: number,
+  y: number,
+  building: string,
+): Promise<Construction> {
   const json = await client.remoteCallMode('cityhall_build', 'build', { x, y, building });
   if (json.error) throw new Error(errText(json, 'Construction'));
   return parseConstruction(json);
 }
 
 /** TaskBuild's post (key order as the browser's object). */
-export function buildPost(at: { x: number; y: number }, building: string, duration: number, pay: 'town' | 'player'): Record<string, FormValue> {
+export function buildPost(
+  at: { x: number; y: number },
+  building: string,
+  duration: number,
+  pay: 'town' | 'player',
+): Record<string, FormValue> {
   return { x: at.x, y: at.y, building_key: building, duration, deposit: pay, taskType: 'build' };
 }

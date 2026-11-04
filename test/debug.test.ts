@@ -1,8 +1,8 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { test } from 'node:test';
 import { DebugLog, debugJson, diffSnapshots, pruneDebugDir } from '../src/game/debug-log.ts';
 import { compactLines, jsonLines } from '../src/tui/debug.ts';
 
@@ -13,10 +13,20 @@ test('debug log: diff of snapshots (lists as added / removed), once() dedupes by
   log.once('k', 'autopilot', 'waiting', { energy: 1 });
   log.once('k', 'autopilot', 'waiting', { energy: 2 });
   log.once('k', 'autopilot', 'go');
-  assert.deepEqual(log.entries.map((e) => e.title), ['waiting', 'go']);
-  assert.equal(debugJson({ m: new Map([[1, 2]]), s: new Set([3]), i: Infinity }), '{"m":{"1":2},"s":[3],"i":"Infinity"}');
+  assert.deepEqual(
+    log.entries.map((e) => e.title),
+    ['waiting', 'go'],
+  );
+  assert.equal(
+    debugJson({ m: new Map([[1, 2]]), s: new Set([3]), i: Infinity }),
+    '{"m":{"1":2},"s":[3],"i":"Infinity"}',
+  );
   const at = { x: 1, y: 2 };
-  assert.equal(debugJson({ a: at, b: [at] }), '{"a":{"x":1,"y":2},"b":[{"x":1,"y":2}]}', 'a shared object is not a cycle');
+  assert.equal(
+    debugJson({ a: at, b: [at] }),
+    '{"a":{"x":1,"y":2},"b":[{"x":1,"y":2}]}',
+    'a shared object is not a cycle',
+  );
   const loop: any = { name: 'loop' };
   loop.self = loop;
   assert.equal(debugJson(loop), '{"name":"loop","self":"[cycle]"}');
@@ -35,7 +45,10 @@ test('debug log: hourly JSONL files, older than 24 h pruned; old sim data droppe
   const files = readdirSync(dir).sort();
   assert.ok(!files.includes(`${old}.jsonl`), 'older than a day: deleted');
   assert.ok(files.includes(`${recent}.jsonl`) && files.includes('notes.txt'));
-  const lines = readFileSync(log.file!, 'utf8').trim().split('\n').map((l): any => JSON.parse(l));
+  const lines = readFileSync(log.file!, 'utf8')
+    .trim()
+    .split('\n')
+    .map((l): any => JSON.parse(l));
   assert.equal(lines.length, 60);
   assert.deepEqual(lines[0].data, { i: 0 }, 'the file keeps everything');
   assert.equal(typeof log.entries[0]!.data, 'string', 'memory keeps the newest 50 snapshots');
@@ -48,5 +61,9 @@ test('debug screen: JSON lines are hard-wrapped to the width', () => {
   assert.ok(lines.every((l) => l.length <= 20));
   assert.equal(lines.join('').replace(/\s/g, '').includes('x'.repeat(10)), true);
   assert.deepEqual(jsonLines(undefined, 20), ['(no data)']);
-  assert.deepEqual(compactLines({ energy: '7/100', quests: [{ t: 'a'.repeat(30) }, { t: 'b' }] }, 30).slice(0, 3), ['energy: "7/100"', 'quests: (2)', `  • {"t":"${'a'.repeat(20)}`]);
+  assert.deepEqual(compactLines({ energy: '7/100', quests: [{ t: 'a'.repeat(30) }, { t: 'b' }] }, 30).slice(0, 3), [
+    'energy: "7/100"',
+    'quests: (2)',
+    `  • {"t":"${'a'.repeat(20)}`,
+  ]);
 });

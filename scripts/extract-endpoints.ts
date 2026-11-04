@@ -7,15 +7,24 @@ const src = process.argv[2] ?? '../en32.the_west.net/en32.the-west.net/cache/tw2
 const out = process.argv[3] ?? 'docs/endpoints.json';
 const s = readFileSync(src, 'utf8');
 
-interface Site { offset: number; context: string; fields: string[] | null }
-interface Endpoint { kind: string; window: string; action: string; sites: Site[] }
+interface Site {
+  offset: number;
+  context: string;
+  fields: string[] | null;
+}
+interface Endpoint {
+  kind: string;
+  window: string;
+  action: string;
+  sites: Site[];
+}
 
 /** Reads one JS argument starting at i (balanced brackets, skips strings); returns [text, next index]. */
 function readArg(i: number): [string, number] {
   let depth = 0;
   const start = i;
   while (i < s.length) {
-    const c = s[i]!;
+    const c = s[i] ?? '';
     if (c === '"' || c === "'" || c === '`') {
       const q = c;
       i++;
@@ -30,7 +39,7 @@ function readArg(i: number): [string, number] {
   return [s.slice(start).trim(), i];
 }
 
-const str = (a: string) => (/^(['"])(.*)\1$/.exec(a)?.[2]) ?? `<${a}>`;
+const str = (a: string) => /^(['"])(.*)\1$/.exec(a)?.[2] ?? `<${a}>`;
 
 /** Top-level keys of an object literal argument. */
 function keys(a: string): string[] | null {
@@ -40,7 +49,7 @@ function keys(a: string): string[] | null {
   let depth = 0;
   let tok = '';
   for (let i = 0; i < body.length; i++) {
-    const c = body[i]!;
+    const c = body[i] ?? '';
     if (c === '"' || c === "'") {
       const q = c;
       let j = i + 1;
@@ -70,14 +79,14 @@ function context(offset: number): string {
   const back = s.slice(Math.max(0, offset - 4000), offset);
   const re = /([A-Za-z_$][\w$.]*)\s*[:=]\s*function\s*\(|function\s+([A-Za-z_$][\w$]*)\s*\(/g;
   let last = '';
-  for (let m; (m = re.exec(back)); ) last = m[1] ?? m[2] ?? last;
+  for (let m = re.exec(back); m; m = re.exec(back)) last = m[1] ?? m[2] ?? last;
   return last;
 }
 
 const endpoints = new Map<string, Endpoint>();
 const re = /Ajax\.(remoteCall|remoteCallMode|get|gameServiceRequest)\(/g;
-for (let m; (m = re.exec(s)); ) {
-  let i = m.index + m[0].length;
+for (let m = re.exec(s); m; m = re.exec(s)) {
+  const i = m.index + m[0].length;
   const [w, i1] = readArg(i);
   let action = '';
   let fields: string[] | null = null;
@@ -91,12 +100,17 @@ for (let m; (m = re.exec(s)); ) {
     const [d] = s[i2] === ',' ? readArg(i2 + 1) : [''];
     fields = keys(d);
   }
-  const kind = m[1]!;
+  const kind = m[1] ?? '';
   const key = `${kind} ${str(w)} ${action}`;
   const e = endpoints.get(key) ?? { kind, window: str(w), action, sites: [] };
   e.sites.push({ offset: m.index, context: context(m.index), fields });
   endpoints.set(key, e);
 }
-const list = [...endpoints.values()].sort((a, b) => a.window.localeCompare(b.window) || a.action.localeCompare(b.action));
-writeFileSync(out, JSON.stringify({ source: src.split('/').pop(), count: list.length, endpoints: list }, null, 1) + '\n');
+const list = [...endpoints.values()].sort(
+  (a, b) => a.window.localeCompare(b.window) || a.action.localeCompare(b.action),
+);
+writeFileSync(
+  out,
+  `${JSON.stringify({ source: src.split('/').pop(), count: list.length, endpoints: list }, null, 1)}\n`,
+);
 console.log(`${list.length} endpoints (${list.reduce((n, e) => n + e.sites.length, 0)} call sites) → ${out}`);

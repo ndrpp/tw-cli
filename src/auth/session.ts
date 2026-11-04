@@ -1,8 +1,8 @@
 // Gets a working game session: reuse saved cookies if game.php still accepts them, otherwise log in
 // (credentials from TW_LOGIN_NAME / TW_LOGIN_PASSWORD or the caller), then save the new cookies.
-import { loadProfile, type FingerprintProfile } from '../fingerprint/profile.ts';
-import { INTERACTIVE_POLICY, type HostPolicy } from '../http/throttle.ts';
-import { AuthError, loginToWorld, openGame, type Credentials, type OpenGame, type WorldConfig } from './login.ts';
+import { type FingerprintProfile, loadProfile } from '../fingerprint/profile.ts';
+import { type HostPolicy, INTERACTIVE_POLICY } from '../http/throttle.ts';
+import { AuthError, type Credentials, loginToWorld, type OpenGame, openGame, type WorldConfig } from './login.ts';
 import { loadSession, PROFILE_FILE, saveSession } from './session-store.ts';
 
 export const DEFAULT_WORLD: WorldConfig = {
@@ -48,7 +48,8 @@ export async function ensureGame(opts: EnsureOptions = {}): Promise<OpenGame> {
   }
 
   const creds = envCredentials() ?? (opts.credentials ? await opts.credentials() : null);
-  if (!creds) throw new AuthError('No session and no credentials: set TW_LOGIN_NAME / TW_LOGIN_PASSWORD or run `tw login`');
+  if (!creds)
+    throw new AuthError('No session and no credentials: set TW_LOGIN_NAME / TW_LOGIN_PASSWORD or run `tw login`');
   const jar = await loginToWorld(world, creds, profile, policy);
   const game = await openGame(world, jar, profile, policy);
   saveSession(world.url, jar, opts.sessionFile);

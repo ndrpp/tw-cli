@@ -8,11 +8,14 @@
   },
   "scripts": {
     "typecheck": "tsc -p .",
+    "lint": "biome check .",
+    "format": "biome check --write .",
     "test": "node --test test/*.test.ts",
     "endpoints": "node scripts/extract-endpoints.ts",
     "tw": "node src/cli.ts"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.5",
     "@types/node": "26.6.6",
     "@types/react": "^19.3.0",
     "typescript": "5.9.3"

@@ -15,8 +15,8 @@
 //   messages/delete_messages {messages:[id]}                                                       @1305540
 // Report bodies (`page`) and posts are HTML / BBCode; shown as plain text.
 import type { GameClient } from '../http/game-client.ts';
+import { arr, type JsonObject, obj, objs } from '../util/json.ts';
 import { plainText } from './quests.ts';
-import { arr, obj, objs, type JsonObject } from '../util/json.ts';
 
 export const REPORT_FOLDERS = [
   { key: 'all', label: 'All' },
@@ -29,9 +29,26 @@ export const REPORT_FOLDERS = [
 ] as const;
 export type ReportFolder = (typeof REPORT_FOLDERS)[number]['key'];
 
-export interface ReportRow { id: number; title: string; hash: string; read: boolean; date: string; summary: string }
-export interface ReportList { page: number; pages: number; reports: ReportRow[] }
-export interface Report { id: number; title: string; date: string; type: string; text: string }
+export interface ReportRow {
+  id: number;
+  title: string;
+  hash: string;
+  read: boolean;
+  date: string;
+  summary: string;
+}
+export interface ReportList {
+  page: number;
+  pages: number;
+  reports: ReportRow[];
+}
+export interface Report {
+  id: number;
+  title: string;
+  date: string;
+  type: string;
+  text: string;
+}
 
 export interface TelegramRow {
   id: number;
@@ -42,16 +59,39 @@ export interface TelegramRow {
   answered: boolean;
   date: string;
 }
-export interface TelegramList { page: number; pages: number; telegrams: TelegramRow[] }
-export interface TelegramPost { from: string; date: string; text: string }
-export interface Telegram { id: number; subject: string; page: number; pages: number; posts: TelegramPost[] }
+export interface TelegramList {
+  page: number;
+  pages: number;
+  telegrams: TelegramRow[];
+}
+export interface TelegramPost {
+  from: string;
+  date: string;
+  text: string;
+}
+export interface Telegram {
+  id: number;
+  subject: string;
+  page: number;
+  pages: number;
+  posts: TelegramPost[];
+}
 
 /** Game.TextHandler-ish: BBCode tags dropped, [player]x[/player] → x, then HTML → text. */
 export function bbText(s: unknown): string {
   return plainText(String(s ?? '').replace(/\[\/?(b|i|u|del|quote|player|town|fort|url|color|size)(=[^\]]*)?\]/gi, ''));
 }
 
-const JOB_LABELS = ['Motivation', 'Time', 'Money', 'Pacific Bonds', 'Bonds', 'Experience', 'Luck', 'Items Found'] as const;
+const JOB_LABELS = [
+  'Motivation',
+  'Time',
+  'Money',
+  'Pacific Bonds',
+  'Bonds',
+  'Experience',
+  'Luck',
+  'Items Found',
+] as const;
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const JOB_LABEL_RE = new RegExp(`^(${JOB_LABELS.map(escapeRe).join('|')})(?![A-Za-z])\\s*:?\\s*(.+)$`, 'i');
 const NUMBER_VALUE_RE = /^\d[\d.,]*(?:\s*%|\s*(?:Points?|s|min|h|hours?|days?))?$/i;
@@ -71,11 +111,13 @@ const isGenericLabel = (s: string) => {
   const label = cleanLabel(s);
   return label.length >= 2 && label.length <= 30 && /^[A-Z]/.test(label) && !/[.!?]$/.test(label) && !isValue(label);
 };
-const normalizeValue = (s: string) => s.trim()
-  .replace(/^([$€£])\s+/, '$1')
-  .replace(/\s+%$/, '%')
-  .replace(/^([+-])\s+/, '$1')
-  .replace(/\s+(Points?)$/i, ' $1');
+const normalizeValue = (s: string) =>
+  s
+    .trim()
+    .replace(/^([$€£])\s+/, '$1')
+    .replace(/\s+%$/, '%')
+    .replace(/^([+-])\s+/, '$1')
+    .replace(/\s+(Points?)$/i, ' $1');
 
 function formatItems(lines: string[]): string[] {
   const items: string[] = [];
@@ -89,11 +131,12 @@ function formatItems(lines: string[]): string[] {
       else items.push(line);
       continue;
     }
-    const match = /^(.+?)\s*[x×]\s*(\d+)$/i.exec(line)
-      ?? /^(.+?)\s*\((\d+)\)$/.exec(line)
-      ?? /^(.+?):\s*(\d+)$/.exec(line)
-      ?? /^(.+?)\s+(\d+)$/.exec(line);
-    if (match) items.push(`${match[1]!.trim()} x ${match[2]}`);
+    const match =
+      /^(.+?)\s*[x×]\s*(\d+)$/i.exec(line) ??
+      /^(.+?)\s*\((\d+)\)$/.exec(line) ??
+      /^(.+?):\s*(\d+)$/.exec(line) ??
+      /^(.+?)\s+(\d+)$/.exec(line);
+    if (match) items.push(`${match[1]?.trim() ?? ''} x ${match[2]}`);
     else items.push(line);
   }
   return items;
@@ -104,7 +147,10 @@ function formatItems(lines: string[]): string[] {
  * has empty placeholders the browser fills from its js (tw2widget.Item(...).setCount(n)).
  */
 export function reportItems(info: unknown, itemName: (id: number) => string): string[] {
-  return arr(obj(info).items).filter(Array.isArray).filter((i) => Number(i[0])).map((i) => `${itemName(Number(i[0]))} x ${Number(i[2]) || 1}`);
+  return arr(obj(info).items)
+    .filter(Array.isArray)
+    .filter((i) => Number(i[0]))
+    .map((i) => `${itemName(Number(i[0]))} x ${Number(i[2]) || 1}`);
 }
 
 /** The report list's popupData shows found items as one <img alt="name"> each: "name x count", in order. */
@@ -134,24 +180,28 @@ export function formatReport(text: string, type = '', items: string[] = []): str
 }
 
 function formatJobReport(text: string): string {
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
   const out: string[] = [];
   const push = (line: string) => {
     const value = line.trim();
     if (value && out[out.length - 1] !== value) out.push(value);
   };
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
+    const line = lines[i] ?? '';
     if (/^items found:?$/i.test(line)) {
       const raw: string[] = [];
       let j = i + 1;
       for (; j < lines.length; j++) {
-        if (isKnownLabel(lines[j]!)) break;
-        if (/^no items? (were|was) found/i.test(lines[j]!)) {
+        const nextLine = lines[j] ?? '';
+        if (isKnownLabel(nextLine)) break;
+        if (/^no items? (were|was) found/i.test(nextLine)) {
           j++;
           break;
         }
-        raw.push(lines[j]!);
+        raw.push(nextLine);
       }
       const items = formatItems(raw);
       push(items.length ? `Items: ${items.join(', ')}` : 'Items: none');
@@ -160,15 +210,15 @@ function formatJobReport(text: string): string {
     }
     const inlineItems = /^items found:?\s+(.+)$/i.exec(line);
     if (inlineItems) {
-      const value = inlineItems[1]!.trim();
+      const value = inlineItems[1]?.trim() ?? '';
       push(`Items: ${/^no items? (were|was) found/i.test(value) ? 'none' : value}`);
       continue;
     }
     const known = JOB_LABEL_RE.exec(line);
     if (known) {
-      const value = normalizeValue(known[2]!);
+      const value = normalizeValue(known[2] ?? '');
       if (isValue(value)) {
-        push(`${canonicalLabel(known[1]!)}: ${value}`);
+        push(`${canonicalLabel(known[1] ?? '')}: ${value}`);
         continue;
       }
     }
@@ -179,7 +229,7 @@ function formatJobReport(text: string): string {
       if ((knownLabel && isValue(next)) || genericLabel) {
         const value = normalizeValue(next);
         let j = i + 1;
-        while (j + 1 < lines.length && normalizeValue(lines[j + 1]!) === value) j++;
+        while (j + 1 < lines.length && normalizeValue(lines[j + 1] ?? '') === value) j++;
         push(`${knownLabel ? canonicalLabel(line) : cleanLabel(line)}: ${value}`);
         i = j;
         continue;
@@ -192,21 +242,32 @@ function formatJobReport(text: string): string {
 
 /** popupData field labels are icons (images/job/clock.png …): their words, so the preview is not bare numbers. */
 const POPUP_ICONS: Record<string, string> = {
-  clock: 'Time', dollar: 'Money', upb: 'Bonds', experience: 'XP', danger: 'Danger', motivation: 'Motivation', luck: 'Luck', star: 'XP',
+  clock: 'Time',
+  dollar: 'Money',
+  upb: 'Bonds',
+  experience: 'XP',
+  danger: 'Danger',
+  motivation: 'Motivation',
+  luck: 'Luck',
+  star: 'XP',
 };
 
 /** The report list's popupData as text: icon labels named, item images left out (popupItems names them). */
 export function popupText(html: unknown): string {
   const labelled = String(html ?? '')
     .replace(/<img[^>]*src="[^"]*\/items\/[^"]*"[^>]*>/gi, '')
-    .replace(/<img[^>]*src="[^"]*\/([a-z_]+)\.png"[^>]*>/gi, (_, icon: string) => (POPUP_ICONS[icon.toLowerCase()] ? `${POPUP_ICONS[icon.toLowerCase()]}: ` : ''));
+    .replace(/<img[^>]*src="[^"]*\/([a-z_]+)\.png"[^>]*>/gi, (_, icon: string) =>
+      POPUP_ICONS[icon.toLowerCase()] ? `${POPUP_ICONS[icon.toLowerCase()]}: ` : '',
+    );
   return plainText(labelled).replace(/\n{2,}/g, '\n');
 }
 
 /** The list summary's "Found items:" heading is followed by images only: put the names after it. */
 function withItems(summary: string, items: string[]): string {
   if (!items.length) return summary;
-  return /Found items:/i.test(summary) ? summary.replace(/Found items:/i, `Found items: ${items.join(', ')}`) : `${summary}\nFound items: ${items.join(', ')}`;
+  return /Found items:/i.test(summary)
+    ? summary.replace(/Found items:/i, `Found items: ${items.join(', ')}`)
+    : `${summary}\nFound items: ${items.join(', ')}`;
 }
 
 /**
@@ -220,7 +281,10 @@ export function reportLogLine(r: ReportRow): string {
   const num = (re: RegExp) => Number(re.exec(r.summary)?.[1]) || 0;
   const xp = num(/\bXP:\s*(\d+)/i);
   const money = num(/\bMoney:\s*(\d+)/i);
-  const extras = [...r.summary.matchAll(/:\s*\d+\s+(\d+\s+[^\d\s:][^\n:]*)$/gm)].map((m) => m[1]!.trim());
+  const extras = [...r.summary.matchAll(/:\s*\d+\s+(\d+\s+[^\d\s:][^\n:]*)$/gm)].flatMap((m) => {
+    const text = m[1]?.trim();
+    return text ? [text] : [];
+  });
   const found = /^Found items:\s*(.+)$/im.exec(r.summary)?.[1]?.trim();
   const gains = [xp && `+${xp} XP`, money && `$${money}`, ...extras].filter(Boolean).join(', ');
   return `${job}${gains ? `: ${gains}` : ''}${found ? ` · found ${found}` : ''}`;
@@ -231,7 +295,9 @@ function fail(json: JsonObject, what: string): never {
 }
 
 /** show_report reply → job, items, seconds (see MailApi.jobReport). */
-export function parseJobReport(json: JsonObject): { jobId: number; items: [number, number][]; seconds: number | null } | null {
+export function parseJobReport(
+  json: JsonObject,
+): { jobId: number; items: [number, number][]; seconds: number | null } | null {
   const info = obj(json.reportInfo);
   const jobId = Number(info.job_id);
   if (String(json.reportType ?? '') !== 'job' || !jobId) return null;
@@ -240,7 +306,8 @@ export function parseJobReport(json: JsonObject): { jobId: number; items: [numbe
     .filter((i) => Number(i[0]))
     .map((i): [number, number] => [Number(i[0]), Number(i[2]) || 1]);
   const m = plainText(json.page).match(/(\d+)\s*(second|minute|hour)s?\b/i);
-  const seconds = m ? Number(m[1]) * ({ second: 1, minute: 60, hour: 3600 } as Record<string, number>)[m[2]!.toLowerCase()]! : null;
+  const unitSeconds = { second: 1, minute: 60, hour: 3600 } as Record<string, number>;
+  const seconds = m ? Number(m[1]) * (unitSeconds[m[2]?.toLowerCase() ?? ''] ?? 1) : null;
   return { jobId, items, seconds };
 }
 
@@ -261,17 +328,32 @@ export class MailApi {
       page: Number(json.page) || page,
       pages: Number(json.count) || 1,
       reports: objs(json.reports).map((r) => ({
-        id: Number(r.report_id), title: plainText(r.title), hash: String(r.hash ?? ''), read: !!r.read,
-        date: plainText(r.date_received), summary: withItems(popupText(r.popupData), popupItems(r.popupData)),
+        id: Number(r.report_id),
+        title: plainText(r.title),
+        hash: String(r.hash ?? ''),
+        read: !!r.read,
+        date: plainText(r.date_received),
+        summary: withItems(popupText(r.popupData), popupItems(r.popupData)),
       })),
     };
   }
 
   async report(id: number, hash = ''): Promise<Report> {
-    const json = await this.client.remoteCallMode('reports', 'show_report', { report_id: id, hash, animated: 0, simpleheader: 0 });
+    const json = await this.client.remoteCallMode('reports', 'show_report', {
+      report_id: id,
+      hash,
+      animated: 0,
+      simpleheader: 0,
+    });
     if (json.error) fail(json, 'reports/show_report');
     const type = String(json.reportType ?? '');
-    return { id, title: plainText(json.title), date: plainText(json.date_received), type, text: formatReport(plainText(json.page, { compact: true }), type, reportItems(json.reportInfo, this.itemName)) };
+    return {
+      id,
+      title: plainText(json.title),
+      date: plainText(json.date_received),
+      type,
+      text: formatReport(plainText(json.page, { compact: true }), type, reportItems(json.reportInfo, this.itemName)),
+    };
   }
 
   /**
@@ -279,19 +361,36 @@ export class MailApi {
    * reportInfo.items) and the run length in seconds (the page's first "N second/minute/hour(s)"). Null when it
    * is not a job report.
    */
-  async jobReport(id: number, hash = ''): Promise<{ jobId: number; items: [number, number][]; seconds: number | null } | null> {
-    const json = await this.client.remoteCallMode('reports', 'show_report', { report_id: id, hash, animated: 0, simpleheader: 0 });
+  async jobReport(
+    id: number,
+    hash = '',
+  ): Promise<{ jobId: number; items: [number, number][]; seconds: number | null } | null> {
+    const json = await this.client.remoteCallMode('reports', 'show_report', {
+      report_id: id,
+      hash,
+      animated: 0,
+      simpleheader: 0,
+    });
     if (json.error) fail(json, 'reports/show_report');
     return parseJobReport(json);
   }
 
   async deleteReport(id: number, folder: ReportFolder = 'all'): Promise<void> {
-    const json = await this.client.remoteCallRaw('reports', 'delete_single_report', { report: id, type: folder, deleted: folder === 'deleted' });
+    const json = await this.client.remoteCallRaw('reports', 'delete_single_report', {
+      report: id,
+      type: folder,
+      deleted: folder === 'deleted',
+    });
     if (Array.isArray(json) ? json[0] : obj(json).error) throw new Error('Report could not be removed');
   }
 
   async telegrams(page = 1): Promise<TelegramList> {
-    const json = await this.client.remoteCall('messages', 'get_messages', { folder_id: 'all', page, visibles: [], include_blocked: 0 });
+    const json = await this.client.remoteCall('messages', 'get_messages', {
+      folder_id: 'all',
+      page,
+      visibles: [],
+      include_blocked: 0,
+    });
     if (json.error) fail(json, 'messages/get_messages');
     return {
       page: Number(json.page) || page,
@@ -318,14 +417,19 @@ export class MailApi {
       subject: plainText(json.subject),
       page: Number(json.page) || 0,
       pages: Number(json.pages) || 1,
-      posts: objs(json.posts).map((p) => ({ from: p.name ? String(p.name) : 'System', date: plainText(p.post_date), text: bbText(p.text) })),
+      posts: objs(json.posts).map((p) => ({
+        from: p.name ? String(p.name) : 'System',
+        date: plainText(p.post_date),
+        text: bbText(p.text),
+      })),
     };
   }
 
   /** Replies are [ok, message] arrays. */
   async reply(id: number, text: string): Promise<void> {
     const r = await this.client.remoteCallRaw('messages', 'reply', { message_id: id, text });
-    if (Array.isArray(r) ? !r[0] : obj(r).error) throw new Error(plainText(Array.isArray(r) ? r[1] : obj(r).msg) || 'Reply failed');
+    if (Array.isArray(r) ? !r[0] : obj(r).error)
+      throw new Error(plainText(Array.isArray(r) ? r[1] : obj(r).msg) || 'Reply failed');
   }
 
   /** `to`: names separated by ; or , (MessagesWindow.Telegram.send checks: subject ≥ 1, text ≥ 3 characters). */
@@ -334,7 +438,8 @@ export class MailApi {
     if (!subject.trim()) throw new Error('The subject is empty');
     if (text.length < 3) throw new Error('The text has to be at least 3 characters long!');
     const r = await this.client.remoteCallRaw('messages', 'send', { to, subject, text, masstelegramm: 0 });
-    if (Array.isArray(r) ? !r[0] : obj(r).error) throw new Error(plainText(Array.isArray(r) ? r[1] : obj(r).msg) || 'Sending failed');
+    if (Array.isArray(r) ? !r[0] : obj(r).error)
+      throw new Error(plainText(Array.isArray(r) ? r[1] : obj(r).msg) || 'Sending failed');
   }
 
   async deleteTelegram(id: number): Promise<void> {

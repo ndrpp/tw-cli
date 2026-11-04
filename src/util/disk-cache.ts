@@ -8,7 +8,11 @@ export const CACHE_TTL_MS = 12 * 3600_000;
 const fileFor = (name: string) => join(CONFIG_DIR, 'cache', `${name.replace(/[^\w.-]/g, '_')}.json`);
 
 /** Cached value if younger than `ttlMs`, else `fetch()` (stored on success). `fresh` skips the cache. */
-export async function cachedJson<T>(name: string, fetch: () => Promise<T>, opts: { ttlMs?: number; fresh?: boolean } = {}): Promise<T> {
+export async function cachedJson<T>(
+  name: string,
+  fetch: () => Promise<T>,
+  opts: { ttlMs?: number; fresh?: boolean } = {},
+): Promise<T> {
   const file = fileFor(name);
   if (!opts.fresh && existsSync(file) && Date.now() - statSync(file).mtimeMs < (opts.ttlMs ?? CACHE_TTL_MS)) {
     try {

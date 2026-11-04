@@ -4,46 +4,90 @@
 import { EventEmitter } from 'node:events';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CONFIG_DIR } from '../auth/session-store.ts';
 import type { OpenGame } from '../auth/login.ts';
+import { CONFIG_DIR } from '../auth/session-store.ts';
 import type { GameClient } from '../http/game-client.ts';
-import { CharacterState, type Position } from './character.ts';
-import { ServerClock } from './clock.ts';
-import {
-  DURATION_KEYS, fetchJobDetail, fetchJobInfos, JobCatalog, nearestLocation, parseJobDetail, wayTime,
-  type DurationKey, type JobDurationValues, type JobInfo, type JobLocations,
-} from './jobs.ts';
-import { jobPost, parseQueue, sleepPost, TaskApi, walkPost, type QueuedTask } from './tasks.ts';
-import { WorldMap, type Fort, type Town } from './world.ts';
-import { TileCache } from './tiles.ts';
-import { baseId, ItemCatalog, ItemSetCatalog, loadItemCatalog, loadItemSets, statsOf } from './items.ts';
-import { setBonusLines, type ItemStats, type StatContext } from './itemstats.ts';
-import { Inventory, InventoryApi, type EquipSets } from './inventory.ts';
-import { SkillApi, Skills, type SkillPlan } from './skills.ts';
-import { QuestApi, questEnds, type Quest, type QuestEmployer, type QuestRequirement } from './quests.ts';
-import { fetchHotel, roomRate, type Hotel, type HotelRoom } from './hotel.ts';
 import { ChatPoller, type SelfUpdate } from '../realtime/chat.ts';
 import { cachedJson } from '../util/disk-cache.ts';
-import { planRoute, questNeeds, type RouteNeed, type RouteObjective, type RoutePlan } from './route.ts';
-import { MailApi, reportLogLine, type Report, type ReportFolder, type ReportList, type ReportRow, type Telegram, type TelegramList } from './mail.ts';
-import {
-  buyMobileTrader, buyOrderProblem, DEFAULT_FILTER, deposit, fetchBank, fetchMobileTrader, fetchShop, MarketApi, shopBuy, shopSell, useItem,
-  type Bank, type MarketFilter, type MarketOffer, type MobileTrader, type MobileTraderItem, type Shop, type ShopKey,
-} from './trade.ts';
-import { buildPost, fetchConstruction, fetchTownHall, type Construction, type TownBuilding, type TownHall } from './townhall.ts';
-import { DuelApi, duelPost, type DuelData, type DuelOpponent, type NpcDuelResult } from './duels.ts';
-import { loadAutopilot, saveAutopilot, type AutopilotFile } from './autopilot-config.ts';
-import { projectTimeline, type Timeline, type TimelineStep } from './timeline.ts';
+import { entries, isObj, type JsonObject, obj } from '../util/json.ts';
+import { type BuyTrip, expectedHpLoss } from './autopilot.ts';
+import { type AutopilotFile, loadAutopilot, saveAutopilot } from './autopilot-config.ts';
 import { AutopilotRunner } from './autopilot-runner.ts';
-import { DebugLog, diffSnapshots } from './debug-log.ts';
 import { Calibration } from './calibration.ts';
-import { expectedHpLoss, type BuyTrip } from './autopilot.ts';
-import { BuyCatalog, chooseBuys, where, type BuyNeed, type BuyPick } from './quest-buy.ts';
+import { CharacterState, type Position } from './character.ts';
+import { ServerClock } from './clock.ts';
+import { DebugLog, diffSnapshots } from './debug-log.ts';
+import { DuelApi, type DuelData, type DuelOpponent, duelPost, type NpcDuelResult } from './duels.ts';
+import { fetchHotel, type Hotel, type HotelRoom, roomRate } from './hotel.ts';
+import { type EquipSets, Inventory, InventoryApi } from './inventory.ts';
+import { baseId, type ItemCatalog, type ItemSetCatalog, loadItemCatalog, loadItemSets, statsOf } from './items.ts';
+import { type ItemStats, type StatContext, setBonusLines } from './itemstats.ts';
+import {
+  DURATION_KEYS,
+  type DurationKey,
+  fetchJobDetail,
+  fetchJobInfos,
+  JobCatalog,
+  type JobDurationValues,
+  type JobInfo,
+  type JobLocations,
+  nearestLocation,
+  parseJobDetail,
+  wayTime,
+} from './jobs.ts';
+import {
+  MailApi,
+  type Report,
+  type ReportFolder,
+  type ReportList,
+  type ReportRow,
+  reportLogLine,
+  type Telegram,
+  type TelegramList,
+} from './mail.ts';
+import { BuyCatalog, type BuyNeed, type BuyPick, chooseBuys, where } from './quest-buy.ts';
+import { type Quest, QuestApi, type QuestEmployer, type QuestRequirement, questEnds } from './quests.ts';
 import { RateTracker } from './rates.ts';
-import { entries } from '../util/json.ts';
-import { isObj, obj, type JsonObject } from '../util/json.ts';
+import { planRoute, questNeeds, type RouteNeed, type RouteObjective, type RoutePlan } from './route.ts';
+import { SkillApi, type SkillPlan, Skills } from './skills.ts';
+import { jobPost, parseQueue, type QueuedTask, sleepPost, TaskApi, walkPost } from './tasks.ts';
+import { TileCache } from './tiles.ts';
+import { projectTimeline, type Timeline, type TimelineStep } from './timeline.ts';
+import {
+  buildPost,
+  type Construction,
+  fetchConstruction,
+  fetchTownHall,
+  type TownBuilding,
+  type TownHall,
+} from './townhall.ts';
+import {
+  type Bank,
+  buyMobileTrader,
+  buyOrderProblem,
+  DEFAULT_FILTER,
+  deposit,
+  fetchBank,
+  fetchMobileTrader,
+  fetchShop,
+  MarketApi,
+  type MarketFilter,
+  type MarketOffer,
+  type MobileTrader,
+  type MobileTraderItem,
+  type Shop,
+  type ShopKey,
+  shopBuy,
+  shopSell,
+  useItem,
+} from './trade.ts';
+import { type Fort, type Town, WorldMap } from './world.ts';
 
-export interface LogEntry { at: Date; level: 'info' | 'error'; msg: string }
+export interface LogEntry {
+  at: Date;
+  level: 'info' | 'error';
+  msg: string;
+}
 
 export interface JobOption {
   job: JobInfo;
@@ -55,7 +99,11 @@ export interface JobOption {
 const LAYERS_FILE = () => join(CONFIG_DIR, 'map-layers.json');
 function loadMapLayers(): Record<string, boolean> {
   try {
-    return Object.fromEntries(entries(JSON.parse(readFileSync(LAYERS_FILE(), 'utf8'))).filter((e): e is [string, boolean] => typeof e[1] === 'boolean'));
+    return Object.fromEntries(
+      entries(JSON.parse(readFileSync(LAYERS_FILE(), 'utf8'))).filter(
+        (e): e is [string, boolean] => typeof e[1] === 'boolean',
+      ),
+    );
   } catch {
     return {};
   }
@@ -83,7 +131,12 @@ export function jobSortValue(job: JobInfo, sort: JobSort): number {
   return sort === 'xp' ? v.experience : sort === 'money' ? v.money : 0;
 }
 
-export interface StartupStep { label: string; status: 'running' | 'done' | 'error'; startedAt: number; endedAt?: number }
+export interface StartupStep {
+  label: string;
+  status: 'running' | 'done' | 'error';
+  startedAt: number;
+  endedAt?: number;
+}
 
 export class GameState extends EventEmitter {
   client!: GameClient;
@@ -152,8 +205,14 @@ export class GameState extends EventEmitter {
   /** Town hall of the home town and the construction detail of its selected building. */
   townHall: TownHall | null = null;
   construction: Construction | null = null;
-  market: { query: string; page: number; next: boolean; offers: MarketOffer[]; filter: MarketFilter; searched: boolean } =
-    { query: '', page: 1, next: false, offers: [], filter: { ...DEFAULT_FILTER }, searched: false };
+  market: {
+    query: string;
+    page: number;
+    next: boolean;
+    offers: MarketOffer[];
+    filter: MarketFilter;
+    searched: boolean;
+  } = { query: '', page: 1, next: false, offers: [], filter: { ...DEFAULT_FILTER }, searched: false };
   /** My market: bids, sell offers and (for the trade town's market) buy orders. */
   marketMine: { bids: MarketOffer[]; offers: MarketOffer[]; buyOrders: MarketOffer[] } | null = null;
   /** Duels screen. */
@@ -241,9 +300,7 @@ export class GameState extends EventEmitter {
   jobsAtLocation(groupId: number, at: { x: number; y: number }): JobOption[] {
     const from = this.queueEndPosition;
     const way = wayTime(from, at, this.travelSpeed, this.character.speed);
-    return this.jobs
-      .filter((j) => j.groupid === groupId)
-      .map((job) => ({ job, at, way }));
+    return this.jobs.filter((j) => j.groupid === groupId).map((job) => ({ job, at, way }));
   }
 
   travelTo(at: { x: number; y: number }): number {
@@ -268,8 +325,9 @@ export class GameState extends EventEmitter {
   tick(): boolean {
     const now = this.clock.now();
     let changed = false;
-    while (this.queue.length && this.queue[0]!.end <= now) {
-      const done = this.queue.shift()!;
+    while ((this.queue[0]?.end ?? Number.POSITIVE_INFINITY) <= now) {
+      const done = this.queue.shift();
+      if (!done) break;
       this.character.position = done.coords;
       this.info(`Finished: ${done.title}`);
       if (done.type === 'job') {
@@ -306,9 +364,18 @@ export class GameState extends EventEmitter {
     if (!p) return;
     this.hpPending = null;
     const lost = Math.max(0, before - after);
-    if (lost > 0.3 * this.character.maxHealth) return void this.debug.add('state', `HP drop ${lost} after ${p.title} looks like an attack: not calibrated`, { before, after, predicted: p.predicted });
+    if (lost > 0.3 * this.character.maxHealth)
+      return void this.debug.add('state', `HP drop ${lost} after ${p.title} looks like an attack: not calibrated`, {
+        before,
+        after,
+        predicted: p.predicted,
+      });
     this.calibration.addHp(p.predicted, lost);
-    this.debug.add('state', `Calibration: ${p.title} cost ${lost} HP (predicted ${Math.round(p.predicted)})`, { lost, predicted: p.predicted, hpScale: this.calibration.hpScale });
+    this.debug.add('state', `Calibration: ${p.title} cost ${lost} HP (predicted ${Math.round(p.predicted)})`, {
+      lost,
+      predicted: p.predicted,
+      hpScale: this.calibration.hpScale,
+    });
   }
 
   /** A level-up seen: did it refill energy (the planner assumes so)? */
@@ -316,7 +383,11 @@ export class GameState extends EventEmitter {
     const c = this.character;
     const refilled = c.energy >= c.maxEnergy - 1;
     this.calibration.addLevelUp(refilled);
-    this.debug.add('state', `Calibration: level-up ${refilled ? 'refilled' : 'did NOT refill'} energy (${c.energy}/${c.maxEnergy})`, this.calibration.data.levelUps);
+    this.debug.add(
+      'state',
+      `Calibration: level-up ${refilled ? 'refilled' : 'did NOT refill'} energy (${c.energy}/${c.maxEnergy})`,
+      this.calibration.data.levelUps,
+    );
   }
 
   /** work/index read: each job's motivation change since the last read, with the runs done between. */
@@ -327,7 +398,8 @@ export class GameState extends EventEmitter {
       if (prev) {
         const hours = (now - prev.at) / 3600;
         // At 100 % recovery is invisible (capped): only uncapped pairs teach anything.
-        if ((prev.runs > 0 || hours > 0.25) && prev.m < 0.999 && j.motivation < 0.999) this.calibration.addMotivation(prev.runs, hours, j.motivation - prev.m);
+        if ((prev.runs > 0 || hours > 0.25) && prev.m < 0.999 && j.motivation < 0.999)
+          this.calibration.addMotivation(prev.runs, hours, j.motivation - prev.m);
       }
       this.motivationSeen.set(j.id, { m: j.motivation, at: now, runs: 0 });
     }
@@ -347,9 +419,15 @@ export class GameState extends EventEmitter {
         for (const k of DURATION_KEYS) if (job.values[k]?.duration === rep.seconds) dur = k;
         if (!dur) continue;
         this.calibration.addJobRun(job.id, dur, rep.items);
-        this.debug.add('state', `Calibration: ${job.name} (${dur}) report: ${rep.items.map(([id, n]) => `${this.itemName(id)} ×${n}`).join(', ') || 'no items'}`, { report: r.id, ...rep });
+        this.debug.add(
+          'state',
+          `Calibration: ${job.name} (${dur}) report: ${rep.items.map(([id, n]) => `${this.itemName(id)} ×${n}`).join(', ') || 'no items'}`,
+          { report: r.id, ...rep },
+        );
       } catch (err) {
-        this.debug.add('request', `Job report ${r.id} for calibration failed`, { error: err instanceof Error ? err.message : String(err) });
+        this.debug.add('request', `Job report ${r.id} for calibration failed`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   }
@@ -359,15 +437,31 @@ export class GameState extends EventEmitter {
     const c = this.character;
     const sv = c.serverValues;
     return {
-      position: `${c.position.x},${c.position.y}`, town: this.townHere?.name ?? null,
-      level: c.level, experience: c.experience, cash: c.cash, deposit: c.deposit, nuggets: c.nuggets,
-      energy: sv.energy, health: sv.health, maxEnergy: c.maxEnergy, maxHealth: c.maxHealth,
+      position: `${c.position.x},${c.position.y}`,
+      town: this.townHere?.name ?? null,
+      level: c.level,
+      experience: c.experience,
+      cash: c.cash,
+      deposit: c.deposit,
+      nuggets: c.nuggets,
+      energy: sv.energy,
+      health: sv.health,
+      maxEnergy: c.maxEnergy,
+      maxHealth: c.maxHealth,
       queue: this.queue.map((q) => `#${q.queueId} ${q.type} ${q.title}`),
-      quests: this.quests.map((q) => `${q.title}${q.finishable ? ' (finishable)' : ''}: ${q.requirements.map((r) => `${r.solved ? '✓' : '·'} ${r.info}`).join(' | ')}`),
+      quests: this.quests.map(
+        (q) =>
+          `${q.title}${q.finishable ? ' (finishable)' : ''}: ${q.requirements.map((r) => `${r.solved ? '✓' : '·'} ${r.info}`).join(' | ')}`,
+      ),
       bag: [...this.inventory.bag.values()].map((b) => `${this.itemName(b.itemId)} ×${b.count}`),
       wear: [...this.inventory.wear].map(([slot, id]) => `${slot}: ${this.itemName(id)}`),
-      jobs: this.jobs.length, live: this.liveStatus,
-      autopilot: this.autopilot.config.running ? (this.autopilot.config.modules.dryRun ? 'running (dry run)' : 'running') : 'paused',
+      jobs: this.jobs.length,
+      live: this.liveStatus,
+      autopilot: this.autopilot.config.running
+        ? this.autopilot.config.modules.dryRun
+          ? 'running (dry run)'
+          : 'running'
+        : 'paused',
     };
   }
 
@@ -386,9 +480,19 @@ export class GameState extends EventEmitter {
       this.debugStarted.add(head.queueId);
       const q = this.queuedJob(head);
       this.debug.add('state', `Started: ${head.title}`, {
-        task: { queueId: head.queueId, type: head.type, start: head.start, end: head.end, coords: head.coords, way: head.way },
-        job: q ? { id: q.job.id, duration: q.duration, values: q.values, motivation: q.job.motivation, danger: q.job.danger } : undefined,
-        energy: this.character.energy, health: this.character.health,
+        task: {
+          queueId: head.queueId,
+          type: head.type,
+          start: head.start,
+          end: head.end,
+          coords: head.coords,
+          way: head.way,
+        },
+        job: q
+          ? { id: q.job.id, duration: q.duration, values: q.values, motivation: q.job.motivation, danger: q.job.danger }
+          : undefined,
+        energy: this.character.energy,
+        health: this.character.health,
       });
     }
   }
@@ -406,7 +510,9 @@ export class GameState extends EventEmitter {
       this.debug.add('request', `${label}: ok (${Date.now() - t0} ms)`);
       return r;
     } catch (err) {
-      this.debug.add('request', `${label}: failed (${Date.now() - t0} ms)`, { error: err instanceof Error ? err.stack ?? err.message : String(err) });
+      this.debug.add('request', `${label}: failed (${Date.now() - t0} ms)`, {
+        error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+      });
       this.error(`${label}: ${err instanceof Error ? err.message : String(err)}`);
       return undefined;
     } finally {
@@ -437,7 +543,9 @@ export class GameState extends EventEmitter {
   }
 
   /** `connect`: how long connecting took (shown as the loading screen's first, finished step). */
-  async start(opts: { live?: boolean; connect?: { label: string; startedAt: number; endedAt: number } } = {}): Promise<void> {
+  async start(
+    opts: { live?: boolean; connect?: { label: string; startedAt: number; endedAt: number } } = {},
+  ): Promise<void> {
     this.startup = { steps: opts.connect ? [{ ...opts.connect, status: 'done' }] : [], done: false };
     await this.step('Server clock', () => this.guard('Clock sync', () => this.clock.sync(this.client)));
     await this.step('Jobs and map', () => this.loadJobs(true));
@@ -528,11 +636,13 @@ export class GameState extends EventEmitter {
 
   applySelf(u: SelfUpdate): void {
     const c = this.character;
-    if (u.x !== undefined && u.y !== undefined && (u.x !== c.position.x || u.y !== c.position.y)) c.position = { x: u.x, y: u.y };
-    const leveled = u.level !== undefined && u.level > c.level;
-    if (leveled) {
-      this.info(`Level up: ${u.level}!`);
-      c.level = u.level!;
+    if (u.x !== undefined && u.y !== undefined && (u.x !== c.position.x || u.y !== c.position.y))
+      c.position = { x: u.x, y: u.y };
+    const level = u.level;
+    const leveled = level !== undefined && level > c.level;
+    if (leveled && level !== undefined) {
+      this.info(`Level up: ${level}!`);
+      c.level = level;
     }
     const hpBefore = c.health;
     if (u.experience !== undefined && u.experience > c.experience) c.experience = u.experience;
@@ -664,12 +774,18 @@ export class GameState extends EventEmitter {
   }
 
   /** Set of an item: name, members (worn or not) and the bonus for the currently worn count. */
-  itemSet(itemId: number): { name: string; worn: number; items: { id: number; name: string; worn: boolean }[]; bonus: string[] } | null {
+  itemSet(
+    itemId: number,
+  ): { name: string; worn: number; items: { id: number; name: string; worn: boolean }[]; bonus: string[] } | null {
     const d = this.items?.get(itemId);
     const set = this.itemSets?.get(d?.set);
     if (!set) return null;
     const wornBase = new Set([...this.inventory.wear.values()].map((id) => Math.floor(id / 1000)));
-    const items = set.items.map((id) => ({ id, name: this.items?.get(id * 1000)?.name ?? `item ${id}`, worn: wornBase.has(id) }));
+    const items = set.items.map((id) => ({
+      id,
+      name: this.items?.get(id * 1000)?.name ?? `item ${id}`,
+      worn: wornBase.has(id),
+    }));
     const worn = items.filter((i) => i.worn).length;
     return { name: set.name, worn, items, bonus: setBonusLines(set, worn, this.statContext) };
   }
@@ -763,7 +879,8 @@ export class GameState extends EventEmitter {
       const before = new Set(this.quests.filter((q) => q.finishable).map((q) => q.id));
       this.quests = r.quests;
       this.questCapacity = r.capacity;
-      for (const q of r.quests) if (q.finishable && !before.has(q.id) && quiet) this.info(`Quest ready to finish: ${q.title}`);
+      for (const q of r.quests)
+        if (q.finishable && !before.has(q.id) && quiet) this.info(`Quest ready to finish: ${q.title}`);
       if (!quiet) this.info(`Quest log: ${r.quests.length}/${r.capacity || '?'}`);
     });
   }
@@ -788,7 +905,11 @@ export class GameState extends EventEmitter {
       this.info(`Accepted: ${q.title}`);
     });
     await this.loadQuests(true);
-    if (this.employer) await this.openEmployer(this.employer.key, this.employer.x !== null ? { x: this.employer.x, y: this.employer.y! } : null);
+    if (this.employer)
+      await this.openEmployer(
+        this.employer.key,
+        this.employer.x !== null && this.employer.y !== null ? { x: this.employer.x, y: this.employer.y } : null,
+      );
   }
 
   async finishQuest(q: Quest, rewardOption?: number): Promise<void> {
@@ -815,7 +936,8 @@ export class GameState extends EventEmitter {
    */
   requirementSources(req: QuestRequirement): (JobOption & { chance: number | null })[] {
     const found: { id: number; chance: number | null }[] = [];
-    if (req.itemId !== undefined) for (const y of this.catalog.yielding(req.itemId)) found.push({ id: y.job.id, chance: y.chance });
+    if (req.itemId !== undefined)
+      for (const y of this.catalog.yielding(req.itemId)) found.push({ id: y.job.id, chance: y.chance });
     if (req.jobId !== undefined) found.push({ id: req.jobId, chance: null });
     const from = this.queueEndPosition;
     return found.flatMap(({ id, chance }) => {
@@ -843,7 +965,9 @@ export class GameState extends EventEmitter {
 
   private queueFull(): boolean {
     if (this.queue.length < this.taskLimit) return false;
-    this.error(`Task queue is full (${this.queue.length}/${this.taskLimit})${this.hasAutomation ? '' : '; automation premium raises the limit'}`);
+    this.error(
+      `Task queue is full (${this.queue.length}/${this.taskLimit})${this.hasAutomation ? '' : '; automation premium raises the limit'}`,
+    );
     return true;
   }
 
@@ -881,9 +1005,17 @@ export class GameState extends EventEmitter {
 
   /** TaskSleep(town_id, room); the server walks there first if needed. */
   async sleep(hotel: Hotel, room: HotelRoom): Promise<boolean> {
-    const ok = await this.addTask('Sleep', sleepPost(hotel.townId, room.key), `Sleeping in ${hotel.townName}: ${room.name}`);
+    const ok = await this.addTask(
+      'Sleep',
+      sleepPost(hotel.townId, room.key),
+      `Sleeping in ${hotel.townName}: ${room.name}`,
+    );
     const t = this.queue[this.queue.length - 1];
-    if (ok && t?.type === 'sleep') this.sleepRates.set(t.queueId, { energyRate: roomRate(room.energy) * this.calibration.roomScale, healthRate: roomRate(room.health) });
+    if (ok && t?.type === 'sleep')
+      this.sleepRates.set(t.queueId, {
+        energyRate: roomRate(room.energy) * this.calibration.roomScale,
+        healthRate: roomRate(room.health),
+      });
     return ok;
   }
 
@@ -907,11 +1039,15 @@ export class GameState extends EventEmitter {
   async loadJobs(quiet = false, freshMap = false): Promise<void> {
     await this.guard('Jobs', async () => {
       const jobs = await fetchJobInfos(this.client, this.catalog);
-      const minimap = await cachedJson(`minimap-${new URL(this.client.worldUrl).host}`, async () => {
-        const m = await this.client.get('map', 'get_minimap');
-        if (m.error) throw new Error(String(m.msg ?? 'map/get_minimap failed'));
-        return m;
-      }, { fresh: freshMap });
+      const minimap = await cachedJson(
+        `minimap-${new URL(this.client.worldUrl).host}`,
+        async () => {
+          const m = await this.client.get('map', 'get_minimap');
+          if (m.error) throw new Error(String(m.msg ?? 'map/get_minimap failed'));
+          return m;
+        },
+        { fresh: freshMap },
+      );
       this.jobs = jobs.sort((a, b) => a.name.localeCompare(b.name));
       this.observeMotivation();
       this.world = WorldMap.fromMinimap(minimap);
@@ -950,9 +1086,11 @@ export class GameState extends EventEmitter {
   /** Product names a job drops (static yields + per-duration drops), for search and display. */
   jobProducts(job: JobInfo): { itemId: number; name: string; percent: number | null }[] {
     const out = new Map<number, { itemId: number; name: string; percent: number | null }>();
-    for (const y of job.values.long?.items ?? job.values.middle?.items ?? []) out.set(Math.floor(y.itemId / 1000), { itemId: y.itemId, name: this.itemName(y.itemId), percent: y.percent });
+    for (const y of job.values.long?.items ?? job.values.middle?.items ?? [])
+      out.set(Math.floor(y.itemId / 1000), { itemId: y.itemId, name: this.itemName(y.itemId), percent: y.percent });
     for (const id of Object.keys(job.yields ?? {}).map(Number)) {
-      if (!out.has(Math.floor(id / 1000))) out.set(Math.floor(id / 1000), { itemId: id, name: this.itemName(id), percent: null });
+      if (!out.has(Math.floor(id / 1000)))
+        out.set(Math.floor(id / 1000), { itemId: id, name: this.itemName(id), percent: null });
     }
     return [...out.values()];
   }
@@ -967,21 +1105,30 @@ export class GameState extends EventEmitter {
     const f = filter.trim().toLowerCase();
     const sort = opts.sort ?? 'name';
     const list = this.jobs
-      .filter((j) => (opts.showAll ? j.jobPoints >= j.workPoints || this.character.level >= j.level : j.jobPoints >= j.workPoints))
-      .filter((j) => !f || j.name.toLowerCase().includes(f) || this.jobProducts(j).some((p) => p.name.toLowerCase().includes(f)))
+      .filter((j) =>
+        opts.showAll ? j.jobPoints >= j.workPoints || this.character.level >= j.level : j.jobPoints >= j.workPoints,
+      )
+      .filter(
+        (j) =>
+          !f || j.name.toLowerCase().includes(f) || this.jobProducts(j).some((p) => p.name.toLowerCase().includes(f)),
+      )
       .map((job) => {
         const at = nearestLocation(this.locations.get(job.groupid), from);
         return { job, at, way: at ? wayTime(from, at, this.travelSpeed, this.character.speed) : null };
       });
     if (sort === 'name') return list;
     if (sort === 'distance') return list.sort((a, b) => (a.way ?? Infinity) - (b.way ?? Infinity));
-    return list.sort((a, b) => jobSortValue(b.job, sort) - jobSortValue(a.job, sort) || a.job.name.localeCompare(b.job.name));
+    return list.sort(
+      (a, b) => jobSortValue(b.job, sort) - jobSortValue(a.job, sort) || a.job.name.localeCompare(b.job.name),
+    );
   }
 
   async startJob(option: JobOption, duration: DurationKey): Promise<void> {
     const { job, at } = option;
     if (this.queue.length >= this.taskLimit) {
-      this.error(`Task queue is full (${this.queue.length}/${this.taskLimit})${this.hasAutomation ? '' : '; automation premium raises the limit'}`);
+      this.error(
+        `Task queue is full (${this.queue.length}/${this.taskLimit})${this.hasAutomation ? '' : '; automation premium raises the limit'}`,
+      );
       return;
     }
     if (!at) {
@@ -1006,13 +1153,19 @@ export class GameState extends EventEmitter {
   routeQuests(scope: 'quest' | 'chain' | 'all', quest?: Quest): Quest[] {
     const open = this.quests.filter((q) => !q.finishable);
     if (scope === 'all' || !quest) return open;
-    if (scope === 'chain') return open.filter((q) => (quest.groupId ? q.groupId === quest.groupId : q.group === quest.group));
+    if (scope === 'chain')
+      return open.filter((q) => (quest.groupId ? q.groupId === quest.groupId : q.group === quest.group));
     return open.filter((q) => q.id === quest.id);
   }
 
   /** Best job route (from where the queue ends) for what these quests still need. */
   planQuestRoute(quests: Quest[], objective: RouteObjective = 'energy'): RoutePlan {
-    const needs = questNeeds(quests, (id) => this.inventory.countBase(id), (id) => this.itemName(id), (id) => this.catalog.get(id)?.name ?? `job ${id}`);
+    const needs = questNeeds(
+      quests,
+      (id) => this.inventory.countBase(id),
+      (id) => this.itemName(id),
+      (id) => this.catalog.get(id)?.name ?? `job ${id}`,
+    );
     return planRoute({
       needs,
       jobs: this.jobs,
@@ -1034,7 +1187,11 @@ export class GameState extends EventEmitter {
   private routeRuns(plan: RoutePlan): RouteRun[] {
     return plan.stops.flatMap((s) => {
       const v = s.job.values[s.duration];
-      const run = { post: jobPost(s.job.id, s.at, v?.duration ?? s.job.durations[s.duration]), energy: v?.energy ?? Math.ceil(s.energy / Math.max(1, s.runs)), title: s.job.name };
+      const run = {
+        post: jobPost(s.job.id, s.at, v?.duration ?? s.job.durations[s.duration]),
+        energy: v?.energy ?? Math.ceil(s.energy / Math.max(1, s.runs)),
+        title: s.job.name,
+      };
       return Array.from({ length: s.runs }, () => run);
     });
   }
@@ -1046,7 +1203,10 @@ export class GameState extends EventEmitter {
     if (opts.auto) {
       this.autoRoute = { label: opts.label ?? 'route', runs, total: runs.length, retryAt: 0 };
       const added = await this.autoRouteStep();
-      if (this.autoRoute) this.info(`Auto-route on: ${this.autoRoute.runs.length} more job(s) get queued as queue space and energy allow (R, then x stops).`);
+      if (this.autoRoute)
+        this.info(
+          `Auto-route on: ${this.autoRoute.runs.length} more job(s) get queued as queue space and energy allow (R, then x stops).`,
+        );
       return added;
     }
     if (free <= 0) {
@@ -1056,7 +1216,9 @@ export class GameState extends EventEmitter {
     // Only what the current energy pays for: the server would refuse the rest.
     const posts = runs.map((r) => r.post).slice(0, Math.min(free, plan.fitRuns));
     if (!posts.length) {
-      this.error(`Not enough energy for the first route job (${this.character.energy} energy). Sleep or wait, then press R again.`);
+      this.error(
+        `Not enough energy for the first route job (${this.character.energy} energy). Sleep or wait, then press R again.`,
+      );
       return 0;
     }
     const r = await this.guard('Queue route', async () => {
@@ -1065,7 +1227,8 @@ export class GameState extends EventEmitter {
       for (const e of res.errors) this.error(e);
       this.queue.push(...res.added);
       const left = plan.totals.runs - res.added.length;
-      const why = plan.fitRuns < plan.totals.runs && plan.fitRuns <= free ? 'you have the energy' : 'the queue has room';
+      const why =
+        plan.fitRuns < plan.totals.runs && plan.fitRuns <= free ? 'you have the energy' : 'the queue has room';
       this.info(`Queued ${res.added.length} route job(s)${left > 0 ? `; ${left} more once ${why} (R again)` : ''}.`);
       return res.added.length;
     });
@@ -1091,15 +1254,22 @@ export class GameState extends EventEmitter {
     }
     if (!batch.length) return 0;
     const added = await this.guard('Auto-route', async () => {
-      const res = await this.tasks.add(this.queue.length, batch.map((b) => b.post), this.taskLimit);
+      const res = await this.tasks.add(
+        this.queue.length,
+        batch.map((b) => b.post),
+        this.taskLimit,
+      );
       // Jobs cost their energy when queued; without a server value, subtract what was accepted.
       if (res.energy !== undefined) this.character.setEnergy(res.energy);
-      else if (res.added.length) this.character.setEnergy(this.character.energy - batch.slice(0, res.added.length).reduce((a, b) => a + b.energy, 0));
+      else if (res.added.length)
+        this.character.setEnergy(
+          this.character.energy - batch.slice(0, res.added.length).reduce((a, b) => a + b.energy, 0),
+        );
       this.queue.push(...res.added);
       return res;
     });
     if (this.autoRoute !== auto) return added?.added.length ?? 0; // stopped meanwhile
-    if (!added || !added.added.length) {
+    if (!added?.added.length) {
       // Refused (energy/queue out of sync, job gone, …): retry in a minute instead of hammering.
       for (const e of added?.errors ?? []) this.error(`Auto-route: ${e}`);
       auto.retryAt = Date.now() + 60_000;
@@ -1157,7 +1327,9 @@ export class GameState extends EventEmitter {
       this.debug.add('request', `${label}: ok (${Date.now() - t0} ms)`, { result: r });
       return r;
     } catch (err) {
-      this.debug.add('request', `${label}: failed (${Date.now() - t0} ms)`, { error: err instanceof Error ? err.stack ?? err.message : String(err) });
+      this.debug.add('request', `${label}: failed (${Date.now() - t0} ms)`, {
+        error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+      });
       throw err;
     } finally {
       this.busy = false;
@@ -1181,18 +1353,23 @@ export class GameState extends EventEmitter {
    * not: `blocker` is a requirement that buying cannot help with, `problem` an item it cannot buy. `used`: bag
    * items earlier quests count on (questPurchases); this quest's are added to it.
    */
-  questPurchase(q: Quest, used = new Map<number, number>()): { needs: BuyNeed[]; picks: BuyPick[]; blocker: string | null; problem: string | null } {
+  questPurchase(
+    q: Quest,
+    used = new Map<number, number>(),
+  ): { needs: BuyNeed[]; picks: BuyPick[]; blocker: string | null; problem: string | null } {
     const cfg = this.autopilot.config.quests;
     const have = (itemId: number) => Math.max(0, this.inventory.countBase(itemId) - (used.get(baseId(itemId)) ?? 0));
     // Bag items this quest counts on, per item (a "have it" and a "wear it" requirement share one).
     const mine = new Map<number, number>();
     for (const r of q.requirements) {
-      if (r.itemId !== undefined && r.kind !== 'bought') mine.set(baseId(r.itemId), Math.max(mine.get(baseId(r.itemId)) ?? 0, Math.min(have(r.itemId), r.count ?? 1)));
+      if (r.itemId !== undefined && r.kind !== 'bought')
+        mine.set(baseId(r.itemId), Math.max(mine.get(baseId(r.itemId)) ?? 0, Math.min(have(r.itemId), r.count ?? 1)));
     }
     const needs = new Map<number, BuyNeed>();
     const want = (itemId: number, count: number, name: string) => {
       const prev = needs.get(baseId(itemId));
-      if (count > have(itemId) && (!prev || prev.count < count - have(itemId))) needs.set(baseId(itemId), { itemId, name, count: count - have(itemId) });
+      if (count > have(itemId) && (!prev || prev.count < count - have(itemId)))
+        needs.set(baseId(itemId), { itemId, name, count: count - have(itemId) });
     };
     const result = this.purchaseOf(q, have, want, needs, cfg);
     for (const [id, n] of mine) used.set(id, (used.get(id) ?? 0) + n);
@@ -1206,7 +1383,10 @@ export class GameState extends EventEmitter {
   }
 
   private purchaseOf(
-    q: Quest, have: (itemId: number) => number, want: (itemId: number, count: number, name: string) => void, needs: Map<number, BuyNeed>,
+    q: Quest,
+    have: (itemId: number) => number,
+    want: (itemId: number, count: number, name: string) => void,
+    needs: Map<number, BuyNeed>,
     cfg: AutopilotFile['config']['quests'],
   ): { needs: BuyNeed[]; picks: BuyPick[]; blocker: string | null; problem: string | null } {
     for (const r of q.requirements) {
@@ -1238,16 +1418,23 @@ export class GameState extends EventEmitter {
     const towns = new Map(this.world.towns.filter((t) => t.name).map((t) => [t.id, t]));
     const { picks, problem } = chooseBuys(
       list,
-      (id) => this.buyCatalog.sources(
-        id,
-        (x) => this.items?.get(x)?.price ?? 0,
-        (tid) => {
-          const t = towns.get(tid);
-          return t ? { name: t.name!, at: { x: t.x, y: t.y } } : undefined;
-        },
-        (at) => this.townAt(at)?.id,
-      ),
-      { buyLimit: cfg.buyLimit, marketLimit: cfg.marketLimit, market: cfg.market, walkValue: cfg.walkValue / 60, maxWalk: cfg.buyTrip },
+      (id) =>
+        this.buyCatalog.sources(
+          id,
+          (x) => this.items?.get(x)?.price ?? 0,
+          (tid) => {
+            const t = towns.get(tid);
+            return t?.name ? { name: t.name, at: { x: t.x, y: t.y } } : undefined;
+          },
+          (at) => this.townAt(at)?.id,
+        ),
+      {
+        buyLimit: cfg.buyLimit,
+        marketLimit: cfg.marketLimit,
+        market: cfg.market,
+        walkValue: cfg.walkValue / 60,
+        maxWalk: cfg.buyTrip,
+      },
       (at) => wayTime(from, at, this.travelSpeed, this.character.speed),
     );
     return { needs: list, picks, blocker: null, problem };
@@ -1256,12 +1443,14 @@ export class GameState extends EventEmitter {
   /** Quests the autopilot may work on: open quests (or the route's), minus excluded ones and chains; `all`: also ones it cannot finish. */
   autopilotQuests(all = this.autopilot.config.quests.unfinishable): Quest[] {
     const { rules, config } = this.autopilot;
-    return this.routeQuests('all').filter((q) =>
-      (!rules.onlyQuests.length || rules.onlyQuests.includes(q.id)) &&
-      !rules.excludedQuests.includes(q.id) &&
-      !config.quests.excludedChains.includes(q.group) &&
-      (config.quests.repeatable || !/repeatable/i.test(q.group)) &&
-      (all || !this.questBlocker(q)));
+    return this.routeQuests('all').filter(
+      (q) =>
+        (!rules.onlyQuests.length || rules.onlyQuests.includes(q.id)) &&
+        !rules.excludedQuests.includes(q.id) &&
+        !config.quests.excludedChains.includes(q.group) &&
+        (config.quests.repeatable || !/repeatable/i.test(q.group)) &&
+        (all || !this.questBlocker(q)),
+    );
   }
 
   /**
@@ -1280,12 +1469,28 @@ export class GameState extends EventEmitter {
       const quests = this.autopilotQuests(false);
       const all = this.questPurchases(quests);
       for (const q of quests) {
-        for (const p of all.get(q.id)!.picks) {
-          if (p.source.kind === 'shop') add(p.source.townId, p.source.townName, p.source.at, p.cost, `${p.count > 1 ? `${p.count}× ` : ''}${p.name} (${where(p.source).split(' in ')[0]}) for "${q.soloTitle || q.title}"`);
+        const purchase = all.get(q.id);
+        if (!purchase) continue;
+        for (const p of purchase.picks) {
+          if (p.source.kind === 'shop')
+            add(
+              p.source.townId,
+              p.source.townName,
+              p.source.at,
+              p.cost,
+              `${p.count > 1 ? `${p.count}× ` : ''}${p.name} (${where(p.source).split(' in ')[0]}) for "${q.soloTitle || q.title}"`,
+            );
         }
       }
     }
-    for (const p of this.autopilot.pickups) add(p.townId, p.townName, p.at, 0, `pick up ${p.count > 1 ? `${p.count}× ` : ''}${this.itemName(p.itemId)} (market) for "${p.quest}"`);
+    for (const p of this.autopilot.pickups)
+      add(
+        p.townId,
+        p.townName,
+        p.at,
+        0,
+        `pick up ${p.count > 1 ? `${p.count}× ` : ''}${this.itemName(p.itemId)} (market) for "${p.quest}"`,
+      );
     return [...trips.values()];
   }
 
@@ -1295,14 +1500,33 @@ export class GameState extends EventEmitter {
    */
   autopilotNeeds(): RouteNeed[] {
     const quests = this.autopilotQuests();
-    const needs = questNeeds(quests, (id) => this.inventory.countBase(id), (id) => this.itemName(id), (id) => this.catalog.get(id)?.name ?? `job ${id}`);
+    const needs = questNeeds(
+      quests,
+      (id) => this.inventory.countBase(id),
+      (id) => this.itemName(id),
+      (id) => this.catalog.get(id)?.name ?? `job ${id}`,
+    );
     const now = this.clock.now();
     for (const q of quests) {
       const mine = needs.filter((n) => n.quests.includes(q.soloTitle || q.title));
       const units = mine.reduce((a, n) => a + (n.unit === 'seconds' ? n.amount / 3600 : n.amount), 0);
       if (!mine.length || units <= 0) continue;
-      const xp = q.rewards.reduce((a, r) => a + (r.item === null && /experience/i.test(r.text) ? Number(r.text.match(/[\d.,]+/)?.[0]?.replace(/[.,]/g, '') ?? 0) : 0), 0);
-      const money = q.rewards.reduce((a, r) => a + (r.item === null && /dollar/i.test(r.text) ? Number(r.text.match(/[\d.,]+/)?.[0]?.replace(/[.,]/g, '') ?? 0) : 0), 0);
+      const xp = q.rewards.reduce(
+        (a, r) =>
+          a +
+          (r.item === null && /experience/i.test(r.text)
+            ? Number(r.text.match(/[\d.,]+/)?.[0]?.replace(/[.,]/g, '') ?? 0)
+            : 0),
+        0,
+      );
+      const money = q.rewards.reduce(
+        (a, r) =>
+          a +
+          (r.item === null && /dollar/i.test(r.text)
+            ? Number(r.text.match(/[\d.,]+/)?.[0]?.replace(/[.,]/g, '') ?? 0)
+            : 0),
+        0,
+      );
       const ends = questEnds(q.limited);
       const left = ends === null ? Infinity : (ends - now) / 3600;
       const weight = 1 + Math.max(0, Math.min(1, 1 - left / 72));
@@ -1335,7 +1559,8 @@ export class GameState extends EventEmitter {
     let best = Infinity;
     for (const k of DURATION_KEYS) {
       const d = job.values[k];
-      if (d && Math.abs(d.duration - secs) < best) [found, best] = [{ job, duration: k, values: d }, Math.abs(d.duration - secs)];
+      if (d && Math.abs(d.duration - secs) < best)
+        [found, best] = [{ job, duration: k, values: d }, Math.abs(d.duration - secs)];
     }
     return found;
   }
@@ -1346,12 +1571,29 @@ export class GameState extends EventEmitter {
     if (t.type === 'job' && t.jobId !== undefined) {
       const q = this.queuedJob(t);
       const secs = t.end - (t.way?.end ?? t.start);
-      return { kind: 'job', title: t.title, jobId: t.jobId, at: t.coords, duration: secs, energy: 0, xp: q?.values.experience ?? 0, money: q?.values.money ?? 0, fixed };
+      return {
+        kind: 'job',
+        title: t.title,
+        jobId: t.jobId,
+        at: t.coords,
+        duration: secs,
+        energy: 0,
+        xp: q?.values.experience ?? 0,
+        money: q?.values.money ?? 0,
+        fixed,
+      };
     }
     // Sleep rates are not in the queue entry; base regen until the room's units are known (docs/autopilot.md).
     if (t.type === 'sleep') {
       const r = this.sleepRates.get(t.queueId);
-      return { kind: 'sleep', title: t.title, at: t.coords, energyRate: r?.energyRate ?? this.character.energyRegen, healthRate: r?.healthRate ?? this.character.healthRegen, fixed };
+      return {
+        kind: 'sleep',
+        title: t.title,
+        at: t.coords,
+        energyRate: r?.energyRate ?? this.character.energyRegen,
+        healthRate: r?.healthRate ?? this.character.healthRegen,
+        fixed,
+      };
     }
     return { kind: 'walk', title: t.title, at: t.coords, fixed };
   }
@@ -1359,10 +1601,24 @@ export class GameState extends EventEmitter {
   /** Projection of the server queue followed by `planned` steps, from now. */
   timeline(planned: TimelineStep[] = []): Timeline {
     const c = this.character;
-    return projectTimeline({
-      now: this.clock.now(), at: c.position, energy: c.energy, maxEnergy: c.maxEnergy, health: c.health, maxHealth: c.maxHealth,
-      energyRegen: c.energyRegen, healthRegen: c.healthRegen, level: c.level, experience: c.experience, maxLevel: c.maxLevel, cash: c.cash,
-    }, [...this.queue.map((t) => this.queuedStep(t)), ...planned], { wayTime: (a, b) => wayTime(a, b, this.travelSpeed, c.speed) });
+    return projectTimeline(
+      {
+        now: this.clock.now(),
+        at: c.position,
+        energy: c.energy,
+        maxEnergy: c.maxEnergy,
+        health: c.health,
+        maxHealth: c.maxHealth,
+        energyRegen: c.energyRegen,
+        healthRegen: c.healthRegen,
+        level: c.level,
+        experience: c.experience,
+        maxLevel: c.maxLevel,
+        cash: c.cash,
+      },
+      [...this.queue.map((t) => this.queuedStep(t)), ...planned],
+      { wayTime: (a, b) => wayTime(a, b, this.travelSpeed, c.speed) },
+    );
   }
 
   /** Marks the route's jobs on the map. */
@@ -1370,7 +1626,7 @@ export class GameState extends EventEmitter {
     if (!plan.stops.length) return null;
     this.mapHighlight = { label, jobIds: new Set(plan.stops.map((s) => s.job.id)) };
     this.changed();
-    return plan.stops[0]!.at;
+    return plan.stops[0]?.at ?? null;
   }
 
   /** Loads tile details (quest giver names, gold/silver jobs, crowds) around a map position. */
@@ -1564,7 +1820,11 @@ export class GameState extends EventEmitter {
       this.error('That construction duration is not available.');
       return false;
     }
-    return this.addTask('Construction', buildPost({ x: c.x, y: c.y }, c.key, duration, pay), `Queued construction: ${c.name}`);
+    return this.addTask(
+      'Construction',
+      buildPost({ x: c.x, y: c.y }, c.key, duration, pay),
+      `Queued construction: ${c.name}`,
+    );
   }
 
   async depositMoney(amount: number): Promise<void> {
@@ -1634,7 +1894,14 @@ export class GameState extends EventEmitter {
     if (!shop || !item) return;
     if (this.items?.get(itemId)?.sellable === false) return this.error(`${this.itemName(itemId)} cannot be sold.`);
     await this.guard('Sell', async () => {
-      const r = await shopSell(this.client, shop.key, shop.townId, item, Math.min(count, item.count), this.inventory.lastInvId);
+      const r = await shopSell(
+        this.client,
+        shop.key,
+        shop.townId,
+        item,
+        Math.min(count, item.count),
+        this.inventory.lastInvId,
+      );
       this.inventory.applyChanges(r.changes);
       this.applyMoney(r);
       this.info(`Sold ${count > 1 ? `${count}× ` : ''}${this.itemName(itemId)}`);
@@ -1664,7 +1931,8 @@ export class GameState extends EventEmitter {
     await this.guard('Market', async () => {
       const r = await this.marketApi.search(query, page, filter, nav);
       this.market = { query, page, next: r.next, offers: r.offers, filter: { ...filter }, searched: true };
-      if (!r.offers.length) this.info(`No ${filter.buyOrders ? 'buy orders' : 'market offers'}${query ? ` for "${query}"` : ''}.`);
+      if (!r.offers.length)
+        this.info(`No ${filter.buyOrders ? 'buy orders' : 'market offers'}${query ? ` for "${query}"` : ''}.`);
     });
   }
 
@@ -1672,7 +1940,9 @@ export class GameState extends EventEmitter {
     const town = this.tradeTown;
     await this.guard('Market', async () => {
       const [bids, offers, buyOrders] = await Promise.all([
-        this.marketApi.myBids(), this.marketApi.myOffers(), town ? this.marketApi.myBuyOrders(town.id) : Promise.resolve([]),
+        this.marketApi.myBids(),
+        this.marketApi.myOffers(),
+        town ? this.marketApi.myBuyOrders(town.id) : Promise.resolve([]),
       ]);
       this.marketMine = { bids, offers, buyOrders };
     });
@@ -1687,7 +1957,9 @@ export class GameState extends EventEmitter {
     if (!(amount > 0)) return this.error('Enter an amount.');
     const selling = offer.direction === 'BUY';
     if (selling && this.inventory.count(offer.itemId) < offer.count) {
-      return this.error(`You need ${offer.count}× ${this.itemName(offer.itemId)} in your bag to sell into this buy order.`);
+      return this.error(
+        `You need ${offer.count}× ${this.itemName(offer.itemId)} in your bag to sell into this buy order.`,
+      );
     }
     // Like the web's bid dialog: going past the instant price only ever gets the instant price.
     if (offer.buyNow !== null && (selling ? amount < offer.buyNow : amount > offer.buyNow)) amount = offer.buyNow;
@@ -1696,9 +1968,13 @@ export class GameState extends EventEmitter {
       this.applyMoney(r);
       if (r.changes.length) this.inventory.applyChanges(r.changes);
       const name = this.itemName(offer.itemId);
-      this.info(r.instant
-        ? selling ? `You sold ${name} for $ ${amount} (collect the money at ${offer.town.name}).` : `You have won ${name} (pick it up at ${offer.town.name}).`
-        : `You have posted your bid of $ ${amount}.`);
+      this.info(
+        r.instant
+          ? selling
+            ? `You sold ${name} for $ ${amount} (collect the money at ${offer.town.name}).`
+            : `You have won ${name} (pick it up at ${offer.town.name}).`
+          : `You have posted your bid of $ ${amount}.`,
+      );
     });
     if (selling && this.items) await this.refreshInventory();
     await this.searchMarket(this.market.query, this.market.page);
@@ -1740,7 +2016,11 @@ export class GameState extends EventEmitter {
     await this.guard('Withdraw', async () => {
       const r = await this.marketApi.withdraw(offer);
       if (r.refund) this.character.cash += r.refund;
-      this.info(r.refund ? `The offer was withdrawn; $ ${r.refund} of fees were refunded to you.` : 'The offer was withdrawn; no fees were refunded to you.');
+      this.info(
+        r.refund
+          ? `The offer was withdrawn; $ ${r.refund} of fees were refunded to you.`
+          : 'The offer was withdrawn; no fees were refunded to you.',
+      );
     });
     await this.loadMarketMine();
     if (this.items) await this.refreshInventory();
@@ -1756,7 +2036,14 @@ export class GameState extends EventEmitter {
   }
 
   /** Places a buy order at the trade town's market for an item by name. */
-  async placeBuyOrder(o: { query: string; count: number; days: number; maxBid?: number | undefined; instant?: number | undefined; fromBank: boolean }): Promise<boolean> {
+  async placeBuyOrder(o: {
+    query: string;
+    count: number;
+    days: number;
+    maxBid?: number | undefined;
+    instant?: number | undefined;
+    fromBank: boolean;
+  }): Promise<boolean> {
     const town = this.tradeTown;
     if (!town) {
       this.error('You need to be in a town (or have a home town) to place a buy order.');
@@ -1764,10 +2051,18 @@ export class GameState extends EventEmitter {
     }
     const found = this.findAuctionable(o.query);
     if (found.length !== 1) {
-      this.error(found.length ? `"${o.query}" matches ${found.length} items (${found.slice(0, 4).map((f) => f.name).join(', ')}${found.length > 4 ? ', …' : ''}); be more exact.` : `No market item is called "${o.query}".`);
+      this.error(
+        found.length
+          ? `"${o.query}" matches ${found.length} items (${found
+              .slice(0, 4)
+              .map((f) => f.name)
+              .join(', ')}${found.length > 4 ? ', …' : ''}); be more exact.`
+          : `No market item is called "${o.query}".`,
+      );
       return false;
     }
-    const item = found[0]!;
+    const item = found[0];
+    if (!item) return false;
     const problem = buyOrderProblem(o, this.items?.get(item.id)?.sell ?? 0);
     if (problem) {
       this.error(problem);
@@ -1776,14 +2071,22 @@ export class GameState extends EventEmitter {
     const ok = await this.guard('Buy order', async () => {
       const r = await this.marketApi.buyOrder({ ...o, townId: town.id, itemId: item.id });
       this.applyMoney(r);
-      this.info(`Buy order for ${o.count > 1 ? `${o.count}× ` : ''}${item.name} placed at ${town.name}; the fee is $ ${r.fee}`);
+      this.info(
+        `Buy order for ${o.count > 1 ? `${o.count}× ` : ''}${item.name} placed at ${town.name}; the fee is $ ${r.fee}`,
+      );
       return true;
     });
     if (ok) await this.loadMarketMine();
     return !!ok;
   }
 
-  async sellOnMarket(o: { itemId: number; count: number; days: number; startPrice?: number | undefined; buyNow?: number | undefined }): Promise<boolean> {
+  async sellOnMarket(o: {
+    itemId: number;
+    count: number;
+    days: number;
+    startPrice?: number | undefined;
+    buyNow?: number | undefined;
+  }): Promise<boolean> {
     const town = this.tradeTown;
     if (!town) {
       this.error('You need to be in a town (or have a home town) to sell on the market.');
@@ -1829,7 +2132,13 @@ export class GameState extends EventEmitter {
       const r = await this.duelApi.fightNpc(npcId);
       // Kept for the autopilot: which NPC levels you beat and what a duel pays / costs.
       if (npc) {
-        const rec = { at: this.clock.now(), level: npc.level, won: !r.died && !/lost|defeat/i.test(r.result), xp: Math.max(0, (r.experience ?? before.xp) - before.xp), energy: Math.max(0, before.energy - (r.energy ?? before.energy)) };
+        const rec = {
+          at: this.clock.now(),
+          level: npc.level,
+          won: !r.died && !/lost|defeat/i.test(r.result),
+          xp: Math.max(0, (r.experience ?? before.xp) - before.xp),
+          energy: Math.max(0, before.energy - (r.energy ?? before.energy)),
+        };
         this.updateAutopilot((f) => (f.duels = [...f.duels, rec].slice(-200)));
       }
       this.lastNpcDuel = r;

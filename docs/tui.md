@@ -3,11 +3,13 @@
 Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.ts`, connect/setup in `root.ts`.
 
 ## Startup
+
 - `Root` connects (`ensureGame`) and shows `LoadingFrame` with a running "Connecting to The West" step; the
   connect time is passed to `GameState.start({ connect })`, which lists it as the first, finished loading step.
 - `LoadingScreen` (in `App`) shows `state.startup.steps` until `startup.done` (Esc skips).
 
 ## Keys
+
 - `App`'s `useInput` handles **global keys first**, then screens get the rest. Only five are single keys: `?` help,
   `q` quit, `m` map, `u` refresh, `g` go-to. Everything else is `g` + a key from `GOTO` (`overlays.ts`, shared by
   the nav bar, the help and the handler): `h` home · `j` jobs · `m` map · `i` character · `t` town · `q` quests ·
@@ -20,7 +22,7 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
 - **Two-pane screens** (mail, quests, character inventory, debug): `j k` move in the list; `l` focuses the detail
   pane (cyan border, list dims) and then `j k` / PgUp PgDn scroll it; `h` (or Esc) returns to the list. Mail's
   Enter opens and focuses at once; Esc there also closes the message. `Tab` stays a tab/pane switch. `J K` are
-  only used to *move* an item (autopilot priority and inserts), never to scroll.
+  only used to _move_ an item (autopilot priority and inserts), never to scroll.
 - Screens (`SCREEN_MODES`) receive `onCapture(bool)`: while true, global keys are skipped (text entry, confirm
   prompts, the autopilot's queue view). Always release it on close/unmount.
 - Taken screen-level uppercase keys: `P` (trade: pick up), `R` (quests/mail; autopilot: run/pause), `U`
@@ -30,6 +32,7 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
   exhaustive, so does `MODE_TITLE`).
 
 ## Screens
+
 - **Home** (`home.ts`, mode `home`, the start screen; `g h`; where Esc ends up): working panel
   (queue head: progress bar, time left, expected rewards via `state.queuedJob()`, "✓ done" with the report
   summary for 30 s, autopilot status), session (measured XP/h and $/h from `state.rates`, queued rate from
@@ -65,6 +68,7 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
 - **Map**: `m` (or `g m`) opens it; Esc closes the selection panel, then goes back like any screen.
 
 ## Rendering
+
 - The 1 s ticker in `App` re-renders and drives `state.tick()`, queue polls, syncs and `state.runner.step()`.
 - `GameState` emits `change`; `useGameState` re-renders on it. Components read state directly (no copies).
 - Lists use `scrollWindow(selected, total, rows)`; text is `wrap: 'truncate'` with `truncate()` for columns.

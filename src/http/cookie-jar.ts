@@ -36,7 +36,12 @@ export class CookieJar {
       const [pair = '', ...attrs] = line.split(';');
       const eq = pair.indexOf('=');
       if (eq <= 0) continue;
-      const c: Cookie = { name: pair.slice(0, eq).trim(), value: pair.slice(eq + 1).trim(), domain: host, hostOnly: true };
+      const c: Cookie = {
+        name: pair.slice(0, eq).trim(),
+        value: pair.slice(eq + 1).trim(),
+        domain: host,
+        hostOnly: true,
+      };
       let expired = false;
       let foreign = false;
       for (const attr of attrs) {

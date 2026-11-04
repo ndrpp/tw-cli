@@ -1,22 +1,26 @@
 // Top-level TUI: connect with the saved session if possible, otherwise show setup; `A` in the game
 // returns to setup (re-capture fingerprint / log in again) without leaving the TUI. After the
 // machine slept, everything is rebuilt (new session check, game state, live updates, TUI).
-import React, { useEffect, useRef, useState } from 'react';
-import { render, useApp, useInput, useWindowSize } from 'ink';
-import { ensureGame } from '../auth/session.ts';
-import { AuthError, type OpenGame } from '../auth/login.ts';
-import { GameState } from '../game/state.ts';
-import { Calibration } from '../game/calibration.ts';
-import { App, LoadingFrame } from './app.ts';
-import { SetupScreen } from './setup.ts';
-import { formatDuration } from './format.ts';
-import { WakeDetector } from '../util/wake.ts';
+
 import { join } from 'node:path';
+import { render, useApp, useInput, useWindowSize } from 'ink';
+import React, { useEffect, useRef, useState } from 'react';
+import { AuthError, type OpenGame } from '../auth/login.ts';
+import { ensureGame } from '../auth/session.ts';
 import { CONFIG_DIR } from '../auth/session-store.ts';
+import { Calibration } from '../game/calibration.ts';
+import { GameState } from '../game/state.ts';
+import { WakeDetector } from '../util/wake.ts';
+import { App, LoadingFrame } from './app.ts';
+import { formatDuration } from './format.ts';
+import { SetupScreen } from './setup.ts';
 
 const h = React.createElement;
 
-type Phase = { kind: 'connecting'; message?: string; startedAt: number } | { kind: 'setup'; message?: string; canGoBack: boolean } | { kind: 'game' };
+type Phase =
+  | { kind: 'connecting'; message?: string; startedAt: number }
+  | { kind: 'setup'; message?: string; canGoBack: boolean }
+  | { kind: 'game' };
 
 const noPrompt = async (): Promise<never> => {
   throw new Error('Session expired: press g A, then log in.');
@@ -30,7 +34,9 @@ function makeState(game: OpenGame, prev?: GameState | null, connectedSince?: num
   state.debug.dir = join(CONFIG_DIR, 'debug'); // hourly files, kept 24 h
   state.calibration = new Calibration(); // calibration.json: what the autopilot learned
   if (prev) state.carryOver(prev);
-  void state.start(connectedSince ? { connect: { label: CONNECT_LABEL, startedAt: connectedSince, endedAt: Date.now() } } : {});
+  void state.start(
+    connectedSince ? { connect: { label: CONNECT_LABEL, startedAt: connectedSince, endedAt: Date.now() } } : {},
+  );
   return state;
 }
 
@@ -48,9 +54,12 @@ export function Root() {
     const t = setInterval(() => setFrame((f) => f + 1), 120);
     return () => clearInterval(t);
   }, [connecting]);
-  useInput((input) => {
-    if (input === 'q') exit();
-  }, { isActive: connecting });
+  useInput(
+    (input) => {
+      if (input === 'q') exit();
+    },
+    { isActive: connecting },
+  );
   const [state, setState] = useState<GameState | null>(null);
   const [generation, setGeneration] = useState(0);
   const stateRef = useRef<GameState | null>(null);
@@ -65,12 +74,16 @@ export function Root() {
       const prev = stateRef.current;
       prev?.stopLive();
       const startedAt = Date.now();
-      setPhase({ kind: 'connecting', message: attempt > 1 ? `${why} Network not back yet (try ${attempt})…` : why, startedAt });
+      setPhase({
+        kind: 'connecting',
+        message: attempt > 1 ? `${why} Network not back yet (try ${attempt})…` : why,
+        startedAt,
+      });
       ensureGame({ credentials: noPrompt })
         .then((game) => {
           if (cancelled) return;
           const next = makeState(game, prev, startedAt);
-          next.info(why.replace(/…$/, '') + ' Reloaded.');
+          next.info(`${why.replace(/…$/, '')} Reloaded.`);
           setState(next);
           setGeneration((g) => g + 1);
           setPhase({ kind: 'game' });
@@ -81,11 +94,14 @@ export function Root() {
           retry = setTimeout(() => reconnect(why, attempt + 1), RETRY_MS);
         });
     };
-    const wake = new WakeDetector((slept) => {
-      if (!stateRef.current) return; // still in setup / first connect
-      if (retry) clearTimeout(retry);
-      reconnect(`Woke up after ${formatDuration(Math.round(slept / 1000))}: reconnecting…`);
-    }, { intervalMs: 2_000, gapMs: 30_000 }).start();
+    const wake = new WakeDetector(
+      (slept) => {
+        if (!stateRef.current) return; // still in setup / first connect
+        if (retry) clearTimeout(retry);
+        reconnect(`Woke up after ${formatDuration(Math.round(slept / 1000))}: reconnecting…`);
+      },
+      { intervalMs: 2_000, gapMs: 30_000 },
+    ).start();
     return () => {
       cancelled = true;
       wake.stop();
@@ -103,7 +119,8 @@ export function Root() {
         setPhase({ kind: 'game' });
       })
       .catch((e) => {
-        if (!cancelled) setPhase({ kind: 'setup', canGoBack: false, message: e instanceof Error ? e.message : String(e) });
+        if (!cancelled)
+          setPhase({ kind: 'setup', canGoBack: false, message: e instanceof Error ? e.message : String(e) });
       });
     return () => {
       cancelled = true;
@@ -112,7 +129,8 @@ export function Root() {
 
   if (phase.kind === 'connecting') {
     return h(LoadingFrame, {
-      width: win.columns || 80, height: win.rows || 24,
+      width: win.columns || 80,
+      height: win.rows || 24,
       steps: [{ label: CONNECT_LABEL, status: 'running', startedAt: phase.startedAt }],
       latest: phase.message,
       keys: 'q quit',
@@ -129,7 +147,11 @@ export function Root() {
       onQuit: () => exit(),
     });
   }
-  return h(App, { key: `${generation}:${state.client.h}:${state.character.playerId}`, state, onAccount: () => setPhase({ kind: 'setup', canGoBack: true }) });
+  return h(App, {
+    key: `${generation}:${state.client.h}:${state.character.playerId}`,
+    state,
+    onAccount: () => setPhase({ kind: 'setup', canGoBack: true }),
+  });
 }
 
 export async function runRoot(): Promise<void> {

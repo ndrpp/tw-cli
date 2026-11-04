@@ -9,7 +9,13 @@ import { join } from 'node:path';
 export type DebugCategory = 'log' | 'state' | 'request' | 'autopilot' | 'sim' | 'quest';
 export const DEBUG_CATEGORIES: DebugCategory[] = ['log', 'state', 'request', 'autopilot', 'sim', 'quest'];
 
-export interface DebugEntry { id: number; at: number; cat: DebugCategory; title: string; data?: unknown }
+export interface DebugEntry {
+  id: number;
+  at: number;
+  cat: DebugCategory;
+  title: string;
+  data?: unknown;
+}
 
 const MAX_ENTRIES = 3000;
 /** Planner snapshots are large: only the newest keep their data in memory (the files keep all). */
@@ -61,9 +67,13 @@ export class DebugLog {
     if (cat === 'sim') {
       let n = 0;
       for (let i = this.entries.length - 1; i >= 0; i--) {
-        const x = this.entries[i]!;
+        const x = this.entries[i];
+        if (!x) continue;
         if (x.cat !== 'sim' || x.data === undefined || typeof x.data === 'string') continue;
-        if (++n > SIM_WITH_DATA) x.data = this.dir ? '(dropped from memory; full data in the debug file of that hour)' : '(dropped from memory)';
+        if (++n > SIM_WITH_DATA)
+          x.data = this.dir
+            ? '(dropped from memory; full data in the debug file of that hour)'
+            : '(dropped from memory)';
       }
     }
     this.onAdd();
@@ -88,7 +98,8 @@ export class DebugLog {
   }
 
   private write(e: DebugEntry): void {
-    const dir = this.dir!;
+    const dir = this.dir;
+    if (!dir) return;
     try {
       const hour = new Date(e.at).toISOString().slice(0, 13);
       if (hour !== this.hour) {
@@ -96,7 +107,9 @@ export class DebugLog {
         mkdirSync(dir, { recursive: true, mode: 0o700 });
         pruneDebugDir(dir, e.at);
       }
-      appendFileSync(join(dir, `${hour}.jsonl`), `${debugJson({ ...e, at: new Date(e.at).toISOString() })}\n`, { mode: 0o600 });
+      appendFileSync(join(dir, `${hour}.jsonl`), `${debugJson({ ...e, at: new Date(e.at).toISOString() })}\n`, {
+        mode: 0o600,
+      });
     } catch {
       this.dir = null; // a broken sink must not break the game
     }
@@ -128,7 +141,16 @@ export function diffSnapshots(a: Record<string, unknown>, b: Record<string, unkn
     if (Array.isArray(x) && Array.isArray(y)) {
       const xs = x.map((v) => debugJson(v));
       const ys = y.map((v) => debugJson(v));
-      out[k] = { added: y.filter((_, i) => !xs.includes(ys[i]!)), removed: x.filter((_, i) => !ys.includes(xs[i]!)) };
+      out[k] = {
+        added: y.filter((_, i) => {
+          const value = ys[i];
+          return value === undefined || !xs.includes(value);
+        }),
+        removed: x.filter((_, i) => {
+          const value = xs[i];
+          return value === undefined || !ys.includes(value);
+        }),
+      };
     } else out[k] = [x, y];
   }
   return out;

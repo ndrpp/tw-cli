@@ -8,10 +8,15 @@
 //   inventory/show_equip (mode)               → {data:[{equip_manager_id, name, head, neck, …}], max, premium_max, hasPremium, price}
 //   inventory/switch_equip {id, last_inv_id}  → {changes, wear:[item ids], setItems, workPointBonus, speed, weapon}
 import type { GameClient } from '../http/game-client.ts';
-import { baseId, WEAR_SLOTS, type ItemCatalog } from './items.ts';
-import { arr, objs, vals, type JsonObject } from '../util/json.ts';
+import { arr, type JsonObject, objs, vals } from '../util/json.ts';
+import { baseId, type ItemCatalog, WEAR_SLOTS } from './items.ts';
 
-export interface BagItem { itemId: number; count: number; invId: number; type: string }
+export interface BagItem {
+  itemId: number;
+  count: number;
+  invId: number;
+  type: string;
+}
 
 export interface ClothChange {
   /** Raw bag rows, for Inventory.applyChanges. */
@@ -44,7 +49,10 @@ export interface SwitchEquipResult extends ClothChange {
 }
 
 const toBagItem = (r: JsonObject): BagItem => ({
-  itemId: Number(r.item_id), count: Number(r.count) || 0, invId: Number(r.inv_id) || 0, type: String(r.type ?? ''),
+  itemId: Number(r.item_id),
+  count: Number(r.count) || 0,
+  invId: Number(r.inv_id) || 0,
+  type: String(r.type ?? ''),
 });
 
 export class Inventory {

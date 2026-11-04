@@ -4,6 +4,7 @@ What tw-cli relies on about The West, with where it comes from. **Verified** = s
 browser client's code; **unverified** = assumed, check live and update this file.
 
 ## Time, energy, health
+
 - Server time: `Game.init.sincepoch`, refined by `POST /ntp.php` (epoch ms). `ServerClock` in `clock.ts`.
 - Regen is continuous: `max · regenFactor · seconds / 3600` (`Character.tick4Character`), for energy
   (`energyRegenFactor`) and health (`healthRegenFactor`). Live `UserUpdate`s carry `energy_date` /
@@ -20,6 +21,7 @@ browser client's code; **unverified** = assumed, check live and update this file
 - Level XP: `levelStartXp(l) = floor((Σk² + 10(l+1) − 21)·3) + 1000·(l−120)^2.9 above 120` (`calcLowerExp`). Verified.
 
 ## Tasks and queue
+
 - `task/add {tasks: {<queuePos>: post}}`; positions continue from the queue length. Posts:
   job `{jobId, x, y, duration, taskType:'job'}` · walk `{unitId, type, x?, y?, taskType:'walk'}` (type `town`,
   `fort`, `questgiver`) · sleep `{town_id, room, taskType:'sleep'}` (the server walks there first).
@@ -29,6 +31,7 @@ browser client's code; **unverified** = assumed, check live and update this file
 - Queue limit: `taskLimit.normal` (4) / `.premium` (9, with the automation premium bonus).
 
 ## Jobs
+
 - `work/index` gives per-character values per duration (energy, money, xp, luck, item drops); `job/job` is the
   only source of **danger** (0–100) and live **motivation** (0–1).
 - Item drops: expected items per run = `(prop + probBonus) / 100`.
@@ -37,6 +40,7 @@ browser client's code; **unverified** = assumed, check live and update this file
   hour of work). Unverified.
 
 ## Hotel and sleep
+
 - `building_hotel get_data {town_id}` → `rooms: {cubby|bedroom|hotel_room|apartment|luxurious_apartment: {name,
   level, available, free, costs, energy, health}}`.
 - Room `energy` / `health` are points scaled to your max (verified live 2026-11-03, level-5 hotel, max HP 610:
@@ -47,11 +51,13 @@ browser client's code; **unverified** = assumed, check live and update this file
   after its first wake-up cancel).
 
 ## Bank and money
+
 - `building_bank get_data {town_id}` → `deposit_fee` (%) differs per town; deposit `{town_id, amount}` →
   `{deposit, own_money, fee}`. No withdrawal: purchases take cash first, then the bank. You must be in the town.
 - Cash in pocket can be lost in duels; that is why the autopilot banks over a limit.
 
 ## Town buildings and construction
+
 - `building_cityhall` action '' `{town_id}` → `{townName, townNoLeave, buildings:[{key, name, stage, maxStage,
   infinite, buildPoints, nextStagePoints}]}` (verified live). The city hall list shows the current level and
   progress to the next; `infinite` is the church (always more stages).
@@ -64,6 +70,7 @@ browser client's code; **unverified** = assumed, check live and update this file
   walks there first, like a job.
 
 ## Items
+
 - Item ids: plain id = base id · 1000; upgrades add to the last digits (`baseId`, `upgradeLevel`).
 - `usebonus` texts on `usetype: 'single'` items: `Energy increase: 15%`, `Health point bonus: 20%`,
   `Work motivation increase: 15%`, `Duel motivation increase: 15%`, `Active waytime shortening: 25%`.
@@ -80,6 +87,7 @@ browser client's code; **unverified** = assumed, check live and update this file
   `delete_equip`, not used by the TUI yet.
 
 ## Mobile trader
+
 - The "Mobile Trader" is the `trader` tab of the item shop, not a town shop: `shop_trader/index` (mode) {} →
   `{inventory:{trader:[...]}, currencies, traderTime (epoch s)}` (verified live). Offers rotate; `currency` is a
   bitmask (1 bonds · 2 nuggets · 4 dollar · 8 veteran) and prices are `price_<currency>`; `reduced_value` is a
@@ -88,6 +96,7 @@ browser client's code; **unverified** = assumed, check live and update this file
   The reply has no bag changes; the inventory has to be re-read.
 
 ## Quests
+
 - Requirement `jsInfo.type`: `inventory_changed` (have item) · `wear_changed` (wear item) · `task-finish-job`
   (`count` = runs, or seconds for timed ones). `jsInfo: null` texts include `Item 'X' bought` and wait timers
   ("you must wait 24 hours"). Shapes for "visit a place" and duel requirements: **not seen yet**.
@@ -101,11 +110,13 @@ browser client's code; **unverified** = assumed, check live and update this file
 - Map quest givers probably require being at the giver to finish; town (saloon) quests from the town. Unverified.
 
 ## Duels
+
 - `duel/get_data` → NPCs `{duelnpc_id, npc_name, npc_level, weapon_id, arrival_delta}` and `difficulty`; no win
   odds. `duel/duel_npc {duelnpc_id}` fights at once and returns rounds, energy, health, money, experience.
 - Player duels are tasks (`taskType: 'duel'`). The autopilot never duels players.
 
 ## Reports
+
 - `reports get_reports {page, folder}` → rows with `popupData`: an HTML table whose field labels are icons
   (`images/job/clock.png` time, `dollar` money, `upb` bonds, `experience` XP, `danger`, event icons) and found
   items as one `<img alt="name">` per item. `popupText` / `popupItems` in `mail.ts` turn that into text.
@@ -114,6 +125,7 @@ browser client's code; **unverified** = assumed, check live and update this file
   items. Verified on a live Prospecting report (5× Fool's gold).
 
 ## Chat
+
 - Messages carry links as tags in the text: `[item=<instance id>]` (seen live: `wtb [item=42085000]`). The client
   shows them as names (`chatlinks.ts`: items yellow, set items green). `[quest=<id>]` is assumed the same way
   (unverified); its title is only known for quests in the log or at the open employer, else `quest <id>`.

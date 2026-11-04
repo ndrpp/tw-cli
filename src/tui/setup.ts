@@ -1,14 +1,21 @@
 // Setup screen inside the TUI: everything `tw web` / `tw fp …` / `tw login` can do.
-import React, { useEffect, useRef, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
-import { copyFileSync, chmodSync, existsSync, mkdirSync } from 'node:fs';
+
+import { chmodSync, copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { loadProfile, readProfileRaw, validateProfile, writeProfileFields, type FingerprintProfile } from '../fingerprint/profile.ts';
-import { PROFILE_FILE, SESSION_FILE } from '../auth/session-store.ts';
-import { DEFAULT_WORLD, ensureGame } from '../auth/session.ts';
+import { Box, Text, useInput } from 'ink';
+import React, { useEffect, useRef, useState } from 'react';
 import type { OpenGame } from '../auth/login.ts';
-import { defaultWebAddress, startWebServer } from '../web/server.ts';
+import { DEFAULT_WORLD, ensureGame } from '../auth/session.ts';
+import { PROFILE_FILE, SESSION_FILE } from '../auth/session-store.ts';
+import {
+  type FingerprintProfile,
+  loadProfile,
+  readProfileRaw,
+  validateProfile,
+  writeProfileFields,
+} from '../fingerprint/profile.ts';
 import type { HostPolicy } from '../http/throttle.ts';
+import { defaultWebAddress, startWebServer } from '../web/server.ts';
 
 const h = React.createElement;
 
@@ -22,14 +29,22 @@ const PROMPTS: Record<Field, string> = {
   password: 'Password',
 };
 
-interface ProfileStatus { ok: boolean; fp?: string | undefined; detail: string }
+interface ProfileStatus {
+  ok: boolean;
+  fp?: string | undefined;
+  detail: string;
+}
 
 function profileStatus(): ProfileStatus {
   const raw = readProfileRaw(PROFILE_FILE);
   if (!raw) return { ok: false, detail: 'none saved' };
   try {
     const p = validateProfile(raw as FingerprintProfile);
-    return { ok: true, fp: p.fp, detail: p.components.length ? `${p.components.length} components, verified` : 'hash only (not re-verifiable)' };
+    return {
+      ok: true,
+      fp: p.fp,
+      detail: p.components.length ? `${p.components.length} components, verified` : 'hash only (not re-verifiable)',
+    };
   } catch (e) {
     return { ok: false, fp: raw.fp, detail: e instanceof Error ? e.message : String(e) };
   }
@@ -73,7 +88,12 @@ export function SetupScreen({ onReady, onBack, onQuit, message, policy }: SetupP
     setMsg({ text: 'Logging in… (requests are paced, a few seconds)' });
     try {
       const profile = loadProfile(PROFILE_FILE);
-      const game = await ensureGame({ forceLogin: true, profile, policy, credentials: async () => ({ name, password }) });
+      const game = await ensureGame({
+        forceLogin: true,
+        profile,
+        policy,
+        credentials: async () => ({ name, password }),
+      });
       finish(game);
     } catch (e) {
       setMsg({ text: e instanceof Error ? e.message : String(e), bad: true });
@@ -86,7 +106,12 @@ export function SetupScreen({ onReady, onBack, onQuit, message, policy }: SetupP
     setBusy(true);
     setMsg({ text: 'Connecting with the saved session…' });
     try {
-      const game = await ensureGame({ policy, credentials: async () => { throw new Error('Saved session expired. Log in with l.'); } });
+      const game = await ensureGame({
+        policy,
+        credentials: async () => {
+          throw new Error('Saved session expired. Log in with l.');
+        },
+      });
       finish(game);
     } catch (e) {
       setMsg({ text: e instanceof Error ? e.message : String(e), bad: true });
@@ -113,10 +138,19 @@ export function SetupScreen({ onReady, onBack, onQuit, message, policy }: SetupP
           refresh();
         },
         login: async (name, password, profile) => {
-          const game = await ensureGame({ forceLogin: true, profile, policy, credentials: async () => ({ name, password }) });
+          const game = await ensureGame({
+            forceLogin: true,
+            profile,
+            policy,
+            credentials: async () => ({ name, password }),
+          });
           setTimeout(() => finish(game), 300);
           const c = game.bootstrap.character ?? {};
-          return { name: String(c.name ?? '?'), level: Number(c.level ?? 0), world: String(game.bootstrap.game?.currentWorldName ?? DEFAULT_WORLD.url) };
+          return {
+            name: String(c.name ?? '?'),
+            level: Number(c.level ?? 0),
+            world: String(game.bootstrap.game?.currentWorldName ?? DEFAULT_WORLD.url),
+          };
         },
       });
       webRef.current = srv;
@@ -187,14 +221,33 @@ export function SetupScreen({ onReady, onBack, onQuit, message, policy }: SetupP
   });
 
   const item = (k: string, label: string, enabled = true) =>
-    h(Text, { key: k, dimColor: !enabled }, h(Text, { color: enabled ? 'yellow' : 'gray', bold: true }, ` ${k} `), ` ${label}`);
+    h(
+      Text,
+      { key: k, dimColor: !enabled },
+      h(Text, { color: enabled ? 'yellow' : 'gray', bold: true }, ` ${k} `),
+      ` ${label}`,
+    );
 
-  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'yellow', paddingX: 2, paddingY: 0 },
+  return h(
+    Box,
+    { flexDirection: 'column', borderStyle: 'round', borderColor: 'yellow', paddingX: 2, paddingY: 0 },
     h(Text, { bold: true, color: 'yellow' }, 'Setup · fingerprint & login'),
     h(Text, { dimColor: true }, `World ${DEFAULT_WORLD.url} (${DEFAULT_WORLD.locale})`),
     h(Text, null, ' '),
-    h(Text, null, 'Fingerprint  ', status.ok ? h(Text, { color: 'green' }, `✔ ${status.fp}`) : h(Text, { color: 'red' }, `✘ ${status.fp ?? ''}`), h(Text, { dimColor: true }, `  ${status.detail}`)),
-    h(Text, null, 'Session      ', haveSession ? h(Text, { color: 'green' }, 'saved') : h(Text, { color: 'red' }, 'none'), h(Text, { dimColor: true }, haveSession ? '  (c to continue with it)' : '')),
+    h(
+      Text,
+      null,
+      'Fingerprint  ',
+      status.ok ? h(Text, { color: 'green' }, `✔ ${status.fp}`) : h(Text, { color: 'red' }, `✘ ${status.fp ?? ''}`),
+      h(Text, { dimColor: true }, `  ${status.detail}`),
+    ),
+    h(
+      Text,
+      null,
+      'Session      ',
+      haveSession ? h(Text, { color: 'green' }, 'saved') : h(Text, { color: 'red' }, 'none'),
+      h(Text, { dimColor: true }, haveSession ? '  (c to continue with it)' : ''),
+    ),
     h(Text, null, ' '),
     h(Text, { bold: true }, 'Fingerprint'),
     item('w', web ? 'stop the browser setup page' : 'open a setup page in your browser (fingerprint + login)'),
@@ -207,18 +260,28 @@ export function SetupScreen({ onReady, onBack, onQuit, message, policy }: SetupP
     onBack ? item('Esc', 'back to the game') : null,
     item('q', 'quit'),
     web
-      ? h(Box, { flexDirection: 'column', marginTop: 1 },
-        h(Text, null, 'Browser page: ', h(Text, { color: 'cyan', bold: true }, web.url)),
-        web.host === '0.0.0.0'
-          ? h(Text, { dimColor: true }, `Running in a container: port ${web.port} must be published (compose: ports "127.0.0.1:${web.port}:${web.port}", run with --service-ports).`)
-          : null)
+      ? h(
+          Box,
+          { flexDirection: 'column', marginTop: 1 },
+          h(Text, null, 'Browser page: ', h(Text, { color: 'cyan', bold: true }, web.url)),
+          web.host === '0.0.0.0'
+            ? h(
+                Text,
+                { dimColor: true },
+                `Running in a container: port ${web.port} must be published (compose: ports "127.0.0.1:${web.port}:${web.port}", run with --service-ports).`,
+              )
+            : null,
+        )
       : null,
     field
-      ? h(Box, { marginTop: 1 },
-        h(Text, { color: 'cyan' }, `${PROMPTS[field]}: `),
-        h(Text, null, field === 'password' ? '•'.repeat(buf.length) : buf),
-        h(Text, { inverse: true }, ' '),
-        h(Text, { dimColor: true }, '  Enter save · Esc cancel'))
+      ? h(
+          Box,
+          { marginTop: 1 },
+          h(Text, { color: 'cyan' }, `${PROMPTS[field]}: `),
+          h(Text, null, field === 'password' ? '•'.repeat(buf.length) : buf),
+          h(Text, { inverse: true }, ' '),
+          h(Text, { dimColor: true }, '  Enter save · Esc cancel'),
+        )
       : null,
     msg ? h(Text, { color: msg.bad ? 'red' : busy ? 'yellow' : 'green', wrap: 'wrap' }, msg.text) : null,
   );

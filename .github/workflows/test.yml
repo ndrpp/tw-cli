@@ -16,7 +16,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run lint
       # Ink renders only the last frame when CI is set; the TUI tests read the frames as they come.
       - run: npm test
         env:
-          CI: 'false'
+          CI: "false"

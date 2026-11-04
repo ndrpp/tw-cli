@@ -4,11 +4,18 @@
 // 1000 + upgrade level (ItemManager.load strips the last three digits).
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { send, type GameClient } from '../http/game-client.ts';
 import { CONFIG_DIR } from '../auth/session-store.ts';
+import { type GameClient, send } from '../http/game-client.ts';
+import { arr, entries, isObj, type JsonObject, numOrNull, nums, obj, objs, strOrNull, vals } from '../util/json.ts';
+import {
+  type ItemSetDef,
+  type ItemStats,
+  itemStats,
+  parseRawBonus,
+  type RawBonus,
+  type StatContext,
+} from './itemstats.ts';
 import { NAMES } from './skills.ts';
-import { itemStats, parseRawBonus, type ItemSetDef, type ItemStats, type RawBonus, type StatContext } from './itemstats.ts';
-import { arr, entries, isObj, nums, numOrNull, obj, objs, strOrNull, vals, type JsonObject } from '../util/json.ts';
 
 export interface ItemDef {
   id: number; // base id
@@ -45,8 +52,18 @@ export interface ItemDef {
 }
 
 export const SLOT_NAMES: Record<string, string> = {
-  head: 'Hat', neck: 'Neck', body: 'Body', right_arm: 'Weapon', left_arm: 'Fire weapon', yield: 'Product',
-  foot: 'Shoes', animal: 'Horse', belt: 'Belt', pants: 'Pants', collection: 'Collection', recipe: 'Recipe',
+  head: 'Hat',
+  neck: 'Neck',
+  body: 'Body',
+  right_arm: 'Weapon',
+  left_arm: 'Fire weapon',
+  yield: 'Product',
+  foot: 'Shoes',
+  animal: 'Horse',
+  belt: 'Belt',
+  pants: 'Pants',
+  collection: 'Collection',
+  recipe: 'Recipe',
 };
 /** Wear.slots @1170912 */
 export const WEAR_SLOTS = ['head', 'neck', 'body', 'right_arm', 'left_arm', 'yield', 'foot', 'animal', 'belt', 'pants'];
@@ -66,11 +83,15 @@ export function slimItem(raw: JsonObject): ItemDef {
     set: strOrNull(raw.set),
     attributes: nums(b.attributes),
     skills: nums(b.skills),
-    extra: objs(b.item).map((i) => String(i.desc ?? '')).filter(Boolean),
+    extra: objs(b.item)
+      .map((i) => String(i.desc ?? ''))
+      .filter(Boolean),
     bonusItems: arr(b.item).map(parseRawBonus),
     fortbattle: nums(b.fortbattle),
     fortbattlesector: nums(b.fortbattlesector),
-    damage: isObj(raw.damage) ? { min: Number(raw.damage.damage_min) || 0, max: Number(raw.damage.damage_max) || 0 } : null,
+    damage: isObj(raw.damage)
+      ? { min: Number(raw.damage.damage_min) || 0, max: Number(raw.damage.damage_max) || 0 }
+      : null,
     upgradeable: !!raw.upgradeable,
     usetype: String(raw.usetype ?? 'none'),
     speed: numOrNull(raw.speed),
@@ -147,7 +168,10 @@ export function statsOf(d: ItemDef, itemId: number, ctx: StatContext = {}): Item
 /** "+ 2 Strength, + 5 Construction, …" — computed like the web when ctx.charLevel is given. */
 export function bonusText(d: ItemDef | undefined, itemId?: number, ctx?: StatContext): string {
   if (!d) return '';
-  if (ctx) return itemStats(d, itemId ?? d.id * 1000, ctx).lines.map((l) => l.text.trim()).join(', ');
+  if (ctx)
+    return itemStats(d, itemId ?? d.id * 1000, ctx)
+      .lines.map((l) => l.text.trim())
+      .join(', ');
   const parts = [
     ...Object.entries(d.attributes).map(([k, v]) => `+${v} ${NAMES[k] ?? k}`),
     ...Object.entries(d.skills).map(([k, v]) => `+${v} ${NAMES[k] ?? k}`),
@@ -170,7 +194,12 @@ export const STATIC_CACHE_MS = 12 * 3600_000;
 
 const cacheFile = (itemsFile: string) => {
   const version = itemsFile.split('?')[1] ?? '0';
-  const base = itemsFile.split('?')[0]!.split('/').pop()!.replace(/\.json$/, '');
+  const [path] = itemsFile.split('?');
+  const base =
+    path
+      ?.split('/')
+      .pop()
+      ?.replace(/\.json$/, '') ?? 'items';
   return join(CONFIG_DIR, 'cache', `${base}-${version.replace(/[^\w.-]/g, '')}.slim${SLIM_VERSION}.json`);
 };
 
@@ -178,7 +207,14 @@ const cacheFile = (itemsFile: string) => {
  * Static game data file: disk cache for this version, else a local copy from `envVar`, else a GET from
  * the world host like the browser. `slim` keeps only what we use.
  */
-async function loadStatic<T>(client: GameClient, file: string, envVar: string, label: string, slim: (raw: unknown[]) => T[], log?: (m: string) => void): Promise<T[]> {
+async function loadStatic<T>(
+  client: GameClient,
+  file: string,
+  envVar: string,
+  label: string,
+  slim: (raw: unknown[]) => T[],
+  log?: (m: string) => void,
+): Promise<T[]> {
   const cached = cacheFile(file);
   if (existsSync(cached) && Date.now() - statSync(cached).mtimeMs < STATIC_CACHE_MS) {
     try {
@@ -194,9 +230,17 @@ async function loadStatic<T>(client: GameClient, file: string, envVar: string, l
   } else {
     log?.(`Downloading ${label} (one time per game version)…`);
     const url = `${client.worldUrl}/${file.replace(/^\//, '')}`;
-    const res = await send(client.jar, client.identity, url, {
-      accept: 'application/json, text/javascript, */*; q=0.01', ajax: true, referer: `${client.worldUrl}/game.php`,
-    }, { ...client.policy, timeoutMs: 120_000 });
+    const res = await send(
+      client.jar,
+      client.identity,
+      url,
+      {
+        accept: 'application/json, text/javascript, */*; q=0.01',
+        ajax: true,
+        referer: `${client.worldUrl}/game.php`,
+      },
+      { ...client.policy, timeoutMs: 120_000 },
+    );
     if (!res.ok) throw new Error(`${label}: HTTP ${res.status}`);
     raw = await res.json();
   }
@@ -207,8 +251,19 @@ async function loadStatic<T>(client: GameClient, file: string, envVar: string, l
 }
 
 /** Item catalog (Game.init.itemsFile; local override TW_ITEMS_FILE). */
-export async function loadItemCatalog(client: GameClient, itemsFile: string | undefined, log?: (m: string) => void): Promise<ItemCatalog> {
-  const list = await loadStatic(client, itemsFile ?? 'cache/items_en_DK.json', 'TW_ITEMS_FILE', 'item data (~13 MB)', (raw) => raw.filter(isObj).map(slimItem), log);
+export async function loadItemCatalog(
+  client: GameClient,
+  itemsFile: string | undefined,
+  log?: (m: string) => void,
+): Promise<ItemCatalog> {
+  const list = await loadStatic(
+    client,
+    itemsFile ?? 'cache/items_en_DK.json',
+    'TW_ITEMS_FILE',
+    'item data (~13 MB)',
+    (raw) => raw.filter(isObj).map(slimItem),
+    log,
+  );
   return ItemCatalog.fromSlim(list);
 }
 
@@ -230,6 +285,19 @@ export const slimItemSet = (r: JsonObject): ItemSetDef => ({
 });
 
 /** Item sets (Game.init.itemSetsFile; local override TW_ITEMSETS_FILE). */
-export async function loadItemSets(client: GameClient, file: string | undefined, log?: (m: string) => void): Promise<ItemSetCatalog> {
-  return new ItemSetCatalog(await loadStatic(client, file ?? 'cache/itemsets_en_DK.json', 'TW_ITEMSETS_FILE', 'item sets', (raw) => raw.filter(isObj).map(slimItemSet), log));
+export async function loadItemSets(
+  client: GameClient,
+  file: string | undefined,
+  log?: (m: string) => void,
+): Promise<ItemSetCatalog> {
+  return new ItemSetCatalog(
+    await loadStatic(
+      client,
+      file ?? 'cache/itemsets_en_DK.json',
+      'TW_ITEMSETS_FILE',
+      'item sets',
+      (raw) => raw.filter(isObj).map(slimItemSet),
+      log,
+    ),
+  );
 }

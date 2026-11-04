@@ -22,19 +22,30 @@
 // Sending (Chat.Request.Send / Tell @1040177): the same POST with batch [{op:'send', to:<room id | player name>,
 //   stamp, message[, tell:true]}]; the browser allows a second request while the long-poll is open.
 import { EventEmitter } from 'node:events';
-import { send, type GameClient } from '../http/game-client.ts';
+import { type GameClient, send } from '../http/game-client.ts';
 import type { HostPolicy } from '../http/throttle.ts';
-import { arr, isObj, obj, objs, type JsonObject } from '../util/json.ts';
+import { arr, isObj, type JsonObject, obj, objs } from '../util/json.ts';
 
 export interface SelfUpdate {
-  x?: number | undefined; y?: number | undefined; level?: number | undefined; experience?: number | undefined;
-  money?: number | undefined; deposit?: number | undefined;
+  x?: number | undefined;
+  y?: number | undefined;
+  level?: number | undefined;
+  experience?: number | undefined;
+  money?: number | undefined;
+  deposit?: number | undefined;
   /** energyAt / healthAt: seconds relative to now when the value was measured (energy_date, usually ≤ 0). */
-  energy?: number | undefined; energyAt?: number | undefined; health?: number | undefined; healthAt?: number | undefined;
+  energy?: number | undefined;
+  energyAt?: number | undefined;
+  health?: number | undefined;
+  healthAt?: number | undefined;
   townId?: number | undefined;
 }
 
-export interface ChatEvent { id: string; t: number; payload: JsonObject }
+export interface ChatEvent {
+  id: string;
+  t: number;
+  payload: JsonObject;
+}
 
 /** A chat client, with what the town roster shows (Client.update @1029207). */
 export interface ChatClient {
@@ -49,8 +60,20 @@ export interface ChatClient {
   actioned: number;
 }
 
-export interface ChatRoom { id: string; kind: string; title: string; topic: string; members: Set<string>; townId?: number }
-export interface ChatLine { at: number; from: string; text: string; own: boolean }
+export interface ChatRoom {
+  id: string;
+  kind: string;
+  title: string;
+  topic: string;
+  members: Set<string>;
+  townId?: number;
+}
+export interface ChatLine {
+  at: number;
+  from: string;
+  text: string;
+  own: boolean;
+}
 
 /** Town role names as the browser's RoomTown.getPlayerInfo shows them (3 is the founder/mayor). */
 export const TOWN_ROLES = ['Guest', 'Citizen', 'Councillor', 'Mayor'];
@@ -61,11 +84,22 @@ export function chatPresence(actioned: number | undefined, now = Date.now()): 'o
   return now - actioned > 300_000 ? 'idle' : 'online';
 }
 
-const ROOM_KIND_TITLE: Record<string, string> = { town: 'Town', general: 'Saloon', maneuver: 'Maneuver', fortbattle: 'Fort battle' };
+const ROOM_KIND_TITLE: Record<string, string> = {
+  town: 'Town',
+  general: 'Saloon',
+  maneuver: 'Maneuver',
+  fortbattle: 'Fort battle',
+};
 export const HISTORY_LIMIT = 200;
 
 function stripTags(s: unknown): string {
-  return String(s ?? '').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&amp;/g, '&');
+  return String(s ?? '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&amp;/g, '&');
 }
 
 export const CHAT_POLICY: HostPolicy = {
@@ -83,10 +117,12 @@ export const CHAT_POLICY: HostPolicy = {
 
 /** Chat.Router clientConnectionId: shuffled a-z + time, 18 chars, + last 4 digits of the time. */
 export function makeClientId(now = Date.now(), rand = Math.random): string {
-  const chars = ('abcdefghijklmnopqrstuvwxyz' + now).split('');
+  const chars = `abcdefghijklmnopqrstuvwxyz${now}`.split('');
   for (let i = chars.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
-    [chars[i], chars[j]] = [chars[j]!, chars[i]!];
+    const atI = chars[i] ?? '';
+    chars[i] = chars[j] ?? '';
+    chars[j] = atI;
   }
   return chars.join('').substr(5, 18) + String(now).substr(-4);
 }
@@ -96,10 +132,20 @@ export function encodeChatRequest(data: Record<string, unknown>): string {
 }
 
 function selfFrom(p: JsonObject): SelfUpdate {
-  const n = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' && v !== '' && !isNaN(Number(v)) ? Number(v) : undefined);
+  const n = (v: unknown) =>
+    typeof v === 'number' ? v : typeof v === 'string' && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : undefined;
   return {
-    x: n(p.x), y: n(p.y), level: n(p.level), experience: n(p.experience), money: n(p.money), deposit: n(p.deposit),
-    energy: n(p.energy), energyAt: n(p.energy_date), health: n(p.health), healthAt: n(p.health_date), townId: n(p.townId),
+    x: n(p.x),
+    y: n(p.y),
+    level: n(p.level),
+    experience: n(p.experience),
+    money: n(p.money),
+    deposit: n(p.deposit),
+    energy: n(p.energy),
+    energyAt: n(p.energy_date),
+    health: n(p.health),
+    healthAt: n(p.health_date),
+    townId: n(p.townId),
   };
 }
 
@@ -175,7 +221,11 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
     if (!ok) throw new Error('chat session is gone');
   }
 
-  private async exchange(batchOut: Record<string, unknown>[], signal: AbortSignal | undefined, policy: HostPolicy): Promise<boolean> {
+  private async exchange(
+    batchOut: Record<string, unknown>[],
+    signal: AbortSignal | undefined,
+    policy: HostPolicy,
+  ): Promise<boolean> {
     const data = {
       messageid: ++this.messageId,
       clid: this.clid,
@@ -184,9 +234,20 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
       batch: batchOut,
     };
     const c = this.client;
-    const res = await send(c.jar, c.identity, `${c.worldUrl}/gameservice/chat/`, {
-      method: 'POST', body: encodeChatRequest(data), ajax: true, referer: `${c.worldUrl}/game.php`, origin: c.worldUrl, signal,
-    }, policy);
+    const res = await send(
+      c.jar,
+      c.identity,
+      `${c.worldUrl}/gameservice/chat/`,
+      {
+        method: 'POST',
+        body: encodeChatRequest(data),
+        ajax: true,
+        referer: `${c.worldUrl}/game.php`,
+        origin: c.worldUrl,
+        signal,
+      },
+      policy,
+    );
     const text = await res.text();
     let parsed: unknown;
     try {
@@ -207,7 +268,11 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
       }
       throw new Error(`chat: ${err}`);
     }
-    const batch: ChatEvent[] = objs(json.batch).map((e) => ({ id: String(e.id), t: Number(e.t), payload: obj(e.payload) }));
+    const batch: ChatEvent[] = objs(json.batch).map((e) => ({
+      id: String(e.id),
+      t: Number(e.t),
+      payload: obj(e.payload),
+    }));
     batch.sort((a, b) => a.t - b.t);
     for (const e of batch) this.handle(e);
     return true;
@@ -231,7 +296,9 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
   private acquireRoom(d: JsonObject): ChatRoom {
     const id = String(d.id);
     const kind = String(d.room ?? '');
-    const title = stripTags(d.title) || (kind === 'general' ? `Saloon ${String(d.general_id ?? '')}`.trim() : ROOM_KIND_TITLE[kind] ?? id);
+    const title =
+      stripTags(d.title) ||
+      (kind === 'general' ? `Saloon ${String(d.general_id ?? '')}`.trim() : (ROOM_KIND_TITLE[kind] ?? id));
     const room = this.rooms.get(id) ?? { id, kind, title, topic: '', members: new Set<string>() };
     room.title = title;
     room.topic = stripTags(d.topic);
@@ -246,7 +313,8 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
     const d = v;
     const id = String(d.id);
     const prev = this.clients.get(id);
-    const n = (v: unknown): number | undefined => (v === null || v === undefined || v === '' ? undefined : Number.isFinite(Number(v)) ? Number(v) : undefined);
+    const n = (v: unknown): number | undefined =>
+      v === null || v === undefined || v === '' ? undefined : Number.isFinite(Number(v)) ? Number(v) : undefined;
     const client: ChatClient = {
       id,
       playerId: n(d.westid ?? d.playerId) ?? prev?.playerId ?? 0,
@@ -301,7 +369,12 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
         break;
       case 'TellConfirmed': {
         const to = this.acquireClient(p.to)?.name ?? '?';
-        this.addLine(`tell:${to}`, { at: e.t, from: this.clients.get(this.myId ?? '')?.name ?? 'me', text: stripTags(p.message), own: true });
+        this.addLine(`tell:${to}`, {
+          at: e.t,
+          from: this.clients.get(this.myId ?? '')?.name ?? 'me',
+          text: stripTags(p.message),
+          own: true,
+        });
         break;
       }
       case 'TellFailed':

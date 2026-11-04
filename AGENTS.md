@@ -4,11 +4,13 @@ Guide for coding agents working on tw-cli, a terminal client for The West (world
 the relevant file in `docs/`.
 
 ## 1 % better every day
+
 Leave the project a little better than you found it, every session, on top of the task: fix one stale doc line,
 one misleading name, one missing test, one rough edge you passed by. Small and safe, in the same change, said in
 the summary. Small gains compound; nobody needs to schedule a cleanup.
 
 ## Keep this knowledge current (do this every time)
+
 - **Update this file and `docs/` as part of every change**, in the same commit or edit session, without being
   asked. If you learn something non-obvious about the game, the code or the user's preferences, write it down.
 - Put game behaviour (endpoints, formulas, units, quirks) in `docs/game-mechanics.md`, the autopilot in
@@ -21,20 +23,27 @@ the summary. Small gains compound; nobody needs to schedule a cleanup.
   behaviour, not code; link to `docs/` for detail.
 
 ## Docs index
+
+- `docs/code-style.md`: how code here should read (intent over mechanics, types over comments, pure core,
+  interfaces over classes, full names, errors as values, tests as specs, structured logs). Read before writing code.
 - `docs/autopilot.md`: Autopilot spec, architecture, modules, decisions, what is not built yet.
 - `docs/game-mechanics.md`: The West as the client sees it: endpoints, formulas, units, verified vs unverified.
 - `docs/tui.md`: screens, key handling (global vs screen keys), input capture, rendering conventions.
 - `docs/endpoints.json`: game endpoints extracted from the client bundle (`npm run endpoints`).
 
 ## Commands
+
 - `npm run tw`: full-screen TUI · `npm run tw -- <cmd>` for CLI commands (whoami, jobs, queue, login, …).
 - `npm test`: all tests (`node --test test/*.test.ts`). Some skip without a saved `game.php`.
 - `npm run typecheck`: `tsc -p .`. Run it and the tests after every change.
-- CI (`.github/workflows/test.yml`, badge in the README): typecheck + tests on Node 26, Ubuntu, for pushes to
+- `npm run lint`: `biome check .` (formatter + linter, zero warnings). `npm run format`: `biome check --write .`.
+  Biome owns layout, quotes, semicolons and import order (see `docs/code-style.md` §20); do not format by hand.
+- CI (`.github/workflows/test.yml`, badge in the README): typecheck + lint + tests on Node 26, Ubuntu, for pushes to
   `main` and every PR. The two login tests that check 0600 file modes fail on Windows only; CI runs them. The test
   step sets `CI=false`: with `CI` set, Ink (is-in-ci) writes only the last frame and every TUI test sees nothing.
 
 ## Layout
+
 - `src/game/`: game logic, no UI. `state.ts` (GameState: owns the client, keeps state in sync), one module per area
   (jobs, tasks, quests, hotel, trade, townhall, duels, …), the autopilot (`autopilot*.ts`, `timeline.ts`,
   `quest-buy.ts` for buying quest items), `debug-log.ts` (`state.debug`: everything, with data;
@@ -48,6 +57,9 @@ the summary. Small gains compound; nobody needs to schedule a cleanup.
   config must do the same (never write the user's real `~/.config/tw-cli`).
 
 ## Conventions
+
+- Write new and touched code to `docs/code-style.md`. Where it conflicts with a project rule below, the project
+  rule wins.
 - TypeScript run directly by Node ≥ 26 (no build). `.ts` import specifiers. ES modules.
 - Types are as strict as tsc allows (`tsconfig.json`: `strict` plus `noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes`, unused locals/params, no implicit returns/overrides). Left out on purpose:
@@ -74,6 +86,7 @@ the summary. Small gains compound; nobody needs to schedule a cleanup.
 - Settings and caches live in `CONFIG_DIR` (`TW_CLI_HOME` or `~/.config/tw-cli`), written with mode 0600.
 
 ## User preferences (learned)
+
 - Plans are discussed and agreed before building ("grill" style: numbered questions with a recommended answer).
 - Everything the autopilot does is a toggle; defaults are safe (starts paused unless it was running, dry run).
 - Unverified game behaviour is labelled as such in code comments and docs, and checked live when possible.

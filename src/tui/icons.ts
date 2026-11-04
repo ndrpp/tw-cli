@@ -20,7 +20,15 @@ export const ICON = {
 
 /** Icon for a queue task type from the server (job, walk, sleep, duel, …). */
 export function taskIcon(type: string): string {
-  return type === 'job' ? ICON.job : type === 'walk' ? ICON.walk : type === 'sleep' ? ICON.sleep : /duel/.test(type) ? ICON.duel : ICON.action;
+  return type === 'job'
+    ? ICON.job
+    : type === 'walk'
+      ? ICON.walk
+      : type === 'sleep'
+        ? ICON.sleep
+        : /duel/.test(type)
+          ? ICON.duel
+          : ICON.action;
 }
 
 /** Icon for a planned or projected step; `action` tells deposits from item uses. */

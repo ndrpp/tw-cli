@@ -3,10 +3,27 @@
 // Sleeping is a task: TaskSleep(town_id, room) → task/add post {town_id, room, taskType:'sleep'}.
 // Room keys: cubby, bedroom, hotel_room, apartment, luxurious_apartment (TaskSleep.getIcon @686067).
 import type { GameClient } from '../http/game-client.ts';
-import { entries, obj, type JsonObject } from '../util/json.ts';
+import { entries, type JsonObject, obj } from '../util/json.ts';
 
-export interface HotelRoom { key: string; name: string; level: number; available: boolean; free: boolean; costs: number; energy: number; health: number }
-export interface Hotel { townId: number; townName: string; level: number; own: boolean; waytime: string; attackable: string | null; rooms: HotelRoom[] }
+export interface HotelRoom {
+  key: string;
+  name: string;
+  level: number;
+  available: boolean;
+  free: boolean;
+  costs: number;
+  energy: number;
+  health: number;
+}
+export interface Hotel {
+  townId: number;
+  townName: string;
+  level: number;
+  own: boolean;
+  waytime: string;
+  attackable: string | null;
+  rooms: HotelRoom[];
+}
 
 /** A room's energy / health number as a fraction of max per hour (read as % per hour; checked by calibration.ts). */
 export const roomRate = (v: number) => Math.max(0, v) / 100;

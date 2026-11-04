@@ -13,13 +13,13 @@
 import { chmodSync, copyFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createInterface } from 'node:readline';
-import { loadProfile, readProfileRaw, writeProfileFields } from './fingerprint/profile.ts';
+import type { Credentials } from './auth/login.ts';
 import { DEFAULT_WORLD, ensureGame } from './auth/session.ts';
 import { PROFILE_FILE } from './auth/session-store.ts';
-import type { Credentials } from './auth/login.ts';
+import { loadProfile, readProfileRaw, writeProfileFields } from './fingerprint/profile.ts';
 import { GameState } from './game/state.ts';
-import { formatClock, formatDuration } from './tui/format.ts';
 import { queueSummary } from './game/tasks.ts';
+import { formatClock, formatDuration } from './tui/format.ts';
 import { obj } from './util/json.ts';
 
 function ask(question: string, hidden = false): Promise<string> {
@@ -70,7 +70,9 @@ async function main(argv: string[]): Promise<number> {
       const srv = await startWebServer({ ...addr, exitAfterLogin: true, log: (m) => console.log(m) });
       console.log(`Open in your browser:\n  ${srv.url}\n`);
       if (addr.host === '0.0.0.0') {
-        console.log(`(In a container: port ${addr.port} must be published to the host, e.g. compose ports "127.0.0.1:${addr.port}:${addr.port}" and run with --service-ports.)`);
+        console.log(
+          `(In a container: port ${addr.port} must be published to the host, e.g. compose ports "127.0.0.1:${addr.port}:${addr.port}" and run with --service-ports.)`,
+        );
       }
       console.log('Waiting for fingerprint and login… Ctrl+C to stop.');
       await srv.done;
@@ -83,7 +85,9 @@ async function main(argv: string[]): Promise<number> {
       for (const e of state.log.filter((l) => l.level === 'error')) console.error(e.msg);
       for (const o of state.jobOptions(sub ?? '')) {
         const pts = o.job.laborPoints;
-        console.log(`${String(o.job.id).padStart(4)}  ${o.job.name.padEnd(36)} ${String(pts).padStart(5)} LP  ${o.at ? `${o.at.x},${o.at.y}`.padEnd(12) : '—'.padEnd(12)} ${o.way === null ? '' : formatDuration(o.way)}`);
+        console.log(
+          `${String(o.job.id).padStart(4)}  ${o.job.name.padEnd(36)} ${String(pts).padStart(5)} LP  ${o.at ? `${o.at.x},${o.at.y}`.padEnd(12) : '—'.padEnd(12)} ${o.way === null ? '' : formatDuration(o.way)}`,
+        );
       }
       return 0;
     }
@@ -93,10 +97,15 @@ async function main(argv: string[]): Promise<number> {
       if (!state.queue.length) console.log('Task queue is empty.');
       state.queue.forEach((t, i) => {
         const walk = t.way ? `  walk ${formatDuration(t.way.end - Math.max(now, t.way.start))}` : '';
-        console.log(`${i + 1}. [${t.type}] ${t.title} at ${t.coords.x},${t.coords.y}${walk}  ends in ${formatDuration(t.end - now)}`);
+        console.log(
+          `${i + 1}. [${t.type}] ${t.title} at ${t.coords.x},${t.coords.y}${walk}  ends in ${formatDuration(t.end - now)}`,
+        );
       });
       const sum = queueSummary(state.queue, now);
-      if (sum) console.log(`All done ${formatClock(sum.doneAt, now)} (in ${formatDuration(sum.left)})${sum.walk > 0 ? `, ${formatDuration(sum.walk)} of it walking` : ''}`);
+      if (sum)
+        console.log(
+          `All done ${formatClock(sum.doneAt, now)} (in ${formatDuration(sum.left)})${sum.walk > 0 ? `, ${formatDuration(sum.walk)} of it walking` : ''}`,
+        );
       return 0;
     }
     case 'fp': {
@@ -105,7 +114,9 @@ async function main(argv: string[]): Promise<number> {
         mkdirSync(dirname(PROFILE_FILE), { recursive: true, mode: 0o700 });
         copyFileSync(arg, PROFILE_FILE);
         chmodSync(PROFILE_FILE, 0o600);
-        console.log(`Fingerprint profile OK (fp=${p.fp}, ${p.components.length} components). Installed to ${PROFILE_FILE}`);
+        console.log(
+          `Fingerprint profile OK (fp=${p.fp}, ${p.components.length} components). Installed to ${PROFILE_FILE}`,
+        );
         return 0;
       }
       if (sub === 'set' && arg) {
@@ -115,7 +126,12 @@ async function main(argv: string[]): Promise<number> {
         return 0;
       }
       if (sub === 'ua' && arg) {
-        const langs = argv[3] ? argv[3].split(',').map((l) => l.trim()).filter(Boolean) : undefined;
+        const langs = argv[3]
+          ? argv[3]
+              .split(',')
+              .map((l) => l.trim())
+              .filter(Boolean)
+          : undefined;
         writeProfileFields(PROFILE_FILE, { userAgent: arg, ...(langs ? { languages: langs } : {}) });
         console.log(`Saved User-Agent${langs ? ' and languages' : ''} to ${PROFILE_FILE}`);
         return 0;
@@ -123,8 +139,12 @@ async function main(argv: string[]): Promise<number> {
       if (sub === 'show') {
         const p = readProfileRaw(PROFILE_FILE);
         if (!p) throw new Error(`No fingerprint profile at ${PROFILE_FILE}`);
-        const comps = p.components?.length ? p.components.map((c) => c.key).join(',') : '(none: hash-only, not re-verifiable)';
-        console.log(`fp=${p.fp}\nsaved=${p.capturedAt}\nuserAgent=${p.userAgent || '(missing)'}\nlanguages=${(p.languages ?? []).join(',')}\ncomponents=${comps}`);
+        const comps = p.components?.length
+          ? p.components.map((c) => c.key).join(',')
+          : '(none: hash-only, not re-verifiable)';
+        console.log(
+          `fp=${p.fp}\nsaved=${p.capturedAt}\nuserAgent=${p.userAgent || '(missing)'}\nlanguages=${(p.languages ?? []).join(',')}\ncomponents=${comps}`,
+        );
         return 0;
       }
       break;
@@ -149,7 +169,9 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
   }
-  console.error('usage: tw [play] | tw web | tw jobs [filter] | tw queue | tw login | tw whoami | tw fp import <file> | tw fp set <hash> | tw fp ua "<UA>" [langs] | tw fp show');
+  console.error(
+    'usage: tw [play] | tw web | tw jobs [filter] | tw queue | tw login | tw whoami | tw fp import <file> | tw fp set <hash> | tw fp ua "<UA>" [langs] | tw fp show',
+  );
   return 2;
 }
 

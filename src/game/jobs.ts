@@ -7,8 +7,8 @@
 //  - one location's details: job/job (mode) {jobId,x,y} (JobWindow.initData @1520049)
 //  - travel time: GameMap.calcWayTime = distance * Game.travelSpeed * Character.speed (seconds)
 import type { GameClient } from '../http/game-client.ts';
+import { arr, entries, type JsonObject, obj, objs } from '../util/json.ts';
 import type { Position } from './character.ts';
-import { arr, entries, obj, objs, type JsonObject } from '../util/json.ts';
 
 export type DurationKey = 'short' | 'middle' | 'long';
 export const DURATION_KEYS: DurationKey[] = ['short', 'middle', 'long'];
@@ -130,10 +130,12 @@ export async function fetchJobInfos(client: GameClient, catalog: JobCatalog): Pr
         money: Number(d.money) + (Number(d.featured_money) || 0),
         experience: Number(d.xp) + (Number(d.featured_xp) || 0),
         luck: Number(d.luck),
-        items: objs(d.items).filter((y) => !y.random && y.itemid).map((y) => {
-          const percent = (Number(y.prop) || 0) + (Number(y.probBonus) || 0);
-          return { itemId: Number(y.itemid), expected: percent / 100, percent };
-        }),
+        items: objs(d.items)
+          .filter((y) => !y.random && y.itemid)
+          .map((y) => {
+            const percent = (Number(y.prop) || 0) + (Number(y.probBonus) || 0);
+            return { itemId: Number(y.itemid), expected: percent / 100, percent };
+          }),
       };
     });
     out.push({
@@ -162,7 +164,8 @@ export async function fetchJobLocations(client: GameClient): Promise<JobLocation
 }
 
 /** [[x, y], ...] → positions. */
-export const toPositions = (coords: unknown): Position[] => arr(coords).map((c) => ({ x: Number(arr(c)[0]), y: Number(arr(c)[1]) }));
+export const toPositions = (coords: unknown): Position[] =>
+  arr(coords).map((c) => ({ x: Number(arr(c)[0]), y: Number(arr(c)[1]) }));
 
 export function distance(a: Position, b: Position): number {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
@@ -175,7 +178,9 @@ export function wayTime(from: Position, to: Position, travelSpeed: number, charS
 
 export function nearestLocation(locations: Position[] | undefined, from: Position): Position | null {
   if (!locations?.length) return null;
-  let best = locations[0]!;
+  const first = locations[0];
+  if (!first) return null;
+  let best = first;
   let bestD = distance(best, from);
   for (const p of locations) {
     const d = distance(p, from);

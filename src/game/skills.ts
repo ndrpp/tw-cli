@@ -8,7 +8,7 @@
 //   skill_modifications, attribute_points_used, skill_points_used})}) → {error, msg, ...}
 // Raising an attribute raises each of its five skills by one (SkillsWindow.Attributes[...]).
 import type { GameClient } from '../http/game-client.ts';
-import { nums, type JsonObject } from '../util/json.ts';
+import { type JsonObject, nums } from '../util/json.ts';
 
 export const ATTRIBUTES = ['strength', 'flexibility', 'dexterity', 'charisma'] as const;
 export type Attribute = (typeof ATTRIBUTES)[number];
@@ -25,18 +25,39 @@ export const ATTRIBUTE_OF: Record<string, Attribute> = Object.fromEntries(
 ) as Record<string, Attribute>;
 
 export const NAMES: Record<string, string> = {
-  strength: 'Strength', flexibility: 'Mobility', dexterity: 'Dexterity', charisma: 'Charisma',
-  build: 'Construction', punch: 'Vigor', tough: 'Toughness', endurance: 'Stamina', health: 'Health Points',
-  ride: 'Horseback Riding', reflex: 'Reflex', dodge: 'Dodging', hide: 'Hiding', swim: 'Swimming',
-  aim: 'Aiming', shot: 'Shooting', pitfall: 'Setting Traps', finger_dexterity: 'Fine Motor Skills', repair: 'Repairing',
-  leadership: 'Leadership', tactic: 'Tactics', trade: 'Trading', animal: 'Animal Instinct', appearance: 'Appearance',
+  strength: 'Strength',
+  flexibility: 'Mobility',
+  dexterity: 'Dexterity',
+  charisma: 'Charisma',
+  build: 'Construction',
+  punch: 'Vigor',
+  tough: 'Toughness',
+  endurance: 'Stamina',
+  health: 'Health Points',
+  ride: 'Horseback Riding',
+  reflex: 'Reflex',
+  dodge: 'Dodging',
+  hide: 'Hiding',
+  swim: 'Swimming',
+  aim: 'Aiming',
+  shot: 'Shooting',
+  pitfall: 'Setting Traps',
+  finger_dexterity: 'Fine Motor Skills',
+  repair: 'Repairing',
+  leadership: 'Leadership',
+  tactic: 'Tactics',
+  trade: 'Trading',
+  animal: 'Animal Instinct',
+  appearance: 'Appearance',
 };
 
 /** TUI colour per attribute group (the game colours them red/green/blue/yellow). */
 export const ATTRIBUTE_COLOR: Record<Attribute, string> = {
-  strength: 'red', flexibility: 'green', dexterity: 'blue', charisma: 'yellow',
+  strength: 'red',
+  flexibility: 'green',
+  dexterity: 'blue',
+  charisma: 'yellow',
 };
-
 
 export class Skills {
   attributes: Record<string, number> = {};
@@ -111,7 +132,8 @@ export function adjustPlan(plan: SkillPlan, skills: Skills, key: string, delta: 
 /** What the plan adds to a row: an attribute point also adds one to each of its skills. */
 export function plannedDelta(plan: SkillPlan, key: string): number {
   if (key in SKILLS_OF) return plan.attributes[key] ?? 0;
-  return (plan.skills[key] ?? 0) + (plan.attributes[ATTRIBUTE_OF[key]!] ?? 0);
+  const attribute = ATTRIBUTE_OF[key];
+  return (plan.skills[key] ?? 0) + (attribute === undefined ? 0 : (plan.attributes[attribute] ?? 0));
 }
 
 export function savePayload(plan: SkillPlan): { modifier: 'add'; data: string } {

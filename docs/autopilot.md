@@ -5,20 +5,22 @@ banks cash, uses consumables, does quests and safe NPC duels. Every behaviour is
 screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
 
 ## Files
-| File | What |
-|---|---|
-| `src/game/timeline.ts` | Pure projection of a task list: travel, waits, regen, energy/HP/XP/level/cash per step, level-up refill, partial sleeps, instant actions. |
-| `src/game/autopilot-config.ts` | Settings, rules, saved plan, spend tracker, duel record (`autopilot.json` in the config dir); `goalWeights`, `fingerprint`, `duelOutlook`. |
-| `src/game/autopilot.ts` | Pure planner `planAutopilot(input)`: HP → bank → inserts → jobs by priority, energy sleeps / consumables when short. `parseConsumable`, `expectedHpLoss`. |
-| `src/game/autopilot-runner.ts` | `AutopilotRunner` (`state.runner`): replans on input change, sends tasks, wakes from sleep, deposits, uses items, cancels for a better plan, NPC duels for XP, retries/backoff, spend cap. |
-| `src/game/autopilot-quests.ts` | `QuestModule`: finish (reward by priority), wear + restore gear, buy quest items, pick up market goods, accept saloon quests, re-read quests waiting for a time window. `chooseReward`. |
-| `src/game/quest-buy.ts` | Buying quest items no job drops: `chooseBuys` (pure: source per item within the limits), `BuyCatalog` (shops, mobile trader, market offers the runner read; `state.buyCatalog`). |
-| `src/game/debug-log.ts`, `src/tui/debug.ts` | Debug log (`state.debug`) and its screen (`g x`); see "Debugging". |
-| `src/tui/autopilot.ts` | Screen: priority, module toggles and values on the left, plan pane (`PlanPane`, rows from `planRows`) on the right; `Q` full queue view. |
-| `test/quest-buy.test.ts` | Buying quest items: ~120 hand-reasoned cases (parsing, source choice, catalog, planner trips, state, buying against a fake server). |
-| `test/autopilot.test.ts`, `test/social.test.ts` (runner) | Timeline, config, planner, consumables, inserts, screen, queue view, rewards, duels; runner against a fake server. |
+
+| File                                                     | What                                                                                                                                                                                       |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/game/timeline.ts`                                   | Pure projection of a task list: travel, waits, regen, energy/HP/XP/level/cash per step, level-up refill, partial sleeps, instant actions.                                                  |
+| `src/game/autopilot-config.ts`                           | Settings, rules, saved plan, spend tracker, duel record (`autopilot.json` in the config dir); `goalWeights`, `fingerprint`, `duelOutlook`.                                                 |
+| `src/game/autopilot.ts`                                  | Pure planner `planAutopilot(input)`: HP → bank → inserts → jobs by priority, energy sleeps / consumables when short. `parseConsumable`, `expectedHpLoss`.                                  |
+| `src/game/autopilot-runner.ts`                           | `AutopilotRunner` (`state.runner`): replans on input change, sends tasks, wakes from sleep, deposits, uses items, cancels for a better plan, NPC duels for XP, retries/backoff, spend cap. |
+| `src/game/autopilot-quests.ts`                           | `QuestModule`: finish (reward by priority), wear + restore gear, buy quest items, pick up market goods, accept saloon quests, re-read quests waiting for a time window. `chooseReward`.    |
+| `src/game/quest-buy.ts`                                  | Buying quest items no job drops: `chooseBuys` (pure: source per item within the limits), `BuyCatalog` (shops, mobile trader, market offers the runner read; `state.buyCatalog`).           |
+| `src/game/debug-log.ts`, `src/tui/debug.ts`              | Debug log (`state.debug`) and its screen (`g x`); see "Debugging".                                                                                                                         |
+| `src/tui/autopilot.ts`                                   | Screen: priority, module toggles and values on the left, plan pane (`PlanPane`, rows from `planRows`) on the right; `Q` full queue view.                                                   |
+| `test/quest-buy.test.ts`                                 | Buying quest items: ~120 hand-reasoned cases (parsing, source choice, catalog, planner trips, state, buying against a fake server).                                                        |
+| `test/autopilot.test.ts`, `test/social.test.ts` (runner) | Timeline, config, planner, consumables, inserts, screen, queue view, rewards, duels; runner against a fake server.                                                                         |
 
 ## Using it
+
 - `g a` opens the screen. `R` run/pause (paused still plans and shows "would do", sends nothing), `X` stop
   (pause + clear the plan; rules stay), `Space`/`Enter` toggle, `←→`/`+-` values, `J K` reorder priority.
 - `Q` queue view: queued + planned rows (ETA, travel, energy, HP, XP, $, module). `c` cancel a queued task,
@@ -37,6 +39,7 @@ screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
 - Header shows `autopilot ●` while running. Resumes on launch if it was running (after startup + first replan).
 
 ## Debugging
+
 - `g x` opens the Debug screen. Every entry also goes to `<config dir>/debug/YYYY-MM-DDTHH.jsonl` (UTC hour,
   one JSON object per line: `id, at, cat, title, data`). Files older than 24 h are deleted when a new hour
   starts. Only the TUI (`root.ts` `makeState`) turns the files on; tests and CLI commands do not write any.
@@ -58,6 +61,7 @@ screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
 - Memory: 3000 entries; only the newest 50 `sim` entries keep their data (the files keep all of it).
 
 ## How it plans
+
 - **Inputs**: character (server values), server queue (fixed steps; queued jobs cost no energy, their drops
   count toward needs; queued sleeps keep their room rates in `state.sleepRates`), jobs and locations (drops
   blended with calibration), quest needs (`state.autopilotNeeds()`, below), hotels (home + nearest town, every
@@ -143,6 +147,7 @@ screen (`g a`). Spec agreed with the user in a grill session ("Decisions").
   (`type: 'build'`) are never cancelled.
 
 ## Scenarios (`test/scenarios.test.ts`)
+
 About 100 small situations (timeline, job choice, energy, wake targets, HP, bank, quests, motivation, inserts,
 the server queue, cancelling), each with the result a good player would want, reasoned out by hand in its
 comment. Never fill an expectation in from what the planner returns: when one fails, decide whether the
@@ -150,8 +155,10 @@ planner or the expectation is wrong. Add a scenario for every planner bug found 
 (same rule; its cases B8, B18, B19, B24, B25, S16, S19–S21 each fixed a flaw found while reasoning them out).
 
 ## Calibration (`calibration.ts`, `calibration.json` in the config dir; TUI only)
+
 Each estimate blends the game's number (or the old heuristic) with what was observed, the prior counting as 5
 samples. Logged to the debug log (`Calibration: …`); `runner.context().calibration` shows the current values.
+
 - **Drops** per job + duration: every new job report (page 1 of the report list, on the "new report" push) is
   read once with `show_report` (`parseJobReport`: `reportInfo.job_id`, `items`, run length from the page).
 - **HP loss**: the first server health after a dangerous job ends (live update or sync) vs the regen estimate;
@@ -163,9 +170,11 @@ samples. Logged to the debug log (`Calibration: …`); `runner.context().calibra
 - **Level-ups**: whether energy was full after each (`levelUps.refilled / seen`); the planner assumes it is.
 
 ## Carrying out (runner: one thing per tick, only while running and not dry run)
+
 wake-up cancel → cancel-for-better → quest step → NPC duel for XP → send planned tasks (as many as the queue and
 current energy allow; a sleep ends a batch) or, with an empty queue, the next on-the-spot action (deposit in the
 town you stand in, use an item, buy quest items).
+
 - Quest step buying, one purchase per tick: market goods waiting in the town you stand in are picked up first
   (once; a failure leaves it to you); then, for quests buying unblocks, mobile-trader offers (dollar price) and
   market offers are bought from anywhere, shop items when you stand in their town. A market buy is a bid at the
@@ -180,20 +189,22 @@ town you stand in, use an item, buy quest items).
   The $1,000 daily default blocks anything dearer (a $2,800 horse); raise it on the screen for those.
 
 ## Modules: status
-| Module | Status |
-|---|---|
-| Queue jobs, priority, look-ahead | built |
-| Energy sleep + wake rules + auto-cancel | built (room rate units unverified) |
-| HP (sleep / item / skip risky jobs) | built (danger → HP is a heuristic) |
-| Consumables (energy, health, motivation) | built; uses what is in the bag (it never buys them) |
-| Bank | built |
-| Expanded queue + rules | built (planned jobs can only be excluded, not reordered; inserts can move) |
-| Quests: finish, rewards, wear + restore, accept from saloons | built |
-| Quests: buy items no job drops (shops in reach, mobile trader, market + pickup trip), time windows | built (remote shop reads of other towns and market buys from afar unverified) |
-| Quests: "Resolve / Accept: X" (accept the quest it waits on), "Go to X" (map giver coordinates), "Lose against X" | **not built** (logged once and skipped); next, after a live look at saloon / map givers |
-| NPC duels for XP | built; fights only levels the duel record knows (fight NPCs yourself in `g d` to fill it) |
+
+| Module                                                                                                            | Status                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Queue jobs, priority, look-ahead                                                                                  | built                                                                                     |
+| Energy sleep + wake rules + auto-cancel                                                                           | built (room rate units unverified)                                                        |
+| HP (sleep / item / skip risky jobs)                                                                               | built (danger → HP is a heuristic)                                                        |
+| Consumables (energy, health, motivation)                                                                          | built; uses what is in the bag (it never buys them)                                       |
+| Bank                                                                                                              | built                                                                                     |
+| Expanded queue + rules                                                                                            | built (planned jobs can only be excluded, not reordered; inserts can move)                |
+| Quests: finish, rewards, wear + restore, accept from saloons                                                      | built                                                                                     |
+| Quests: buy items no job drops (shops in reach, mobile trader, market + pickup trip), time windows                | built (remote shop reads of other towns and market buys from afar unverified)             |
+| Quests: "Resolve / Accept: X" (accept the quest it waits on), "Go to X" (map giver coordinates), "Lose against X" | **not built** (logged once and skipped); next, after a live look at saloon / map givers   |
+| NPC duels for XP                                                                                                  | built; fights only levels the duel record knows (fight NPCs yourself in `g d` to fill it) |
 
 ## Decisions (grill session)
+
 TUI only (core has no UI deps) · may cancel anything, running tasks included, when the plan is better by the
 margin · manual actions are replanned around unless paused · resume on launch · ranked priority, optional custom
 weights · own-town hotel/bank within 1 h, else by cost · bank detour ≤ 30 min else the next town · cancel margin
@@ -206,6 +217,7 @@ one loss stops them for the day, for XP when it beats the best job · plan to th
 queue slots cost 10 min (the TUI is not open 24/7) · calibrate drops, HP, motivation, rooms from your own game.
 
 ## Unverified (check live, then move to docs/game-mechanics.md)
+
 - Hotel room `energy` / `health` units (read as % of max per hour; energy now calibrated from sleeps, health not).
 - Cancelling a running sleep keeps the regenerated energy (a sync runs after the first wake-up).
 - Level-up refills energy and HP (counted by calibration: `levelUps`).

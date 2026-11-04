@@ -11,7 +11,7 @@
 // questRewardsOptions, description(html), questHint(html), limited}.
 // finish_quest replies may carry `eval` (JS for the browser): never executed here.
 import type { GameClient } from '../http/game-client.ts';
-import { entries, obj, objs, vals, type JsonObject } from '../util/json.ts';
+import { entries, type JsonObject, obj, objs, vals } from '../util/json.ts';
 
 /** jsInfo: inventory_changed / wear_changed {id: item, count}; task-finish-job {id: job, count: seconds}. */
 /**
@@ -20,13 +20,20 @@ import { entries, obj, objs, vals, type JsonObject } from '../util/json.ts';
  * o'clock.": finish inside those server hours) · other (anything else: wait timers, visits, duels, …).
  */
 export interface QuestRequirement {
-  solved: boolean; info: string; itemId?: number; jobId?: number; count?: number;
+  solved: boolean;
+  info: string;
+  itemId?: number;
+  jobId?: number;
+  count?: number;
   kind?: 'item' | 'wear' | 'job' | 'bought' | 'window' | 'other';
   buy?: string;
   /** window: server hours, "HH:MM". */
   window?: { from: string; to: string };
 }
-export interface QuestReward { item: number | null; text: string }
+export interface QuestReward {
+  item: number | null;
+  text: string;
+}
 
 export interface Quest {
   id: number;
@@ -60,16 +67,64 @@ export function questEnds(limited: string): number | null {
   return Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] ?? 23), Number(m[5] ?? 59)) / 1000;
 }
 
-export interface QuestEmployer { key: string; name: string; x: number | null; y: number | null; open: Quest[] }
+export interface QuestEmployer {
+  key: string;
+  name: string;
+  x: number | null;
+  y: number | null;
+  open: Quest[];
+}
 
 const NAMED_ENTITIES: Record<string, string> = {
-  amp: '&', apos: "'", quot: '"', lt: '<', gt: '>', nbsp: ' ', hellip: '…',
-  ndash: '–', mdash: '—', times: '×', middot: '·', deg: '°', euro: '€', pound: '£',
-  copy: '©', reg: '®', trade: '™', laquo: '«', raquo: '»',
-  aacute: 'á', agrave: 'à', acirc: 'â', atilde: 'ã', auml: 'ä', aring: 'å', aelig: 'æ', ccedil: 'ç',
-  eacute: 'é', egrave: 'è', ecirc: 'ê', euml: 'ë', iacute: 'í', igrave: 'ì', icirc: 'î', iuml: 'ï',
-  ntilde: 'ñ', oacute: 'ó', ograve: 'ò', ocirc: 'ô', otilde: 'õ', ouml: 'ö', oslash: 'ø',
-  uacute: 'ú', ugrave: 'ù', ucirc: 'û', uuml: 'ü', yacute: 'ý', yuml: 'ÿ', szlig: 'ß',
+  amp: '&',
+  apos: "'",
+  quot: '"',
+  lt: '<',
+  gt: '>',
+  nbsp: ' ',
+  hellip: '…',
+  ndash: '–',
+  mdash: '—',
+  times: '×',
+  middot: '·',
+  deg: '°',
+  euro: '€',
+  pound: '£',
+  copy: '©',
+  reg: '®',
+  trade: '™',
+  laquo: '«',
+  raquo: '»',
+  aacute: 'á',
+  agrave: 'à',
+  acirc: 'â',
+  atilde: 'ã',
+  auml: 'ä',
+  aring: 'å',
+  aelig: 'æ',
+  ccedil: 'ç',
+  eacute: 'é',
+  egrave: 'è',
+  ecirc: 'ê',
+  euml: 'ë',
+  iacute: 'í',
+  igrave: 'ì',
+  icirc: 'î',
+  iuml: 'ï',
+  ntilde: 'ñ',
+  oacute: 'ó',
+  ograve: 'ò',
+  ocirc: 'ô',
+  otilde: 'õ',
+  ouml: 'ö',
+  oslash: 'ø',
+  uacute: 'ú',
+  ugrave: 'ù',
+  ucirc: 'û',
+  uuml: 'ü',
+  yacute: 'ý',
+  yuml: 'ÿ',
+  szlig: 'ß',
 };
 
 /** Decode numeric and common named HTML entities in one pass (no double decoding). */
@@ -78,7 +133,12 @@ function decodeEntities(text: string): string {
     if (body[0] === '#') {
       const hex = body[1]?.toLowerCase() === 'x';
       const codePoint = parseInt(body.slice(hex ? 2 : 1), hex ? 16 : 10);
-      if (Number.isInteger(codePoint) && codePoint > 0 && codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff)) {
+      if (
+        Number.isInteger(codePoint) &&
+        codePoint > 0 &&
+        codePoint <= 0x10ffff &&
+        !(codePoint >= 0xd800 && codePoint <= 0xdfff)
+      ) {
         return String.fromCodePoint(codePoint);
       }
       return match;
@@ -91,8 +151,14 @@ function decodeEntities(text: string): string {
 export function plainText(html: unknown, opts: { compact?: boolean } = {}): string {
   const text = String(html ?? '')
     .replace(/<br\b[^>]*>/gi, '\n')
-    .replace(/<\/(?:p|div|li|tr|h[1-6]|table|thead|tbody|ul|ol|dl|dt|dd|blockquote|section|article|center|pre)\s*>/gi, '\n')
-    .replace(/<(?:p|div|li|tr|h[1-6]|table|thead|tbody|ul|ol|dl|dt|dd|blockquote|section|article|center|pre)(?:\s[^>]*)?>/gi, '\n')
+    .replace(
+      /<\/(?:p|div|li|tr|h[1-6]|table|thead|tbody|ul|ol|dl|dt|dd|blockquote|section|article|center|pre)\s*>/gi,
+      '\n',
+    )
+    .replace(
+      /<(?:p|div|li|tr|h[1-6]|table|thead|tbody|ul|ol|dl|dt|dd|blockquote|section|article|center|pre)(?:\s[^>]*)?>/gi,
+      '\n',
+    )
     .replace(/<\/t[dh]\s*>/gi, '\t')
     .replace(/<[^>]+>/g, '');
   return decodeEntities(text)
@@ -133,10 +199,11 @@ function parseRequirement(r: JsonObject): QuestRequirement {
     req.kind = 'bought';
     req.buy = bought;
   }
-  const window = req.kind === 'other' ? req.info.match(/only available between (\d{1,2}:\d{2}) and (\d{1,2}:\d{2})/i) : null;
+  const window =
+    req.kind === 'other' ? req.info.match(/only available between (\d{1,2}:\d{2}) and (\d{1,2}:\d{2})/i) : null;
   if (window) {
     req.kind = 'window';
-    req.window = { from: window[1]!, to: window[2]! };
+    req.window = { from: window[1] ?? '', to: window[2] ?? '' };
   }
   return req;
 }
@@ -156,7 +223,9 @@ export function parseQuest(q: JsonObject, itemName?: (id: number) => string): Qu
     acceptable: q.acceptable === undefined ? !q.accepted : !!q.acceptable,
     finishable: !!q.finishable,
     requirements: objs(q.requirements).map(parseRequirement),
-    rewards: objs(q.questRewards).filter((r) => !r.hidden).map((r) => rewardText(r, itemName)),
+    rewards: objs(q.questRewards)
+      .filter((r) => !r.hidden)
+      .map((r) => rewardText(r, itemName)),
     rewardOptions: entries(q.questRewardsOptions).map(([id, v]) => {
       const o = obj(v);
       return { id: Number(o.id ?? id), text: plainText(o.title ?? o.text ?? obj(o.info).text ?? `option ${id}`) };
@@ -167,7 +236,12 @@ export function parseQuest(q: JsonObject, itemName?: (id: number) => string): Qu
   };
 }
 
-export interface QuestChain { groupId: number; title: string; quests: Quest[]; finishable: number }
+export interface QuestChain {
+  groupId: number;
+  title: string;
+  quests: Quest[];
+  finishable: number;
+}
 
 /** Quests grouped by chain, chains sorted by name; quests keep the server's order inside a chain. */
 export function groupByChain(quests: Quest[]): QuestChain[] {
@@ -175,7 +249,10 @@ export function groupByChain(quests: Quest[]): QuestChain[] {
   for (const q of quests) {
     const key = q.groupId ? `#${q.groupId}` : q.group;
     let c = chains.get(key);
-    if (!c) chains.set(key, (c = { groupId: q.groupId, title: q.group, quests: [], finishable: 0 }));
+    if (!c) {
+      c = { groupId: q.groupId, title: q.group, quests: [], finishable: 0 };
+      chains.set(key, c);
+    }
     c.quests.push(q);
     if (q.finishable) c.finishable++;
   }
@@ -208,7 +285,8 @@ export class QuestApi {
 
   async employer(key: string, at?: { x: number; y: number } | null): Promise<QuestEmployer> {
     const json = await this.client.remoteCall('quest_employer', '', { employer: key, x: at?.x, y: at?.y });
-    if (json.error) throw new Error(typeof json.error === 'string' ? json.error : plainText(json.msg) || 'Quest giver failed');
+    if (json.error)
+      throw new Error(typeof json.error === 'string' ? json.error : plainText(json.msg) || 'Quest giver failed');
     const e = obj(json.employer);
     return {
       key: String(e.key ?? key),
@@ -225,15 +303,25 @@ export class QuestApi {
     return { finishable: !!json.finishable };
   }
 
-  async finish(questId: number, rewardOption?: number): Promise<{ msg: string; health?: number | undefined; rewards: string[] }> {
-    const json = await this.client.remoteCall('quest', 'finish_quest', { quest_id: questId, reward_option_id: rewardOption });
+  async finish(
+    questId: number,
+    rewardOption?: number,
+  ): Promise<{ msg: string; health?: number | undefined; rewards: string[] }> {
+    const json = await this.client.remoteCall('quest', 'finish_quest', {
+      quest_id: questId,
+      reward_option_id: rewardOption,
+    });
     if (json.error) throw new Error(plainText(json.msg) || 'Could not finish the quest');
     const rewards: string[] = [];
     for (const r of vals(json.allRewards)) {
       const t = rewardText(obj(r), this.itemName).text;
       if (t) rewards.push(t);
     }
-    return { msg: plainText(json.msg ?? ''), health: typeof json.health === 'number' ? json.health : undefined, rewards };
+    return {
+      msg: plainText(json.msg ?? ''),
+      health: typeof json.health === 'number' ? json.health : undefined,
+      rewards,
+    };
   }
 
   async cancel(questId: number): Promise<void> {

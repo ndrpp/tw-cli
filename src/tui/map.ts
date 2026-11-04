@@ -1,25 +1,54 @@
 // Terminal world map. The cursor is the centre cell; the view pans around it.
 // One column covers `zoom` px of world x; one row covers 2×zoom px of y (terminal cells are ~2:1).
-import React from 'react';
+
 import { Box, Text } from 'ink';
-import type { GameState, JobOption } from '../game/state.ts';
+import React from 'react';
 import type { Position } from '../game/character.ts';
-import { WORLD_H, WORLD_W, type Fort, type Town } from '../game/world.ts';
 import { distance } from '../game/jobs.ts';
-import { formatDuration, money, truncate } from './format.ts';
+import type { GameState, JobOption } from '../game/state.ts';
+import { type Fort, type Town, WORLD_H, WORLD_W } from '../game/world.ts';
 import { defined } from '../util/defined.ts';
+import { formatDuration, money, truncate } from './format.ts';
 
 const h = React.createElement;
 
 export const ZOOMS = [32, 64, 128, 256, 512, 1024];
 
-export interface MapView { x: number; y: number; zoom: number }
+export interface MapView {
+  x: number;
+  y: number;
+  zoom: number;
+}
 
-export interface Seg { text: string; color?: string | undefined; dim?: boolean | undefined; bold?: boolean | undefined; inverse?: boolean | undefined }
+export interface Seg {
+  text: string;
+  color?: string | undefined;
+  dim?: boolean | undefined;
+  bold?: boolean | undefined;
+  inverse?: boolean | undefined;
+}
 
-interface Cell { ch: string; prio: number; color?: string; dim?: boolean; bold?: boolean }
+interface Cell {
+  ch: string;
+  prio: number;
+  color?: string;
+  dim?: boolean;
+  bold?: boolean;
+}
 
-export type MapLayer = 'jobs' | 'lockedJobs' | 'special' | 'questJobs' | 'questGivers' | 'towns' | 'emptyTowns' | 'forts' | 'markets' | 'players' | 'queue' | 'counties';
+export type MapLayer =
+  | 'jobs'
+  | 'lockedJobs'
+  | 'special'
+  | 'questJobs'
+  | 'questGivers'
+  | 'towns'
+  | 'emptyTowns'
+  | 'forts'
+  | 'markets'
+  | 'players'
+  | 'queue'
+  | 'counties';
 /** Toggleable map layers (v on the map), in display order. */
 export const MAP_LAYERS: { key: MapLayer; symbol: string; color: string; label: string }[] = [
   { key: 'jobs', symbol: 'j', color: 'yellow', label: 'jobs you can do' },
@@ -35,7 +64,9 @@ export const MAP_LAYERS: { key: MapLayer; symbol: string; color: string; label: 
   { key: 'queue', symbol: '1', color: 'cyan', label: 'queued tasks' },
   { key: 'counties', symbol: '┊', color: 'gray', label: 'county borders' },
 ];
-export const DEFAULT_LAYERS: Record<MapLayer, boolean> = Object.fromEntries(MAP_LAYERS.map((l) => [l.key, true])) as Record<MapLayer, boolean>;
+export const DEFAULT_LAYERS: Record<MapLayer, boolean> = Object.fromEntries(
+  MAP_LAYERS.map((l) => [l.key, true]),
+) as Record<MapLayer, boolean>;
 
 export function clampView(v: MapView): MapView {
   return { ...v, x: Math.min(WORLD_W - 1, Math.max(0, v.x)), y: Math.min(WORLD_H - 1, Math.max(0, v.y)) };
@@ -81,16 +112,22 @@ export function buildGrid(state: GameState, view: MapView, cols: number, rows: n
       const c = Math.floor((bx - x0) / cw);
       if (c < 0 || c >= cols) continue;
       for (let r = 0; r < rows; r++) {
+        const row = grid[r];
+        if (!row) continue;
         const wy = y0 + r * chh;
-        if (wy + chh > county.y1 && wy <= county.y2 && grid[r]![c]!.prio === 0 && grid[r]![c]!.ch === ' ') grid[r]![c] = { ch: '┊', prio: 0, dim: true };
+        const cell = row[c];
+        if (wy + chh > county.y1 && wy <= county.y2 && cell?.prio === 0 && cell.ch === ' ')
+          row[c] = { ch: '┊', prio: 0, dim: true };
       }
     }
     if (county.y1 > 0) {
       const r = Math.floor((county.y1 - y0) / chh);
       if (r >= 0 && r < rows) {
+        const row = grid[r];
+        if (!row) continue;
         for (let c = 0; c < cols; c++) {
           const wx = x0 + c * cw;
-          if (wx + cw > county.x1 && wx <= county.x2 && grid[r]![c]!.ch === ' ') grid[r]![c] = { ch: '┄', prio: 0, dim: true };
+          if (wx + cw > county.x1 && wx <= county.x2 && row[c]?.ch === ' ') row[c] = { ch: '┄', prio: 0, dim: true };
         }
       }
     }
@@ -99,7 +136,9 @@ export function buildGrid(state: GameState, view: MapView, cols: number, rows: n
     const c = Math.floor((p.x - x0) / cw);
     const r = Math.floor((p.y - y0) / chh);
     if (r < 0 || r >= rows || c < 0 || c >= cols) return;
-    if (grid[r]![c]!.prio < cell.prio) grid[r]![c] = cell;
+    const row = grid[r];
+    const existing = row?.[c];
+    if (row && existing && existing.prio < cell.prio) row[c] = cell;
   };
   const doableGroups = new Set(state.jobs.filter((j) => j.jobPoints >= j.workPoints).map((j) => j.groupid));
   if (on('players')) {
@@ -117,18 +156,25 @@ export function buildGrid(state: GameState, view: MapView, cols: number, rows: n
     if (state.world.fair) put(state.world.fair, { ch: '&', prio: 5, color: 'magentaBright', bold: true });
   }
   if (on('forts')) for (const f of state.world.forts) put(f, { ch: 'F', prio: 6, color: 'red' });
-  if (on('special')) for (const s of state.tiles.specialJobs.values()) put(s, { ch: '*', prio: 7, color: s.gold ? 'yellowBright' : 'whiteBright', bold: true });
+  if (on('special'))
+    for (const s of state.tiles.specialJobs.values())
+      put(s, { ch: '*', prio: 7, color: s.gold ? 'yellowBright' : 'whiteBright', bold: true });
   const home = state.character.homeTown?.id;
   for (const t of state.world.towns) {
-    if (t.id === home) put(t, { ch: 'H', prio: 9, color: 'cyan', bold: true }); // home always shows
+    if (t.id === home)
+      put(t, { ch: 'H', prio: 9, color: 'cyan', bold: true }); // home always shows
     else if (t.name) on('towns') && put(t, { ch: 'T', prio: 8, color: 'white', bold: true });
     else on('emptyTowns') && put(t, { ch: 't', prio: 6, dim: true });
   }
-  if (on('queue')) state.queue.forEach((task, i) => put(task.coords, { ch: String((i + 1) % 10), prio: 10, color: 'cyan', bold: true }));
+  if (on('queue'))
+    state.queue.forEach((task, i) => {
+      put(task.coords, { ch: String((i + 1) % 10), prio: 10, color: 'cyan', bold: true });
+    });
   // Quest targets (jobs that drop a required item) stand out over ordinary jobs and towns.
-  for (const id of on('questJobs') ? state.mapHighlight?.jobIds ?? [] : []) {
+  for (const id of on('questJobs') ? (state.mapHighlight?.jobIds ?? []) : []) {
     const job = state.catalog.get(id);
-    for (const at of job ? state.world.jobGroups.get(job.groupid) ?? [] : []) put(at, { ch: '!', prio: 9.5, color: 'magentaBright', bold: true });
+    for (const at of job ? (state.world.jobGroups.get(job.groupid) ?? []) : [])
+      put(at, { ch: '!', prio: 9.5, color: 'magentaBright', bold: true });
   }
   put(state.character.position, { ch: '@', prio: 11, color: 'green', bold: true });
 
@@ -139,7 +185,15 @@ export function buildGrid(state: GameState, view: MapView, cols: number, rows: n
       const inverse = r === cr && c === cc;
       const ch = inverse && cell.ch === ' ' ? '+' : cell.ch;
       const last = segs[segs.length - 1];
-      if (last && !inverse && !last.inverse && last.color === cell.color && last.dim === cell.dim && last.bold === cell.bold) last.text += ch;
+      if (
+        last &&
+        !inverse &&
+        !last.inverse &&
+        last.color === cell.color &&
+        last.dim === cell.dim &&
+        last.bold === cell.bold
+      )
+        last.text += ch;
       else segs.push({ text: ch, color: cell.color, dim: cell.dim, bold: cell.bold, inverse });
     });
     return segs;
@@ -167,14 +221,26 @@ export function entriesAt(state: GameState, view: MapView, cols: number, rows: n
     for (const e of g.employers ?? []) out.push({ kind: 'quest', key: e.key, name: e.name, at: { x: g.x, y: g.y } });
   }
   const unnamed = here.quests.filter((q) => !givers.some((g) => g.x === q.x && g.y === q.y));
-  if (unnamed.length) out.push({ kind: 'text', text: `? quest giver${unnamed.length > 1 ? ` ×${unnamed.length}` : ''} (name loads when close)`, color: 'magenta' });
-  if (state.world.fair && inRect(state.world.fair)) out.push({ kind: 'text', text: '& travelling fair', color: 'magentaBright' });
+  if (unnamed.length)
+    out.push({
+      kind: 'text',
+      text: `? quest giver${unnamed.length > 1 ? ` ×${unnamed.length}` : ''} (name loads when close)`,
+      color: 'magenta',
+    });
+  if (state.world.fair && inRect(state.world.fair))
+    out.push({ kind: 'text', text: '& travelling fair', color: 'magentaBright' });
   for (const sj of [...state.tiles.specialJobs.values()].filter(inRect)) {
-    out.push({ kind: 'text', text: `* ${sj.gold ? 'GOLD' : 'silver'} job: ${state.catalog.get(sj.jobId)?.name ?? sj.jobId}`, color: sj.gold ? 'yellowBright' : 'whiteBright' });
+    out.push({
+      kind: 'text',
+      text: `* ${sj.gold ? 'GOLD' : 'silver'} job: ${state.catalog.get(sj.jobId)?.name ?? sj.jobId}`,
+      color: sj.gold ? 'yellowBright' : 'whiteBright',
+    });
   }
-  for (const c of [...state.tiles.crowds.values()].filter(inRect)) out.push({ kind: 'text', text: `p ${c.count} players here`, color: 'blueBright' });
+  for (const c of [...state.tiles.crowds.values()].filter(inRect))
+    out.push({ kind: 'text', text: `p ${c.count} players here`, color: 'blueBright' });
   if (here.markets.length) out.push({ kind: 'text', text: '$ market', color: 'green' });
-  if (here.friends.length) out.push({ kind: 'text', text: `f friends: ${here.friends.reduce((n, f) => n + f.amount, 0)}`, color: 'blue' });
+  if (here.friends.length)
+    out.push({ kind: 'text', text: `f friends: ${here.friends.reduce((n, f) => n + f.amount, 0)}`, color: 'blue' });
   const seen = new Set<string>();
   for (const { groupId, at } of here.jobs) {
     for (const option of state.jobsAtLocation(groupId, at)) {
@@ -242,15 +308,48 @@ export function MapScreen(p: MapScreenProps) {
   const start = Math.max(0, Math.min(selected - Math.floor(listRows / 2), entries.length - listRows));
   const shown = entries.slice(start, start + listRows);
 
-  return h(Box, { height, width },
-    h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: panelFocused ? 'gray' : 'cyan', width: cols + 2, flexShrink: 0 },
+  return h(
+    Box,
+    { height, width },
+    h(
+      Box,
+      {
+        flexDirection: 'column',
+        borderStyle: 'round',
+        borderColor: panelFocused ? 'gray' : 'cyan',
+        width: cols + 2,
+        flexShrink: 0,
+      },
       ...grid.map((segs, r) =>
-        h(Text, { key: r, wrap: 'truncate' },
-          ...segs.map((s, i) => h(Text, defined({ key: i, color: s.color, dimColor: s.dim, bold: s.bold, inverse: s.inverse }), s.text)))),
+        h(
+          Text,
+          { key: r, wrap: 'truncate' },
+          ...segs.map((s, i) =>
+            h(Text, defined({ key: i, color: s.color, dimColor: s.dim, bold: s.bold, inverse: s.inverse }), s.text),
+          ),
+        ),
+      ),
     ),
-    h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: panelFocused ? 'cyan' : 'gray', width: panelW, paddingX: 1, flexShrink: 0 },
-      h(Text, { bold: true, wrap: 'truncate' }, p.searching ? `Find: ${p.search}▏` : `${county?.name ?? 'Map'} · zoom ${view.zoom}px`),
-      h(Text, { dimColor: true, wrap: 'truncate' }, `cursor ${centre.x},${centre.y}${hiddenLayers(state) ? ` · ${hiddenLayers(state)} layer(s) off (v)` : ''}`),
+    h(
+      Box,
+      {
+        flexDirection: 'column',
+        borderStyle: 'round',
+        borderColor: panelFocused ? 'cyan' : 'gray',
+        width: panelW,
+        paddingX: 1,
+        flexShrink: 0,
+      },
+      h(
+        Text,
+        { bold: true, wrap: 'truncate' },
+        p.searching ? `Find: ${p.search}▏` : `${county?.name ?? 'Map'} · zoom ${view.zoom}px`,
+      ),
+      h(
+        Text,
+        { dimColor: true, wrap: 'truncate' },
+        `cursor ${centre.x},${centre.y}${hiddenLayers(state) ? ` · ${hiddenLayers(state)} layer(s) off (v)` : ''}`,
+      ),
       h(Text, { dimColor: true, wrap: 'truncate' }, `travel ${formatDuration(state.travelTo(centre))} from queue end`),
       entries.length === 0 ? h(Text, { dimColor: true }, 'Nothing here') : null,
       ...shown.map((e, i) => {
@@ -259,17 +358,26 @@ export function MapScreen(p: MapScreenProps) {
         const w = panelW - 4;
         if (e.kind === 'town') {
           const t = e.town;
-          const label = t.name ? `${t.id === state.character.homeTown?.id ? 'H' : 'T'} ${t.name} · ${t.members}m ${t.points}pts` : `t empty town site`;
+          const label = t.name
+            ? `${t.id === state.character.homeTown?.id ? 'H' : 'T'} ${t.name} · ${t.members}m ${t.points}pts`
+            : `t empty town site`;
           return h(Text, { key: idx, inverse: sel, wrap: 'truncate', color: 'white' }, truncate(label, w));
         }
-        if (e.kind === 'fort') return h(Text, { key: idx, inverse: sel, wrap: 'truncate', color: 'red' }, truncate(`F ${e.fort.name}`, w));
-        if (e.kind === 'quest') return h(Text, { key: idx, inverse: sel, wrap: 'truncate', color: 'magenta' }, truncate(`? ${e.name}`, w));
-        if (e.kind === 'text') return h(Text, defined({ key: idx, inverse: sel, wrap: 'truncate', color: e.color }), truncate(e.text, w));
+        if (e.kind === 'fort')
+          return h(Text, { key: idx, inverse: sel, wrap: 'truncate', color: 'red' }, truncate(`F ${e.fort.name}`, w));
+        if (e.kind === 'quest')
+          return h(Text, { key: idx, inverse: sel, wrap: 'truncate', color: 'magenta' }, truncate(`? ${e.name}`, w));
+        if (e.kind === 'text')
+          return h(Text, defined({ key: idx, inverse: sel, wrap: 'truncate', color: e.color }), truncate(e.text, w));
         const j = e.option.job;
         const v = j.values.long ?? j.values.middle ?? j.values.short;
         const quest = state.mapHighlight?.jobIds.has(j.id);
         const label = `${quest ? '!' : 'j'} ${j.name} ${j.laborPoints}LP${v ? ` ${money(v.money)}/h` : ''}`;
-        return h(Text, { key: idx, inverse: sel, wrap: 'truncate', color: quest ? 'magentaBright' : e.doable ? 'yellow' : 'gray' }, truncate(label, w));
+        return h(
+          Text,
+          { key: idx, inverse: sel, wrap: 'truncate', color: quest ? 'magentaBright' : e.doable ? 'yellow' : 'gray' },
+          truncate(label, w),
+        );
       }),
     ),
   );
@@ -278,15 +386,37 @@ export function MapScreen(p: MapScreenProps) {
 const hiddenLayers = (state: GameState) => MAP_LAYERS.filter((l) => state.mapLayers[l.key] === false).length;
 
 /** v on the map: which layers are drawn. */
-export function LayersOverlay({ state, selected, width, height }: { state: GameState; selected: number; width: number; height: number }) {
-  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', paddingX: 1, width: Math.min(52, width), height },
+export function LayersOverlay({
+  state,
+  selected,
+  width,
+  height,
+}: {
+  state: GameState;
+  selected: number;
+  width: number;
+  height: number;
+}) {
+  return h(
+    Box,
+    {
+      flexDirection: 'column',
+      borderStyle: 'round',
+      borderColor: 'cyan',
+      paddingX: 1,
+      width: Math.min(52, width),
+      height,
+    },
     h(Text, { bold: true }, 'Map layers'),
     ...MAP_LAYERS.map((l, i) => {
       const shown = state.mapLayers[l.key] !== false;
-      return h(Text, { key: l.key, inverse: i === selected, wrap: 'truncate' },
+      return h(
+        Text,
+        { key: l.key, inverse: i === selected, wrap: 'truncate' },
         h(Text, { color: shown ? 'green' : 'gray' }, shown ? '[✔] ' : '[ ] '),
         h(Text, { color: l.color, bold: true, dimColor: !shown }, l.symbol),
-        h(Text, { dimColor: !shown }, ` ${l.label}`));
+        h(Text, { dimColor: !shown }, ` ${l.label}`),
+      );
     }),
     h(Box, { flexGrow: 1 }),
     h(Text, { dimColor: true, wrap: 'truncate' }, 'Space/Enter toggle · a all on · n all off · Esc close'),

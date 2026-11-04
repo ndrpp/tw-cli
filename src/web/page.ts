@@ -1,7 +1,15 @@
 // The local setup page. Self-contained: inline CSS/JS plus /fingerprint2.js from this server.
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-export function page({ token, world, existingFp }: { token: string; world: string; existingFp: string | null }): string {
+export function page({
+  token,
+  world,
+  existingFp,
+}: {
+  token: string;
+  world: string;
+  existingFp: string | null;
+}): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>tw-cli setup</title>

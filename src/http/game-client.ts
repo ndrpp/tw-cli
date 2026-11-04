@@ -1,10 +1,11 @@
 // game.php client mirroring the browser's Ajax module (tw2game.en_DK.js @~43000):
 //   POST game.php?window=<w>[&action=<a>&h=<Player.h>][&mode=<m>], form body ($.param), JSON reply.
 //   resp.logout -> session invalid; resp.error === 'fatal' -> server error.
-import { jqueryParam, type FormValue } from './form.ts';
+
+import { type JsonObject, obj } from '../util/json.ts';
 import type { CookieJar } from './cookie-jar.ts';
-import { INTERACTIVE_POLICY, throttledFetch, type HostPolicy } from './throttle.ts';
-import { obj, type JsonObject } from '../util/json.ts';
+import { type FormValue, jqueryParam } from './form.ts';
+import { type HostPolicy, INTERACTIVE_POLICY, throttledFetch } from './throttle.ts';
 
 export interface Identity {
   /** Same User-Agent as the browser the fingerprint profile was captured in. */
@@ -23,7 +24,15 @@ export async function send(
   jar: CookieJar,
   identity: Identity,
   url: string,
-  init: { method?: string; body?: string; accept?: string; referer?: string; origin?: string; ajax?: boolean; signal?: AbortSignal | undefined } = {},
+  init: {
+    method?: string;
+    body?: string;
+    accept?: string;
+    referer?: string;
+    origin?: string;
+    ajax?: boolean;
+    signal?: AbortSignal | undefined;
+  } = {},
   policy: HostPolicy = INTERACTIVE_POLICY,
 ): Promise<Response> {
   const headers: Record<string, string> = {
@@ -36,13 +45,19 @@ export async function send(
   if (init.referer) headers.referer = init.referer;
   if (init.origin) headers.origin = init.origin;
   if (init.body !== undefined) {
-    headers['content-type'] = init.ajax ? 'application/x-www-form-urlencoded; charset=UTF-8' : 'application/x-www-form-urlencoded';
+    headers['content-type'] = init.ajax
+      ? 'application/x-www-form-urlencoded; charset=UTF-8'
+      : 'application/x-www-form-urlencoded';
   }
   if (init.ajax) {
     headers['x-requested-with'] = 'XMLHttpRequest';
     headers.accept = init.accept ?? JSON_ACCEPT;
   }
-  const res = await throttledFetch(url, { method: init.method ?? 'GET', headers, body: init.body ?? null, redirect: 'manual', signal: init.signal ?? null }, policy);
+  const res = await throttledFetch(
+    url,
+    { method: init.method ?? 'GET', headers, body: init.body ?? null, redirect: 'manual', signal: init.signal ?? null },
+    policy,
+  );
   jar.store(url, res);
   return res;
 }
@@ -64,11 +79,11 @@ export class GameClient {
 
   buildUrl(opts: { window?: string; action?: string; mode?: string; ajax?: string }): string {
     const params: string[] = [];
-    if (opts.window) params.push('window=' + opts.window);
-    if (opts.action) params.push('action=' + opts.action, 'h=' + this.h);
-    if (opts.ajax) params.push('ajax=' + opts.ajax);
-    if (opts.mode) params.push('mode=' + opts.mode);
-    return `${this.worldUrl}/game.php${params.length ? '?' + params.join('&') : ''}`;
+    if (opts.window) params.push(`window=${opts.window}`);
+    if (opts.action) params.push(`action=${opts.action}`, `h=${this.h}`);
+    if (opts.ajax) params.push(`ajax=${opts.ajax}`);
+    if (opts.mode) params.push(`mode=${opts.mode}`);
+    return `${this.worldUrl}/game.php${params.length ? `?${params.join('&')}` : ''}`;
   }
 
   /** The parsed reply as is: most are objects, a few (messages/reply, messages/send, reports delete) arrays. */
@@ -77,7 +92,13 @@ export class GameClient {
       this.jar,
       this.identity,
       url,
-      { method: 'POST', body: jqueryParam(data), ajax: true, referer: `${this.worldUrl}/game.php`, origin: this.worldUrl },
+      {
+        method: 'POST',
+        body: jqueryParam(data),
+        ajax: true,
+        referer: `${this.worldUrl}/game.php`,
+        origin: this.worldUrl,
+      },
       this.policy,
     );
     if (res.status >= 300 && res.status < 400) {

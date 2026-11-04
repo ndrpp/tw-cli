@@ -5,8 +5,9 @@
 //   west.item.Weapon.getDamage / getDamageBonus @931800
 //   ItemPopup.getXHTML @636900 (order and wording of the lines)
 //   west.item.ItemSet.getMergedStages @933000 (set bonus for the number of worn set items)
-import { NAMES } from './skills.ts';
+
 import { isObj, obj } from '../util/json.ts';
+import { NAMES } from './skills.ts';
 
 /** One entry of item.bonus.item / an item set stage. */
 export interface RawBonus {
@@ -57,7 +58,10 @@ export interface StatContext {
 }
 
 export type StatKind = 'damage' | 'attribute' | 'skill' | 'other' | 'speed' | 'fort';
-export interface StatLine { text: string; kind: StatKind }
+export interface StatLine {
+  text: string;
+  kind: StatKind;
+}
 
 export interface ItemStats {
   lines: StatLine[];
@@ -78,11 +82,16 @@ export function calculateItemLevelBonus(level: number, value: number): number {
 /** BonusExtractor.getRoundedValue */
 export function roundBy(value: number, method?: string): number {
   switch (method) {
-    case 'round': return Math.round(value);
-    case 'ceil': return Math.ceil(value);
-    case 'floatceil': return Math.ceil(100 * value) / 100;
-    case 'floor': return Math.floor(value);
-    default: return value;
+    case 'round':
+      return Math.round(value);
+    case 'ceil':
+      return Math.ceil(value);
+    case 'floatceil':
+      return Math.ceil(100 * value) / 100;
+    case 'floor':
+      return Math.floor(value);
+    default:
+      return value;
   }
 }
 
@@ -97,7 +106,12 @@ const PERCENT_DESC: Record<string, string> = {
   experience: '+ %1% Experience from jobs, duels and fort battles',
   drop: '+ %1% Improved product drop chance',
 };
-const FORT_NAMES: Record<string, string> = { damage: 'Damage', defense: 'Defense', offense: 'Attack', resistance: 'Resistance' };
+const FORT_NAMES: Record<string, string> = {
+  damage: 'Damage',
+  defense: 'Defense',
+  offense: 'Attack',
+  resistance: 'Resistance',
+};
 const BUILD_JOB_ID = 1000; // west.job.Build().id: construction
 
 type Modifier = (v: number) => number;
@@ -119,7 +133,7 @@ export class BonusExtractor {
   }
 
   value(b: RawBonus, mod?: Modifier, rounding?: string): number {
-    let v = mod ? mod(b.value ?? 0) : b.value ?? 0;
+    let v = mod ? mod(b.value ?? 0) : (b.value ?? 0);
     if (this.itemLevel && b.type !== 'speed') v += calculateItemLevelBonus(this.itemLevel, v);
     else if (this.itemLevel && b.type === 'speed') v += Math.round(((v * this.itemLevel) / 10) * 100) / 100;
     if (rounding) v = roundBy(v, rounding);
@@ -138,7 +152,8 @@ export class BonusExtractor {
         const v = this.value(b, mod, rounding);
         const lp = v === 1 ? 'Labor point' : 'labor points';
         if (Number(b.job) === BUILD_JOB_ID && b.job !== 'all') return `+ ${v} ${lp} towards Construction`;
-        if (b.job !== 'all' && b.job !== undefined) return `+ ${v} ${lp} towards ${this.jobName?.(Number(b.job)) ?? `job ${b.job}`}`;
+        if (b.job !== 'all' && b.job !== undefined)
+          return `+ ${v} ${lp} towards ${this.jobName?.(Number(b.job)) ?? `job ${b.job}`}`;
         return `+ ${v} ${lp}`;
       }
       case 'pray':
@@ -148,7 +163,8 @@ export class BonusExtractor {
       case 'fortbattle':
         return `+${this.value(b, mod, rounding)} ${FORT_NAMES[b.name ?? ''] ?? ''} (${b.isSector ? 'Fort battle sector bonus' : 'Fort battle bonus'})`;
       default:
-        if (b.type in PERCENT_DESC) return PERCENT_DESC[b.type]!.replace('%1', String(Math.round(this.value(b, mod, rounding) * 100)));
+        if (b.type in PERCENT_DESC)
+          return PERCENT_DESC[b.type]?.replace('%1', String(Math.round(this.value(b, mod, rounding) * 100))) ?? '';
         return b.desc ?? '';
     }
   }
@@ -158,7 +174,10 @@ export class BonusExtractor {
     let value: number;
     let inner = b;
     if (b.type === 'character') {
-      value = this.charLevel === undefined || b.key !== 'level' || !b.bonus ? this.value(b.bonus ?? b) : this.value(b.bonus, this.perLevel(b), b.roundingMethod);
+      value =
+        this.charLevel === undefined || b.key !== 'level' || !b.bonus
+          ? this.value(b.bonus ?? b)
+          : this.value(b.bonus, this.perLevel(b), b.roundingMethod);
       inner = b.bonus ?? b;
     } else value = this.value(b);
     switch (inner.type) {
@@ -173,13 +192,19 @@ export class BonusExtractor {
   }
 
   /** Skills this bonus raises (attributes raise their five skills). */
-  affectedSkills(b: RawBonus, skillsOf: Record<string, string[]>, mod?: Modifier, rounding?: string): Record<string, number> {
+  affectedSkills(
+    b: RawBonus,
+    skillsOf: Record<string, string[]>,
+    mod?: Modifier,
+    rounding?: string,
+  ): Record<string, number> {
     if (b.type === 'skill') return { [String(b.name)]: this.value(b, mod, rounding) };
     if (b.type === 'attribute') {
       const v = this.value(b, mod, rounding);
       return Object.fromEntries((skillsOf[String(b.name)] ?? []).map((s) => [s, v]));
     }
-    if (b.type === 'character' && b.key === 'level' && b.bonus) return this.affectedSkills(b.bonus, skillsOf, this.perLevel(b), b.roundingMethod);
+    if (b.type === 'character' && b.key === 'level' && b.bonus)
+      return this.affectedSkills(b.bonus, skillsOf, this.perLevel(b), b.roundingMethod);
     return {};
   }
 }
@@ -201,10 +226,15 @@ export function upgradedSpeed(speed: number | null, level: number): number | nul
 /** The popup's "Speed: +N%". */
 export const speedPercent = (speed: number) => Math.round((1 / speed) * 100 - 100);
 
-const hasDamageBonus = (d: StatSource) => d.bonusItems.some((b) => b.type === 'character' && b.bonus?.type === 'damage');
+const hasDamageBonus = (d: StatSource) =>
+  d.bonusItems.some((b) => b.type === 'character' && b.bonus?.type === 'damage');
 
 /** Weapon.getDamage */
-function weaponDamage(d: StatSource, level: number, charLevel: number | undefined): { min: number; max: number } | null {
+function weaponDamage(
+  d: StatSource,
+  level: number,
+  charLevel: number | undefined,
+): { min: number; max: number } | null {
   if (!d.damage) return null;
   let { min, max } = d.damage;
   if (level && d.upgradeable) {
@@ -240,7 +270,10 @@ export function itemStats(d: StatSource, itemId: number, ctx: StatContext = {}):
 
   const damage = isWeapon ? weaponDamage(d, level, ctx.charLevel) : null;
   if (damage) {
-    lines.push({ kind: 'damage', text: `${damage.min}-${damage.max} ${hasDamageBonus(d) && !withChar ? 'Base damage' : 'Damage'}` });
+    lines.push({
+      kind: 'damage',
+      text: `${damage.min}-${damage.max} ${hasDamageBonus(d) && !withChar ? 'Base damage' : 'Damage'}`,
+    });
     add('damage_min', damage.min);
     add('damage_max', damage.max);
   }
@@ -276,18 +309,20 @@ export function itemStats(d: StatSource, itemId: number, ctx: StatContext = {}):
   if (fb.offense || fb.defense || fb.resistance) {
     lines.push({ kind: 'fort', text: 'Fort battle bonus' });
     for (const k of ['defense', 'offense', 'resistance']) {
-      if (!fb[k]) continue;
-      lines.push({ kind: 'fort', text: `  +${tidy(fb[k]!)} ${FORT_NAMES[k]}` });
-      add(`fort_${k}`, fb[k]!);
+      const value = fb[k];
+      if (!value) continue;
+      lines.push({ kind: 'fort', text: `  +${tidy(value)} ${FORT_NAMES[k]}` });
+      add(`fort_${k}`, value);
     }
   }
   const fs = upgraded(d.fortbattlesector, level);
   if (fs.damage || fs.offense || fs.defense) {
     lines.push({ kind: 'fort', text: 'Fort battle sector bonus' });
     for (const k of ['defense', 'offense', 'damage']) {
-      if (!fs[k]) continue;
-      lines.push({ kind: 'fort', text: `  +${tidy(fs[k]!)} ${FORT_NAMES[k]}` });
-      add(`fort_${k}_sector`, fs[k]!);
+      const value = fs[k];
+      if (!value) continue;
+      lines.push({ kind: 'fort', text: `  +${tidy(value)} ${FORT_NAMES[k]}` });
+      add(`fort_${k}_sector`, value);
     }
   }
   return { lines, totals, damage, speed };
@@ -295,13 +330,19 @@ export function itemStats(d: StatSource, itemId: number, ctx: StatContext = {}):
 
 // ---- item sets ------------------------------------------------------------------------------
 
-export interface ItemSetDef { key: string; name: string; items: number[]; bonus: Record<string, RawBonus[]> }
+export interface ItemSetDef {
+  key: string;
+  name: string;
+  items: number[];
+  bonus: Record<string, RawBonus[]>;
+}
 
 /** ItemSet.getMergedStages(cnt): stage bonuses up to `cnt` worn items, same bonuses summed. */
 export function mergedStages(set: ItemSetDef, cnt: number): RawBonus[] {
   const merge = (bb: RawBonus, b: RawBonus): boolean => {
     if (bb.type !== b.type) return false;
-    if (b.type === 'character' && b.roundingMethod === bb.roundingMethod && b.key === bb.key && bb.bonus && b.bonus) return merge(bb.bonus, b.bonus);
+    if (b.type === 'character' && b.roundingMethod === bb.roundingMethod && b.key === bb.key && bb.bonus && b.bonus)
+      return merge(bb.bonus, b.bonus);
     if (b.type === 'job' && b.job === bb.job) {
       bb.value = (bb.value ?? 0) + (b.value ?? 0);
       return true;
@@ -325,9 +366,15 @@ export function mergedStages(set: ItemSetDef, cnt: number): RawBonus[] {
     }
   }
   // The popup sorts: attributes (by name), then skills, then the rest.
-  const tag = (b: RawBonus, t: string) => { const x = b.bonus ?? b; return x.type === t ? String(x.name) : null; };
+  const tag = (b: RawBonus, t: string) => {
+    const x = b.bonus ?? b;
+    return x.type === t ? String(x.name) : null;
+  };
   return out.sort((a, b) => {
-    const aa = tag(a, 'attribute'), ab = tag(b, 'attribute'), sa = tag(a, 'skill'), sb = tag(b, 'skill');
+    const aa = tag(a, 'attribute'),
+      ab = tag(b, 'attribute'),
+      sa = tag(a, 'skill'),
+      sb = tag(b, 'skill');
     if (aa && ab) return aa < ab ? -1 : 1;
     if (aa) return -1;
     if (ab) return 1;
@@ -341,7 +388,9 @@ export function mergedStages(set: ItemSetDef, cnt: number): RawBonus[] {
 /** Set bonus lines for `worn` set items, as the popup shows them (per-level values for this character). */
 export function setBonusLines(set: ItemSetDef, worn: number, ctx: StatContext): string[] {
   const ex = new BonusExtractor(ctx);
-  return mergedStages(set, worn).map((b) => ex.desc(b)).filter(Boolean);
+  return mergedStages(set, worn)
+    .map((b) => ex.desc(b))
+    .filter(Boolean);
 }
 
 /** Set bonus totals (same keys as ItemStats.totals). */

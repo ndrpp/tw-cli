@@ -46,10 +46,12 @@ export class Calibration {
   static load(file: string): CalibrationData {
     try {
       const raw = obj(JSON.parse(readFileSync(file, 'utf8')));
-      const drops = entries(raw.drops).filter(([, d]) => isObj(d)).map(([key, d]) => {
-        const found = entries(obj(d).found).map(([id, n]): [string, number] => [id, Number(n) || 0]);
-        return [key, { runs: Number(obj(d).runs) || 0, found: Object.fromEntries(found) }] as const;
-      });
+      const drops = entries(raw.drops)
+        .filter(([, d]) => isObj(d))
+        .map(([key, d]) => {
+          const found = entries(obj(d).found).map(([id, n]): [string, number] => [id, Number(n) || 0]);
+          return [key, { runs: Number(obj(d).runs) || 0, found: Object.fromEntries(found) }] as const;
+        });
       return { ...mergeDefaults(EMPTY, raw), drops: Object.fromEntries(drops) };
     } catch {
       return structuredClone(EMPTY);
@@ -71,7 +73,9 @@ export class Calibration {
   /** One job report: the job, its duration key and the items found ([itemId, count]). */
   addJobRun(jobId: number, duration: string, items: [number, number][]): void {
     const k = `${jobId}:${duration}`;
-    const d = (this.data.drops[k] ??= { runs: 0, found: {} });
+    const existing = this.data.drops[k];
+    const d = existing ?? { runs: 0, found: {} };
+    if (!existing) this.data.drops[k] = d;
     d.runs++;
     for (const [id, n] of items) {
       const base = String(Math.floor(id / 1000));
@@ -154,10 +158,13 @@ export class Calibration {
   summary(): Record<string, unknown> {
     const runs = Object.values(this.data.drops).reduce((a, d) => a + d.runs, 0);
     return {
-      jobReports: runs, jobKinds: Object.keys(this.data.drops).length,
-      hpScale: this.hpScale, hpRuns: this.data.hp.runs,
+      jobReports: runs,
+      jobKinds: Object.keys(this.data.drops).length,
+      hpScale: this.hpScale,
+      hpRuns: this.data.hp.runs,
       motivation: this.motivation,
-      roomScale: this.roomScale, roomSamples: this.data.rooms.n,
+      roomScale: this.roomScale,
+      roomSamples: this.data.rooms.n,
       levelUps: this.data.levelUps,
     };
   }

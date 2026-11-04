@@ -8,16 +8,40 @@
 //   Player duels are tasks: task/add {player_id, taskType:'duel'} (Task('duel', {player_id})).
 import type { FormValue } from '../http/form.ts';
 import type { GameClient } from '../http/game-client.ts';
+import { type JsonObject, obj, objs } from '../util/json.ts';
 import { plainText } from './quests.ts';
-import { obj, objs, type JsonObject } from '../util/json.ts';
 
-export interface DuelNpc { id: number; name: string; level: number; weaponId: number; readyIn: number }
-export interface DuelData { npcs: DuelNpc[]; difficulty: string; motivation: number; npcMotivation: number }
-export interface DuelOpponent { playerId: number; name: string; duelLevel: number; town: string; x: number; y: number; allianceId: number }
+export interface DuelNpc {
+  id: number;
+  name: string;
+  level: number;
+  weaponId: number;
+  readyIn: number;
+}
+export interface DuelData {
+  npcs: DuelNpc[];
+  difficulty: string;
+  motivation: number;
+  npcMotivation: number;
+}
+export interface DuelOpponent {
+  playerId: number;
+  name: string;
+  duelLevel: number;
+  town: string;
+  x: number;
+  y: number;
+  allianceId: number;
+}
 export interface NpcDuelResult {
   result: string;
   rounds: { own: number | null; other: number | null }[];
-  energy?: number | undefined; health?: number | undefined; money?: number | undefined; experience?: number | undefined; level?: number | undefined; died: boolean;
+  energy?: number | undefined;
+  health?: number | undefined;
+  money?: number | undefined;
+  experience?: number | undefined;
+  level?: number | undefined;
+  died: boolean;
   data: DuelData;
 }
 
@@ -28,7 +52,10 @@ export function parseDuelData(json: JsonObject): DuelData {
   const delay = Number(npcs.arrival_delay) || 0;
   return {
     npcs: objs(npcs.npcs).map((n) => ({
-      id: Number(n.duelnpc_id), name: plainText(n.npc_name), level: Number(n.npc_level) || 0, weaponId: Number(n.weapon_id) || 0,
+      id: Number(n.duelnpc_id),
+      name: plainText(n.npc_name),
+      level: Number(n.npc_level) || 0,
+      weaponId: Number(n.weapon_id) || 0,
       readyIn: Math.max(0, delay - (Number(n.arrival_delta) || 0)),
     })),
     difficulty: String(npcs.difficulty ?? ''),
@@ -37,7 +64,8 @@ export function parseDuelData(json: JsonObject): DuelData {
   };
 }
 
-const num = (v: unknown) => (v === undefined || v === null || v === '' || isNaN(Number(v)) ? undefined : Number(v));
+const num = (v: unknown) =>
+  v === undefined || v === null || v === '' || Number.isNaN(Number(v)) ? undefined : Number(v);
 
 export class DuelApi {
   private client: GameClient;
@@ -60,7 +88,11 @@ export class DuelApi {
     return {
       result: plainText(d.duelResult ?? ''),
       rounds: objs(d.rounds).map((r) => ({ own: hit(r.own), other: hit(r.other) })),
-      energy: num(json.energy), health: num(json.health), money: num(json.money), experience: num(json.experience), level: num(json.level),
+      energy: num(json.energy),
+      health: num(json.health),
+      money: num(json.money),
+      experience: num(json.experience),
+      level: num(json.level),
       died: !!json.attacker_died,
       data: parseDuelData(json),
     };
@@ -68,13 +100,24 @@ export class DuelApi {
 
   /** Players in duel range within `distance` seconds of walking. */
   async opponents(page = 0, distance = 7200): Promise<{ opponents: DuelOpponent[]; next: boolean }> {
-    const json = await this.client.remoteCall('duel', 'search_op', { distance, order_by: 'ASC', page, sort: 'range', next: false });
+    const json = await this.client.remoteCall('duel', 'search_op', {
+      distance,
+      order_by: 'ASC',
+      page,
+      sort: 'range',
+      next: false,
+    });
     if (json.error) throw new Error(errText(json, 'Duel opponents'));
     const ol = obj(json.oplist);
     return {
       opponents: objs(ol.pclist).map((p) => ({
-        playerId: Number(p.player_id), name: plainText(p.player_name), duelLevel: Number(p.duellevel) || 0, town: plainText(p.town_name ?? ''),
-        x: Number(p.character_x) || 0, y: Number(p.character_y) || 0, allianceId: Number(p.alliance_id) || 0,
+        playerId: Number(p.player_id),
+        name: plainText(p.player_name),
+        duelLevel: Number(p.duellevel) || 0,
+        town: plainText(p.town_name ?? ''),
+        x: Number(p.character_x) || 0,
+        y: Number(p.character_y) || 0,
+        allianceId: Number(p.alliance_id) || 0,
       })),
       next: !!ol.next,
     };

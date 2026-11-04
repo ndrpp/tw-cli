@@ -4,8 +4,8 @@
 // recomputed hash does not match, so what we send is exactly what that browser would send.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { x64hash128 } from './murmur.ts';
 import { obj, objs } from '../util/json.ts';
+import { x64hash128 } from './murmur.ts';
 
 export type ComponentValue = string | number | boolean | null | Array<string | number | boolean | null>;
 
@@ -60,9 +60,21 @@ export const COMPONENT_ORDER = [
 ] as const;
 
 const REQUIRED = new Set([
-  'language', 'color_depth', 'device_memory', 'hardware_concurrency', 'resolution',
-  'timezone_offset', 'cpu_class', 'navigator_platform', 'adblock', 'has_lied_languages',
-  'has_lied_resolution', 'has_lied_browser', 'touch_support', 'js_fonts', 'audio_fp',
+  'language',
+  'color_depth',
+  'device_memory',
+  'hardware_concurrency',
+  'resolution',
+  'timezone_offset',
+  'cpu_class',
+  'navigator_platform',
+  'adblock',
+  'has_lied_languages',
+  'has_lied_resolution',
+  'has_lied_browser',
+  'touch_support',
+  'js_fonts',
+  'audio_fp',
 ]);
 
 /** Array.prototype.join semantics: null/undefined become '', everything else String(x). */
@@ -78,7 +90,8 @@ export function hashComponents(components: readonly FpComponent[]): string {
 
 export class FingerprintProfileError extends Error {}
 
-const isPrimitive = (v: unknown): v is string | number | boolean | null => v === null || ['string', 'number', 'boolean'].includes(typeof v);
+const isPrimitive = (v: unknown): v is string | number | boolean | null =>
+  v === null || ['string', 'number', 'boolean'].includes(typeof v);
 
 /** A component value as JSON gave it; anything else becomes the string the hash would have joined anyway. */
 function componentValue(v: unknown): ComponentValue {
@@ -97,7 +110,8 @@ function partialProfile(raw: unknown): Partial<FingerprintProfile> {
   if (Array.isArray(r.languages)) p.languages = r.languages.map(String);
   if (typeof r.webdriver === 'boolean' || r.webdriver === null) p.webdriver = r.webdriver;
   if (typeof r.fp === 'string') p.fp = r.fp;
-  if (Array.isArray(r.components)) p.components = objs(r.components).map((c) => ({ key: String(c.key), value: componentValue(c.value) }));
+  if (Array.isArray(r.components))
+    p.components = objs(r.components).map((c) => ({ key: String(c.key), value: componentValue(c.value) }));
   return p;
 }
 
@@ -112,7 +126,12 @@ export function validateProfile(raw: unknown): FingerprintProfile {
     );
   }
   const p: FingerprintProfile = {
-    version: 1, capturedAt: r.capturedAt ?? '', userAgent: r.userAgent, languages: r.languages ?? [], webdriver: r.webdriver ?? null, fp,
+    version: 1,
+    capturedAt: r.capturedAt ?? '',
+    userAgent: r.userAgent,
+    languages: r.languages ?? [],
+    webdriver: r.webdriver ?? null,
+    fp,
     components: r.components ?? [],
   };
   if (p.components.length === 0) return p; // hash-only profile
@@ -163,7 +182,10 @@ export function readProfileRaw(path: string): Partial<FingerprintProfile> | null
 }
 
 /** Creates or updates a profile file with fields given by hand (hash-only: no components). */
-export function writeProfileFields(path: string, fields: Partial<Pick<FingerprintProfile, 'fp' | 'userAgent' | 'languages' | 'webdriver'>>): Partial<FingerprintProfile> {
+export function writeProfileFields(
+  path: string,
+  fields: Partial<Pick<FingerprintProfile, 'fp' | 'userAgent' | 'languages' | 'webdriver'>>,
+): Partial<FingerprintProfile> {
   if (fields.fp !== undefined && !/^[0-9a-f]{32}$/.test(fields.fp)) {
     throw new FingerprintProfileError('fp must be 32 lowercase hex chars');
   }
@@ -181,6 +203,6 @@ export function writeProfileFields(path: string, fields: Partial<Pick<Fingerprin
   if (fields.fp !== undefined && current.fp !== fields.fp) next.components = [];
   next.components ??= [];
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(path, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
+  writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
   return next;
 }

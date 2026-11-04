@@ -4,7 +4,19 @@ import type { Position } from './character.ts';
 import { distance } from './jobs.ts';
 import type { GameState } from './state.ts';
 
-export type PoiKind = 'home' | 'me' | 'queue' | 'town' | 'fort' | 'quest' | 'gold' | 'silver' | 'market' | 'fair' | 'friend' | 'crowd';
+export type PoiKind =
+  | 'home'
+  | 'me'
+  | 'queue'
+  | 'town'
+  | 'fort'
+  | 'quest'
+  | 'gold'
+  | 'silver'
+  | 'market'
+  | 'fair'
+  | 'friend'
+  | 'crowd';
 
 export interface Poi extends Position {
   kind: PoiKind;
@@ -32,10 +44,13 @@ export function collectPois(state: GameState): Poi[] {
   const w = state.world;
   const homeId = state.character.homeTown?.id;
   out.push({ kind: 'me', label: state.character.name, ...state.character.position });
-  state.queue.forEach((t, i) => out.push({ kind: 'queue', label: `${i + 1}. ${t.title}`, ...t.coords }));
+  state.queue.forEach((t, i) => {
+    out.push({ kind: 'queue', label: `${i + 1}. ${t.title}`, ...t.coords });
+  });
   for (const t of w.towns) {
     if (t.id === homeId) out.push({ kind: 'home', label: t.name ?? 'Home town', x: t.x, y: t.y, townId: t.id });
-    else if (t.name) out.push({ kind: 'town', label: `${t.name} (${t.members} members)`, x: t.x, y: t.y, townId: t.id });
+    else if (t.name)
+      out.push({ kind: 'town', label: `${t.name} (${t.members} members)`, x: t.x, y: t.y, townId: t.id });
   }
   for (const f of w.forts) out.push({ kind: 'fort', label: f.name, x: f.x, y: f.y });
   // Named quest givers from loaded tiles; the rest from the minimap without names.
@@ -44,7 +59,8 @@ export function collectPois(state: GameState): Poi[] {
     named.add(`${q.x},${q.y}`);
     out.push({ kind: 'quest', label: q.names.join(', ') || 'Quest giver', x: q.x, y: q.y });
   }
-  for (const q of w.quests) if (!named.has(`${q.x},${q.y}`)) out.push({ kind: 'quest', label: 'Quest giver', x: q.x, y: q.y });
+  for (const q of w.quests)
+    if (!named.has(`${q.x},${q.y}`)) out.push({ kind: 'quest', label: 'Quest giver', x: q.x, y: q.y });
   for (const s of state.tiles.specialJobs.values()) {
     const name = state.catalog.get(s.jobId)?.name ?? `job ${s.jobId}`;
     out.push({ kind: s.gold ? 'gold' : 'silver', label: `${s.gold ? 'Gold' : 'Silver'} job: ${name}`, x: s.x, y: s.y });

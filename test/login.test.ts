@@ -1,39 +1,64 @@
-import { afterEach, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureGame } from '../src/auth/session.ts';
+import { afterEach, beforeEach, test } from 'node:test';
 import { AuthError, portalUrl } from '../src/auth/login.ts';
-import { resetThrottle, type HostPolicy } from '../src/http/throttle.ts';
-import { hashComponents, type FingerprintProfile } from '../src/fingerprint/profile.ts';
+import { ensureGame } from '../src/auth/session.ts';
+import { type FingerprintProfile, hashComponents } from '../src/fingerprint/profile.ts';
+import { type HostPolicy, resetThrottle } from '../src/http/throttle.ts';
 
 const PORTAL = 'https://www.the-west.net';
 const GAME = 'https://en32.the-west.net';
 const FAST: HostPolicy = {
-  concurrency: 1, minIntervalMs: 0, jitterMs: 0, maxRetries: 0, baseBackoffMs: 0, maxBackoffMs: 0,
-  breakerThreshold: 100, breakerCooldownMs: 0, timeoutMs: 5_000,
+  concurrency: 1,
+  minIntervalMs: 0,
+  jitterMs: 0,
+  maxRetries: 0,
+  baseBackoffMs: 0,
+  maxBackoffMs: 0,
+  breakerThreshold: 100,
+  breakerCooldownMs: 0,
+  timeoutMs: 5_000,
 };
 
 const components = [
-  { key: 'language', value: 'en-US' }, { key: 'color_depth', value: 24 }, { key: 'device_memory', value: 8 },
-  { key: 'hardware_concurrency', value: 8 }, { key: 'resolution', value: [1920, 1080] },
-  { key: 'timezone_offset', value: -60 }, { key: 'cpu_class', value: 'unknown' },
-  { key: 'navigator_platform', value: 'Win32' }, { key: 'adblock', value: false },
-  { key: 'has_lied_languages', value: false }, { key: 'has_lied_resolution', value: false },
-  { key: 'has_lied_browser', value: false }, { key: 'touch_support', value: [0, false, false] },
-  { key: 'js_fonts', value: ['Arial'] }, { key: 'audio_fp', value: '124.04' },
+  { key: 'language', value: 'en-US' },
+  { key: 'color_depth', value: 24 },
+  { key: 'device_memory', value: 8 },
+  { key: 'hardware_concurrency', value: 8 },
+  { key: 'resolution', value: [1920, 1080] },
+  { key: 'timezone_offset', value: -60 },
+  { key: 'cpu_class', value: 'unknown' },
+  { key: 'navigator_platform', value: 'Win32' },
+  { key: 'adblock', value: false },
+  { key: 'has_lied_languages', value: false },
+  { key: 'has_lied_resolution', value: false },
+  { key: 'has_lied_browser', value: false },
+  { key: 'touch_support', value: [0, false, false] },
+  { key: 'js_fonts', value: ['Arial'] },
+  { key: 'audio_fp', value: '124.04' },
 ];
 const profile: FingerprintProfile = {
-  version: 1, capturedAt: 'x', userAgent: 'Mozilla/5.0 TestBrowser', languages: ['en-US', 'en'],
-  webdriver: false, fp: hashComponents(components), components,
+  version: 1,
+  capturedAt: 'x',
+  userAgent: 'Mozilla/5.0 TestBrowser',
+  languages: ['en-US', 'en'],
+  webdriver: false,
+  fp: hashComponents(components),
+  components,
 };
 
 const GAME_HTML = `<html><script>Game.init({"currentWorldName":"Quebec"});
 Player.init({"h":"0b89b1","prop":{"a":"}{"}});
 Character.init({"playerId":42,"name":"shallax","level":30,"health":100});</script></html>`;
 
-interface Call { method: string; url: string; body: string | null; headers: Headers }
+interface Call {
+  method: string;
+  url: string;
+  body: string | null;
+  headers: Headers;
+}
 let calls: Call[];
 let realFetch: typeof fetch;
 let dir: string;
@@ -56,7 +81,8 @@ function fakeServers(opts: { gameAcceptsSid?: Set<string> } = {}) {
     if (url === `${PORTAL}/`) return res(200, [['set-cookie', 'PHPSESSID=portal; path=/']], '<html>');
     if (url.startsWith(`${PORTAL}/index.php?ajax=check_login`)) {
       if (!cookie.includes('PHPSESSID=portal')) return Response.json({ error: 'cookies disabled' });
-      if (form?.get('name') !== 'Tester' || form.get('password') !== 'secret') return Response.json({ error: 'Wrong name or password' });
+      if (form?.get('name') !== 'Tester' || form.get('password') !== 'secret')
+        return Response.json({ error: 'Wrong name or password' });
       return Response.json({ player_id: 42, password: 'tokenhash', playerWorlds: { 12: [12, 1], 38: [38, 1] } });
     }
     if (url === `${PORTAL}/index.php?action=login`) {
@@ -67,7 +93,10 @@ function fakeServers(opts: { gameAcceptsSid?: Set<string> } = {}) {
     if (url.startsWith(`${GAME}/game.php?sid=`)) {
       const sid = new URL(url).searchParams.get('sid')!;
       sessions.add(sid);
-      return res(302, [['location', '/game.php'], ['set-cookie', `sid=${sid}; path=/`]]);
+      return res(302, [
+        ['location', '/game.php'],
+        ['set-cookie', `sid=${sid}; path=/`],
+      ]);
     }
     if (url.startsWith('https://en12.')) return res(302, [['location', `${PORTAL}/`]]);
     const sid = /(?:^|; )sid=([^;]+)/.exec(cookie)?.[1];
@@ -76,7 +105,7 @@ function fakeServers(opts: { gameAcceptsSid?: Set<string> } = {}) {
       return res(200, [], GAME_HTML);
     }
     if (url === `${GAME}/game.php?window=anti_cheat&action=record_fp&h=0b89b1`) return Response.json({ error: false });
-    return res(404, [], 'unexpected ' + url);
+    return res(404, [], `unexpected ${url}`);
   }) as typeof fetch;
   return sessions;
 }
@@ -100,7 +129,9 @@ test('full login: portal → world → game.php bootstrap → record_fp, then se
   const sessions = fakeServers();
   const sessionFile = join(dir, 'session.json');
   const opts = {
-    profile, policy: FAST, sessionFile,
+    profile,
+    policy: FAST,
+    sessionFile,
     world: { url: GAME, locale: 'en_DK' },
     credentials: async () => ({ name: 'Tester', password: 'secret' }),
   };
@@ -110,7 +141,10 @@ test('full login: portal → world → game.php bootstrap → record_fp, then se
   assert.equal(game.bootstrap.character?.name, 'shallax');
   assert.ok(calls.some((c) => c.url.includes('check_login') && c.url.includes('locale=en_DK')));
   // Wrong world (12) is skipped, correct one (38) entered.
-  assert.deepEqual(calls.filter((c) => c.url.endsWith('action=login')).map((c) => new URLSearchParams(c.body!).get('world_id')), ['12', '38']);
+  assert.deepEqual(
+    calls.filter((c) => c.url.endsWith('action=login')).map((c) => new URLSearchParams(c.body!).get('world_id')),
+    ['12', '38'],
+  );
   // Fingerprint sent once, with the browser's exact body and identity headers.
   const fp = calls.filter((c) => c.url.includes('record_fp'));
   assert.equal(fp.length, 1);
@@ -139,7 +173,13 @@ test('full login: portal → world → game.php bootstrap → record_fp, then se
 test('wrong password is reported', async () => {
   fakeServers();
   await assert.rejects(
-    ensureGame({ profile, policy: FAST, sessionFile: join(dir, 's.json'), world: { url: GAME, locale: 'en_DK' }, credentials: async () => ({ name: 'Tester', password: 'nope' }) }),
+    ensureGame({
+      profile,
+      policy: FAST,
+      sessionFile: join(dir, 's.json'),
+      world: { url: GAME, locale: 'en_DK' },
+      credentials: async () => ({ name: 'Tester', password: 'nope' }),
+    }),
     (e: unknown) => e instanceof AuthError && /Wrong name or password/.test(e.message),
   );
 });

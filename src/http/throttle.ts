@@ -105,7 +105,11 @@ function retryAfterMs(res: Response): number | undefined {
 
 const retryable = (status: number) => status === 429 || status >= 500;
 
-export async function throttledFetch(url: string, init: RequestInit = {}, policy: HostPolicy = INTERACTIVE_POLICY): Promise<Response> {
+export async function throttledFetch(
+  url: string,
+  init: RequestInit = {},
+  policy: HostPolicy = INTERACTIVE_POLICY,
+): Promise<Response> {
   const host = new URL(url).host;
   const s = state(policy.lane ? `${host}#${policy.lane}` : host);
   if (s.pausedUntil > Date.now()) throw new HostPausedError(host, s.pausedUntil);

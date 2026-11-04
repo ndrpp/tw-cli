@@ -1,17 +1,18 @@
 // Home screen (g h, the start screen): what the character is doing now and what is queued. No browser
 // counterpart; it gathers the header, task queue, report list and chat the web shows in separate windows.
 // Layout: working · session · task queue (left) | minimap · reports (right) · chat (bottom, interactive).
+
+import { Box, type DOMElement, measureElement, Text, useInput } from 'ink';
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Text, measureElement, useInput, type DOMElement } from 'ink';
-import type { ScreenProps } from './character.ts';
 import type { GameState } from '../game/state.ts';
 import { regenSeconds } from '../game/timeline.ts';
+import { defined } from '../util/defined.ts';
+import type { ScreenProps } from './character.ts';
+import { ChatPanel, chatRoomIds } from './chat.ts';
 import { bar, formatDuration, money, truncate } from './format.ts';
 import { ICON, stepIcon, taskIcon } from './icons.ts';
 import { buildGrid, ZOOMS } from './map.ts';
-import { ChatPanel, chatRoomIds } from './chat.ts';
 import { QueuePane } from './queue.ts';
-import { defined } from '../util/defined.ts';
 
 const h = React.createElement;
 /** How long the "done" line shows after a task ends. */
@@ -51,35 +52,39 @@ export function HomeScreen({ state, width, height, onCapture, active = true }: S
     return () => clearTimeout(t);
   }, [state.rates.jobsDone]);
 
-  useInput((input, key) => {
-    if (confirm) {
-      if (input === 'y') void state.cancel(0);
-      return setConfirm(false);
-    }
-    if (draft !== null) {
-      if (key.escape) return setDraft(null);
-      if (key.return) {
-        const id = chatRoomIds(state)[room];
-        setDraft(null);
-        if (id && draft.trim()) void state.chatSay(id, draft);
+  useInput(
+    (input, key) => {
+      if (confirm) {
+        if (input === 'y') void state.cancel(0);
+        return setConfirm(false);
+      }
+      if (draft !== null) {
+        if (key.escape) return setDraft(null);
+        if (key.return) {
+          const id = chatRoomIds(state)[room];
+          setDraft(null);
+          if (id && draft.trim()) void state.chatSay(id, draft);
+          return;
+        }
+        if (key.backspace || key.delete) return setDraft(draft.slice(0, -1));
+        if (input && !key.ctrl && !key.meta) setDraft(draft + input);
         return;
       }
-      if (key.backspace || key.delete) return setDraft(draft.slice(0, -1));
-      if (input && !key.ctrl && !key.meta) setDraft(draft + input);
-      return;
-    }
-    const n = chatRoomIds(state).length;
-    if (key.leftArrow || input === 'h') return setRoom((i) => (n ? (Math.min(i, n - 1) + n - 1) % n : 0));
-    if (key.rightArrow || input === 'l') return setRoom((i) => (n ? (Math.min(i, n - 1) + 1) % n : 0));
-    if (key.return) {
-      if (!state.live?.active) return state.error('Live updates are off: press g L to connect to chat.');
-      if (!n) return state.error('No chat room yet (still connecting).');
-      return setDraft('');
-    }
-    if ((input === 'c' || key.delete) && state.queue[0]) return setConfirm(true);
-    if (input === '+' || input === '=') return setZoom((z) => ZOOMS[Math.max(0, ZOOMS.indexOf(z) - 1)]!);
-    if (input === '-' || input === '_') return setZoom((z) => ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(z) + 1)]!);
-  }, { isActive: active });
+      const n = chatRoomIds(state).length;
+      if (key.leftArrow || input === 'h') return setRoom((i) => (n ? (Math.min(i, n - 1) + n - 1) % n : 0));
+      if (key.rightArrow || input === 'l') return setRoom((i) => (n ? (Math.min(i, n - 1) + 1) % n : 0));
+      if (key.return) {
+        if (!state.live?.active) return state.error('Live updates are off: press g L to connect to chat.');
+        if (!n) return state.error('No chat room yet (still connecting).');
+        return setDraft('');
+      }
+      if ((input === 'c' || key.delete) && state.queue[0]) return setConfirm(true);
+      if (input === '+' || input === '=') return setZoom((z) => ZOOMS[Math.max(0, ZOOMS.indexOf(z) - 1)] ?? z);
+      if (input === '-' || input === '_')
+        return setZoom((z) => ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(z) + 1)] ?? z);
+    },
+    { isActive: active },
+  );
 
   // Small terminals drop panels: chat first, then the right column (minimap, reports).
   const chatH = height >= 24 ? Math.max(6, Math.floor(height * 0.3)) : 0;
@@ -89,18 +94,31 @@ export function HomeScreen({ state, width, height, onCapture, active = true }: S
   const rightW = width - leftW;
   const mapH = Math.max(6, Math.floor(topH * 0.5));
 
-  return h(Box, { flexDirection: 'column', width, height },
-    h(Box, { height: topH },
-      h(Box, { flexDirection: 'column', width: leftW, height: topH },
+  return h(
+    Box,
+    { flexDirection: 'column', width, height },
+    h(
+      Box,
+      { height: topH },
+      h(
+        Box,
+        { flexDirection: 'column', width: leftW, height: topH },
         h(WorkingPanel, { state, width: leftW, confirm }),
         h(SessionPanel, { state, width: leftW }),
-        h(Box, { ref: queueBox, flexGrow: 1, flexDirection: 'column', overflow: 'hidden' },
-          h(QueuePane, { state, selected: 0, focused: false, width: leftW, confirm: false, maxRows: queueRows })),
+        h(
+          Box,
+          { ref: queueBox, flexGrow: 1, flexDirection: 'column', overflow: 'hidden' },
+          h(QueuePane, { state, selected: 0, focused: false, width: leftW, confirm: false, maxRows: queueRows }),
+        ),
       ),
-      wide ? h(Box, { flexDirection: 'column', width: rightW, height: topH },
-        h(Minimap, { state, width: rightW, height: mapH, zoom }),
-        h(ReportsPanel, { state, width: rightW, height: topH - mapH }),
-      ) : null,
+      wide
+        ? h(
+            Box,
+            { flexDirection: 'column', width: rightW, height: topH },
+            h(Minimap, { state, width: rightW, height: mapH, zoom }),
+            h(ReportsPanel, { state, width: rightW, height: topH - mapH }),
+          )
+        : null,
     ),
     chatH ? h(ChatPanel, { state, width, height: chatH, focused: true, roomIdx: room, draft }) : null,
   );
@@ -121,36 +139,82 @@ function WorkingPanel({ state, width, confirm }: { state: GameState; width: numb
   }
   let title = 'Idle';
   if (!head) {
-    rows.push(h(Text, { key: 'idle', color: 'yellow', wrap: 'truncate' },
-      last ? `Nothing queued for ${formatDuration(now - last.end)}` : 'Nothing queued', h(Text, { dimColor: true }, ' · g j jobs · g a autopilot')));
+    rows.push(
+      h(
+        Text,
+        { key: 'idle', color: 'yellow', wrap: 'truncate' },
+        last ? `Nothing queued for ${formatDuration(now - last.end)}` : 'Nothing queued',
+        h(Text, { dimColor: true }, ' · g j jobs · g a autopilot'),
+      ),
+    );
   } else {
-    const walking = !!head.way && head.way.end > now;
-    const from = walking ? head.way!.start : head.way?.end ?? head.start;
-    const to = walking ? head.way!.end : head.end;
+    const way = head.way;
+    const walking = way !== undefined && way.end > now;
+    const from = way ? (walking ? way.start : way.end) : head.start;
+    const to = walking && way ? way.end : head.end;
     const ratio = to > from ? Math.min(1, Math.max(0, (now - from) / (to - from))) : 1;
     const q = head.type === 'job' ? state.queuedJob(head) : null;
-    title = walking ? `${ICON.walk} Walking` : head.type === 'job' ? `${ICON.job} Working` : head.type === 'sleep' ? `${ICON.sleep} Sleeping` : `${taskIcon(head.type)} ${head.title}`;
-    rows.push(h(Text, { key: 't', bold: true, wrap: 'truncate' },
-      walking ? `${ICON.walk} ${head.title}` : head.title,
-      h(Text, { dimColor: true, bold: false }, ` · ${head.coords.x},${head.coords.y} · ${formatDuration(head.end - (head.way?.end ?? head.start))}`)));
-    rows.push(h(Text, { key: 'bar', wrap: 'truncate' },
-      h(Text, { color: walking ? 'cyan' : 'green' }, bar(ratio, 1, Math.max(8, w - 28))),
-      ` ${String(Math.floor(ratio * 100)).padStart(3)}%  ${formatDuration(to - now)} left (${clockTime(to)})`));
+    title = walking
+      ? `${ICON.walk} Walking`
+      : head.type === 'job'
+        ? `${ICON.job} Working`
+        : head.type === 'sleep'
+          ? `${ICON.sleep} Sleeping`
+          : `${taskIcon(head.type)} ${head.title}`;
+    rows.push(
+      h(
+        Text,
+        { key: 't', bold: true, wrap: 'truncate' },
+        walking ? `${ICON.walk} ${head.title}` : head.title,
+        h(
+          Text,
+          { dimColor: true, bold: false },
+          ` · ${head.coords.x},${head.coords.y} · ${formatDuration(head.end - (head.way?.end ?? head.start))}`,
+        ),
+      ),
+    );
+    rows.push(
+      h(
+        Text,
+        { key: 'bar', wrap: 'truncate' },
+        h(Text, { color: walking ? 'cyan' : 'green' }, bar(ratio, 1, Math.max(8, w - 28))),
+        ` ${String(Math.floor(ratio * 100)).padStart(3)}%  ${formatDuration(to - now)} left (${clockTime(to)})`,
+      ),
+    );
     if (q) {
       const v = q.values;
       const luck = q.job.luckValue[1] > 0 ? `  luck ${money(q.job.luckValue[0])}–${money(q.job.luckValue[1])}` : '';
-      rows.push(h(Text, { key: 'r', wrap: 'truncate' },
-        h(Text, { color: 'green' }, `+${v.experience} xp  ${money(v.money)}`), luck,
-        q.job.danger !== null ? h(Text, defined({ color: q.job.danger >= 50 ? 'red' : undefined }), `  danger ${q.job.danger}%`) : ''));
-      const drops = (v.items?.length ? v.items.map((i) => ({ name: state.itemName(i.itemId), percent: i.percent as number | null })) : state.jobProducts(q.job))
-        .map((p) => `${p.name}${p.percent !== null ? ` ${p.percent}%` : ''}`).join(' · ');
+      rows.push(
+        h(
+          Text,
+          { key: 'r', wrap: 'truncate' },
+          h(Text, { color: 'green' }, `+${v.experience} xp  ${money(v.money)}`),
+          luck,
+          q.job.danger !== null
+            ? h(Text, defined({ color: q.job.danger >= 50 ? 'red' : undefined }), `  danger ${q.job.danger}%`)
+            : '',
+        ),
+      );
+      const drops = (
+        v.items?.length
+          ? v.items.map((i) => ({ name: state.itemName(i.itemId), percent: i.percent as number | null }))
+          : state.jobProducts(q.job)
+      )
+        .map((p) => `${p.name}${p.percent !== null ? ` ${p.percent}%` : ''}`)
+        .join(' · ');
       if (drops) rows.push(h(Text, { key: 'd', color: 'magenta', wrap: 'truncate' }, `Drops: ${drops}`));
     }
     const next = state.queue[1];
     if (next) {
-      const end = state.queue[state.queue.length - 1]!.end;
+      const end = state.queue[state.queue.length - 1]?.end ?? next.end;
       const more = state.queue.length > 2 ? ` (+${state.queue.length - 2} more)` : '';
-      rows.push(h(Text, { key: 'n', dimColor: true, wrap: 'truncate' }, `then ${truncate(next.title, Math.max(8, w - 30))}${more} · queue ends ${clockTime(end)}`));
+      rows.push(
+        h(
+          Text,
+          { key: 'n', dimColor: true, wrap: 'truncate' },
+          `then ${truncate(next.title, Math.max(8, w - 30))}${more} · queue ends ${clockTime(end)}`,
+        ),
+      );
     }
   }
   const cfg = state.autopilot.config;
@@ -158,12 +222,27 @@ function WorkingPanel({ state, width, confirm }: { state: GameState; width: numb
   if (cfg.running || plan) {
     const next = plan?.tasks[0];
     const status = cfg.running ? (cfg.modules.dryRun ? 'dry run' : 'running') : 'paused';
-    rows.push(h(Text, { key: 'ap', wrap: 'truncate' },
-      h(Text, { color: cfg.running ? 'green' : 'yellow' }, `autopilot ${status}`),
-      h(Text, { dimColor: true }, next ? ` · ${cfg.running ? 'next' : 'would do'}: ${stepIcon(next.step, next.action)} ${next.step.title} (${next.why ?? plan!.why})` : plan ? ` · ${plan.why}` : ' · planning…')));
+    rows.push(
+      h(
+        Text,
+        { key: 'ap', wrap: 'truncate' },
+        h(Text, { color: cfg.running ? 'green' : 'yellow' }, `autopilot ${status}`),
+        h(
+          Text,
+          { dimColor: true },
+          next
+            ? ` · ${cfg.running ? 'next' : 'would do'}: ${stepIcon(next.step, next.action)} ${next.step.title} (${next.why ?? plan?.why ?? ''})`
+            : plan
+              ? ` · ${plan.why}`
+              : ' · planning…',
+        ),
+      ),
+    );
   }
   if (confirm && head) rows.push(h(Text, { key: 'cf', color: 'red', wrap: 'truncate' }, `Cancel ${head.title}? y / n`));
-  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width, paddingX: 1, flexShrink: 0 },
+  return h(
+    Box,
+    { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width, paddingX: 1, flexShrink: 0 },
     h(Text, { bold: true, color: 'cyan' }, title),
     ...rows,
   );
@@ -178,23 +257,49 @@ function SessionPanel({ state, width }: { state: GameState; width: number }) {
   const tl = state.queue.length ? state.timeline() : null;
   const left = tl ? tl.end - now : 0;
   const p = c.progress;
-  const eta = r && r.xpH > 0 && !p.maxed ? ` · lvl ${c.level + 1} in ~${formatDuration(Math.round(((p.need - p.have) / r.xpH) * 3600))}` : '';
+  const eta =
+    r && r.xpH > 0 && !p.maxed
+      ? ` · lvl ${c.level + 1} in ~${formatDuration(Math.round(((p.need - p.have) / r.xpH) * 3600))}`
+      : '';
   const full = (have: number, max: number, rate: number) => {
     const s = regenSeconds(have, max, max, rate);
     return s === 0 ? 'full' : Number.isFinite(s) ? `full ${clockTime(now + s)}` : '—';
   };
-  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width, paddingX: 1, flexShrink: 0 },
-    h(Text, { bold: true, wrap: 'truncate' }, 'Session',
-      h(Text, { dimColor: true, bold: false }, ` · ${state.rates.jobsDone} job(s) · ${first ? formatDuration(now - first.t) : '0s'}`)),
-    h(Text, { wrap: 'truncate' },
+  return h(
+    Box,
+    { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width, paddingX: 1, flexShrink: 0 },
+    h(
+      Text,
+      { bold: true, wrap: 'truncate' },
+      'Session',
+      h(
+        Text,
+        { dimColor: true, bold: false },
+        ` · ${state.rates.jobsDone} job(s) · ${first ? formatDuration(now - first.t) : '0s'}`,
+      ),
+    ),
+    h(
+      Text,
+      { wrap: 'truncate' },
       h(Text, { color: 'green' }, r ? `${perHour(r.xpH)} xp/h  ${money(Math.round(r.moneyH))}/h` : 'measuring…'),
-      h(Text, { dimColor: true }, r ? ` (last ${formatDuration(r.span)})${eta}` : ' (needs 5 min)')),
+      h(Text, { dimColor: true }, r ? ` (last ${formatDuration(r.span)})${eta}` : ' (needs 5 min)'),
+    ),
     tl && left > 60
-      ? h(Text, { dimColor: true, wrap: 'truncate' }, `queued: ${perHour((tl.gained.xp * 3600) / left)} xp/h ${money(Math.round((tl.gained.money * 3600) / left))}/h until ${clockTime(tl.end)}`)
+      ? h(
+          Text,
+          { dimColor: true, wrap: 'truncate' },
+          `queued: ${perHour((tl.gained.xp * 3600) / left)} xp/h ${money(Math.round((tl.gained.money * 3600) / left))}/h until ${clockTime(tl.end)}`,
+        )
       : null,
-    h(Text, { wrap: 'truncate' },
-      h(Text, { color: 'cyan' }, 'EN '), full(c.energy, c.maxEnergy, c.energyRegen), '   ',
-      h(Text, { color: 'red' }, 'HP '), full(c.health, c.maxHealth, c.healthRegen)),
+    h(
+      Text,
+      { wrap: 'truncate' },
+      h(Text, { color: 'cyan' }, 'EN '),
+      full(c.energy, c.maxEnergy, c.energyRegen),
+      '   ',
+      h(Text, { color: 'red' }, 'HP '),
+      full(c.health, c.maxHealth, c.healthRegen),
+    ),
   );
 }
 
@@ -204,11 +309,28 @@ function Minimap({ state, width, height, zoom }: { state: GameState; width: numb
   const rows = Math.max(2, height - 3);
   const grid = buildGrid(state, { ...state.character.position, zoom }, cols, rows);
   const county = state.world.countyAt(state.character.position);
-  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width, height, flexShrink: 0 },
-    h(Text, { bold: true, wrap: 'truncate' }, ` ${county?.name ?? 'Map'}`, h(Text, { dimColor: true, bold: false }, ` · ${zoom}px · +/- zoom · m map`)),
+  return h(
+    Box,
+    { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width, height, flexShrink: 0 },
+    h(
+      Text,
+      { bold: true, wrap: 'truncate' },
+      ` ${county?.name ?? 'Map'}`,
+      h(Text, { dimColor: true, bold: false }, ` · ${zoom}px · +/- zoom · m map`),
+    ),
     ...grid.map((segs, r) =>
-      h(Text, { key: r, wrap: 'truncate' },
-        ...segs.map((s, i) => h(Text, defined({ key: i, color: s.color, dimColor: s.dim, bold: s.bold }), s.inverse && s.text === '+' ? ' ' : s.text)))),
+      h(
+        Text,
+        { key: r, wrap: 'truncate' },
+        ...segs.map((s, i) =>
+          h(
+            Text,
+            defined({ key: i, color: s.color, dimColor: s.dim, bold: s.bold }),
+            s.inverse && s.text === '+' ? ' ' : s.text,
+          ),
+        ),
+      ),
+    ),
   );
 }
 
@@ -218,11 +340,35 @@ function ReportsPanel({ state, width, height }: { state: GameState; width: numbe
   const shown = list?.slice(0, Math.max(1, Math.floor((height - 3) / 2))) ?? [];
   const unread = list?.filter((r) => !r.read).length ?? 0;
   const w = width - 4;
-  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width, height, paddingX: 1, overflow: 'hidden' },
-    h(Text, { bold: true, wrap: 'truncate' }, 'Reports', h(Text, { dimColor: true, bold: false }, `${unread ? ` · ${unread} unread` : ''} · M all`)),
-    list === null ? h(Text, { dimColor: true }, 'Loading…') : list.length ? null : h(Text, { dimColor: true }, 'No reports.'),
+  return h(
+    Box,
+    {
+      flexDirection: 'column',
+      borderStyle: 'round',
+      borderColor: 'gray',
+      width,
+      height,
+      paddingX: 1,
+      overflow: 'hidden',
+    },
+    h(
+      Text,
+      { bold: true, wrap: 'truncate' },
+      'Reports',
+      h(Text, { dimColor: true, bold: false }, `${unread ? ` · ${unread} unread` : ''} · M all`),
+    ),
+    list === null
+      ? h(Text, { dimColor: true }, 'Loading…')
+      : list.length
+        ? null
+        : h(Text, { dimColor: true }, 'No reports.'),
     ...shown.flatMap((r) => [
-      h(Text, { key: `${r.id}t`, bold: !r.read, wrap: 'truncate' }, truncate(`${r.read ? ' ' : '•'}${r.title}`, w - r.date.length - 1), h(Text, { dimColor: true, bold: false }, ` ${r.date}`)),
+      h(
+        Text,
+        { key: `${r.id}t`, bold: !r.read, wrap: 'truncate' },
+        truncate(`${r.read ? ' ' : '•'}${r.title}`, w - r.date.length - 1),
+        h(Text, { dimColor: true, bold: false }, ` ${r.date}`),
+      ),
       h(Text, { key: `${r.id}s`, dimColor: true, wrap: 'truncate' }, `  ${r.summary.replace(/\s*\n\s*/g, ' · ')}`),
     ]),
   );

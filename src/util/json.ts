@@ -19,7 +19,8 @@ export const objs = (v: unknown): JsonObject[] => arr(v).filter(isObj);
 export const vals = (v: unknown): unknown[] => (typeof v === 'object' && v !== null ? Object.values(v) : []);
 
 /** Entries of an object or array. */
-export const entries = (v: unknown): [string, unknown][] => (typeof v === 'object' && v !== null ? Object.entries(v) : []);
+export const entries = (v: unknown): [string, unknown][] =>
+  typeof v === 'object' && v !== null ? Object.entries(v) : [];
 
 /** Saved values over the defaults, recursively, keeping only keys the default has, with the default's type (a null default takes anything). */
 export function mergeDefaults<T extends object>(def: T, saved: unknown): T {
@@ -35,7 +36,8 @@ export function mergeDefaults<T extends object>(def: T, saved: unknown): T {
 }
 
 /** An object's values as numbers (non-numbers → 0); `{}` when `v` is not an object. */
-export const nums = (v: unknown): Record<string, number> => Object.fromEntries(Object.entries(obj(v)).map(([k, n]) => [k, Number(n) || 0]));
+export const nums = (v: unknown): Record<string, number> =>
+  Object.fromEntries(Object.entries(obj(v)).map(([k, n]) => [k, Number(n) || 0]));
 
 /** Number(v), or null when `v` is null or missing. */
 export const numOrNull = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));

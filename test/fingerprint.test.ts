@@ -1,10 +1,15 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
+import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { x64hash128 } from '../src/fingerprint/murmur.ts';
-import { hashComponents, validateProfile, FingerprintProfileError, type FingerprintProfile } from '../src/fingerprint/profile.ts';
+import {
+  type FingerprintProfile,
+  FingerprintProfileError,
+  hashComponents,
+  validateProfile,
+} from '../src/fingerprint/profile.ts';
 import { recordFpPayload } from '../src/fingerprint/record.ts';
 import { jqueryParam } from '../src/http/form.ts';
 
@@ -34,7 +39,7 @@ function randomString(len: number, maxCode: number): string {
   return s;
 }
 
-test('x64hash128 port matches the game\'s original implementation', { skip: !original && 'game.php not found' }, () => {
+test("x64hash128 port matches the game's original implementation", { skip: !original && 'game.php not found' }, () => {
   const cases = ['', 'a', 'The West', '~~~', 'x'.repeat(16), 'x'.repeat(31), 'ü€😀 non-latin tail'];
   for (let len = 0; len < 80; len++) {
     cases.push(randomString(len, 128), randomString(len, 0x10000));
