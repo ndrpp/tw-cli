@@ -7,9 +7,9 @@ import type { Hotel } from '../game/hotel.ts';
 
 const h = React.createElement;
 
-export type Mode = 'home' | 'main' | 'map' | 'char' | 'quests' | 'mail' | 'trade' | 'duels' | 'chat' | 'autopilot';
+export type Mode = 'home' | 'main' | 'map' | 'char' | 'quests' | 'mail' | 'trade' | 'duels' | 'chat' | 'autopilot' | 'debug';
 /** Full screens that handle their own keys (global shortcuts still work unless they capture input). */
-export const SCREEN_MODES: Mode[] = ['home', 'char', 'quests', 'mail', 'trade', 'duels', 'chat', 'autopilot'];
+export const SCREEN_MODES: Mode[] = ['home', 'char', 'quests', 'mail', 'trade', 'duels', 'chat', 'autopilot', 'debug'];
 
 const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
   global: [
@@ -24,6 +24,7 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
     ['D', 'duels: NPCs & players'],
     ['C', 'full chat: rooms & whispers (needs live updates)'],
     ['G', 'autopilot: priorities, modules, projected queue'],
+    ['B', 'debug: everything logged, planner input / output, live autopilot view'],
     ['s', 'sleep: hotel of your town (map: selected town)'],
     ['p', 'points of interest (jump on map)'],
     ['u', 'refresh (queue / inventory / quests)'],
@@ -129,6 +130,16 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
     ['u', 'refresh'],
     ['Esc', 'back'],
   ],
+  debug: [
+    ['Tab', 'log ⇄ now (live: energy, HP, towns, bag, quests + distances)'],
+    ['↑ ↓  j k', 'move (the newest is followed at the bottom) · PgUp/PgDn ×page'],
+    ['e', 'follow the newest entry'],
+    ['J K', 'scroll the entry data'],
+    ['f', 'category: all · log · state · request · autopilot · sim · quest'],
+    ['/', 'filter by title (Enter keep, Esc clear)'],
+    ['x', 'clear the screen\'s list (files stay)'],
+    ['Esc', 'back'],
+  ],
   chat: [
     ['↑ ↓  j k', 'room / whisper conversation'],
     ['Enter', 'write a message (Enter sends, Esc cancels)'],
@@ -137,7 +148,7 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
   ],
 };
 
-const MODE_TITLE: Record<Mode, string> = { home: 'Home', main: 'Jobs & queue', map: 'Map', char: 'Character', quests: 'Quests', mail: 'Mail', trade: 'Trade', duels: 'Duels', chat: 'Chat', autopilot: 'Autopilot' };
+const MODE_TITLE: Record<Mode, string> = { home: 'Home', main: 'Jobs & queue', map: 'Map', char: 'Character', quests: 'Quests', mail: 'Mail', trade: 'Trade', duels: 'Duels', chat: 'Chat', autopilot: 'Autopilot', debug: 'Debug' };
 
 const LEGEND: [string, string, string][] = [
   ['@', 'green', 'you'], ['1-9', 'cyan', 'queued tasks'], ['H', 'cyan', 'home town'], ['T', 'white', 'town'],

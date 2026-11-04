@@ -9,7 +9,7 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
 
 ## Keys
 - `App`'s `useInput` handles **global keys first**, then screens get the rest: `? q m p u r A i o L H W M $ D C
-  G s` (`H` is not global on the map, where it pans). A screen cannot use these unless it captures input.
+  G B s` (`H` is not global on the map, where it pans). A screen cannot use these unless it captures input.
 - Screens (`SCREEN_MODES`) receive `onCapture(bool)`: while true, global keys are skipped (text entry, confirm
   prompts, the autopilot's queue view). Always release it on close/unmount.
 - Taken screen-level uppercase keys: `P` (trade: pick up), `R` (quests/mail; autopilot: run/pause), `T`
@@ -28,6 +28,9 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
   fetches page 1 for its log line) fills `recentReports`; without live updates, one re-read 5 s after a job ends.
 - **Jobs** (mode `main`, `W`): full-height list (xp / $ of the longest run, LP, travel; `!` marks jobs for the
   highlighted quest), detail with xp per energy, queue with its end time and total. No chat here.
+- **Debug** (`debug.ts`, mode `debug`, `B`): left the debug log (`state.debug`, newest followed at the bottom
+  until you move up; `f` category, `/` title filter), right the selected entry's data as pretty JSON (`J K`
+  scroll). `Tab` switches to **Now**: `runner.context()` live, one line per field, lists one item per line.
 - **Map**: `m` / Esc go back to the screen it was opened from (`beforeMap`).
 
 ## Rendering

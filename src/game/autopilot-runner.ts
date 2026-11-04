@@ -7,7 +7,7 @@ import type { GameState } from './state.ts';
 import type { PlannedTask } from './autopilot-config.ts';
 import { duelOutlook, fingerprint } from './autopilot-config.ts';
 import { DuelApi } from './duels.ts';
-import { parseConsumable, planAutopilot, type Consumable, type HotelOption, type Plan } from './autopilot.ts';
+import { parseConsumable, planAutopilot, type Consumable, type HotelOption, type Plan, type PlanInput } from './autopilot.ts';
 import { fetchHotel } from './hotel.ts';
 import { QuestModule } from './autopilot-quests.ts';
 import { wayTime } from './jobs.ts';
@@ -66,6 +66,7 @@ export class AutopilotRunner {
     f.count++;
     f.until = Date.now() + BACKOFF_S[Math.min(f.count, 3) - 1]! * 1000;
     this.failures.set(key, f);
+    this.state.debug.add('autopilot', `Failure ${f.count}/3: ${key}`, { key, msg, count: f.count, retryAt: new Date(f.until).toISOString() });
     this.state.error(`Autopilot: ${msg}${f.count >= 3 ? ' (skipped from now on; plan redone without it)' : ` (retry in ${BACKOFF_S[f.count - 1]! / 60} min)`}`);
     if (/session|logged out|log in|login/i.test(msg)) this.pause('the session expired; reconnect with r or A');
   }
@@ -155,9 +156,13 @@ export class AutopilotRunner {
   }
 
   private snapshot(fixedQueue = this.state.queue, energyBonus = 0, hotels = this.hotelOptions()): Plan {
+    return planAutopilot(this.planInput(fixedQueue, energyBonus, hotels));
+  }
+
+  private planInput(fixedQueue = this.state.queue, energyBonus = 0, hotels = this.hotelOptions()): PlanInput {
     const s = this.state;
     const c = s.character;
-    return planAutopilot({
+    return {
       start: {
         now: s.clock.now(), at: c.position, energy: Math.min(c.maxEnergy, c.energy + energyBonus), maxEnergy: c.maxEnergy, health: c.health, maxHealth: c.maxHealth,
         energyRegen: c.energyRegen, healthRegen: c.healthRegen, level: c.level, experience: c.experience, maxLevel: c.maxLevel, cash: c.cash,
@@ -176,7 +181,79 @@ export class AutopilotRunner {
       towns: s.world.towns.filter((t) => t.name).map((t) => ({ id: t.id, name: t.name!, at: { x: t.x, y: t.y } })),
       budget: this.budget(),
       skip: this.skipped(),
-    });
+    };
+  }
+
+  /**
+   * What the autopilot sees right now, for the debug log and screen: energy, HP, where you are and how far the
+   * home / nearest town is, the bag, and every open quest with its requirements and the nearest place to get each.
+   */
+  context(): Record<string, unknown> {
+    const s = this.state;
+    const c = s.character;
+    const way = (to: { x: number; y: number }) => Math.round(wayTime(c.position, to, s.travelSpeed, c.speed));
+    const named = s.world.towns.filter((t) => t.name);
+    const nearest = named.length ? named.reduce((a, b) => (way(b) < way(a) ? b : a)) : undefined;
+    const home = c.homeTown;
+    const homeTown = home ? s.world.towns.find((t) => t.id === home.id) : undefined;
+    const needs = s.autopilotNeeds();
+    return {
+      energy: `${c.energy}/${c.maxEnergy}`, health: `${c.health}/${c.maxHealth}`,
+      homeTown: home ? { name: homeTown?.name ?? `town ${home.id}`, at: { x: home.x, y: home.y }, seconds: way(home) } : null,
+      nearestTown: nearest ? { name: nearest.name, at: { x: nearest.x, y: nearest.y }, seconds: way(nearest) } : null,
+      position: c.position, townHere: s.townHere?.name ?? null, queueEnd: s.queueEndPosition,
+      quests: s.quests.map((q) => ({
+        id: q.id, title: q.title, chain: q.group, finishable: q.finishable,
+        inScope: needs.some((n) => n.quests.includes(q.title)) || undefined,
+        giver: q.employerName, giverSeconds: q.employerAt ? way(q.employerAt) : null,
+        requirements: q.requirements.map((r) => {
+          const src = r.solved ? [] : s.requirementSources(r).sort((a, b) => (a.way ?? Infinity) - (b.way ?? Infinity));
+          return {
+            info: r.info, kind: r.kind, solved: r.solved,
+            have: r.itemId !== undefined ? s.inventory.countBase(r.itemId) : undefined, need: r.count,
+            nearest: src[0] ? { job: src[0].job.name, at: src[0].at, seconds: src[0].way === null ? null : Math.round(src[0].way), chance: src[0].chance, fromQueueEnd: true } : undefined,
+            sources: src.length || undefined,
+          };
+        }),
+      })),
+      inventory: [...s.inventory.bag.values()].map((b) => ({ id: b.itemId, name: s.itemName(b.itemId), count: b.count })),
+      consumables: this.consumables().map((x) => ({ name: x.name, usable: x.count, effect: x.effect })),
+      worn: Object.fromEntries([...s.inventory.wear].map(([slot, id]) => [slot, s.itemName(id)])),
+      queue: s.queue.map((q) => ({ title: q.title, type: q.type, start: new Date(q.start * 1000).toISOString(), end: new Date(q.end * 1000).toISOString() })),
+      taskLimit: s.taskLimit,
+      now: new Date(s.clock.now() * 1000).toISOString(),
+      running: this.cfg.running, dryRun: this.cfg.modules.dryRun, busy: s.busy,
+      server: c.serverValues, regen: { energyPerHour: c.energyRegen, healthPerHour: c.healthRegen },
+      level: c.level, experience: c.experience, cash: c.cash, deposit: c.deposit, budgetLeft: this.budget(),
+      needs,
+      failures: Object.fromEntries([...this.failures].map(([k, f]) => [k, { count: f.count, until: new Date(f.until).toISOString() }])),
+    };
+  }
+
+  /** The planner's input without functions, compact enough for the log (jobs: values per duration). */
+  private debugInput(input: PlanInput): Record<string, unknown> {
+    const { jobs, locations, wayTime: _w, itemValue: _v, skip, ...rest } = input;
+    return {
+      ...rest,
+      skip: [...(skip ?? [])],
+      jobs: jobs.map((j) => ({
+        id: j.id, name: j.name, motivation: j.motivation, danger: j.danger, doable: j.jobPoints >= j.workPoints,
+        excluded: input.rules.excludedJobs.includes(j.id) || undefined,
+        locations: locations(j.groupid)?.length ?? 0,
+        values: Object.fromEntries(Object.entries(j.values).map(([k, v]) => [k, v && { s: v.duration, e: v.energy, xp: v.experience, $: v.money }])),
+      })),
+    };
+  }
+
+  /** The plan as logged: tasks with why / value / wake, and the timeline's per-step states. */
+  private debugOutput(plan: Plan): Record<string, unknown> {
+    return {
+      why: plan.why, value: plan.value,
+      tasks: plan.tasks.map((t) => ({ key: t.key, module: t.module, step: t.step, why: t.why, value: t.value, wake: t.wake, action: t.action })),
+      timeline: plan.timeline.steps.map(({ step, ...st }) => ({ step: step.title, ...st })),
+      final: plan.timeline.final,
+      end: plan.timeline.end,
+    };
   }
 
   /** Replans now (debounced by the caller); logs what changed. */
@@ -186,8 +263,12 @@ export class AutopilotRunner {
     const hotels = this.hotelOptions();
     const print = fingerprint(this.inputs(hotels));
     const prev = this.plan;
-    const plan = this.snapshot(undefined, 0, hotels);
+    const input = this.planInput(undefined, 0, hotels);
+    const plan = planAutopilot(input);
     this.plan = plan;
+    this.state.debug.add('sim', `Replan (${reason}): ${plan.tasks.length} task(s), next ${plan.tasks[0]?.step.title ?? 'nothing'}`, {
+      reason, context: this.context(), input: this.debugInput(input), output: this.debugOutput(plan),
+    });
     this.stale = false;
     this.lastPrint = print;
     this.state.updateAutopilot((f) => (f.plan = { fingerprint: print, savedAt: Date.now(), tasks: plan.tasks }));
@@ -213,7 +294,12 @@ export class AutopilotRunner {
         s.info('Autopilot resumed.');
       }
     }
-    if (!this.cfg.running || this.cfg.modules.dryRun || !this.plan) return;
+    const d = s.debug;
+    if (!this.cfg.running || this.cfg.modules.dryRun || !this.plan) {
+      d.once('gate', 'autopilot', !this.plan ? 'Idle: no plan yet' : !this.cfg.running ? 'Idle: paused (plans only)' : 'Idle: dry run (plans only, sends nothing)');
+      return;
+    }
+    d.once('gate', 'autopilot', 'Acting: running');
     this.acting = true;
     try {
       if (await this.wakeUp()) return;
@@ -235,9 +321,10 @@ export class AutopilotRunner {
     const c = s.character;
     if (s.queue.length || c.health < 0.7 * c.maxHealth || Date.now() - this.duelsAt < 5 * 60_000) return false;
     this.duelsAt = Date.now();
+    s.debug.add('autopilot', 'NPC duels: checking', { health: c.health, maxHealth: c.maxHealth, duelLevel: c.duelLevel, levelMargin: this.cfg.duels.levelMargin });
     let data;
     try {
-      data = await s.autopilotCall(() => new DuelApi(s.client).data());
+      data = await s.autopilotCall(() => new DuelApi(s.client).data(), 'duel data');
       s.duels = data;
     } catch {
       return false;
@@ -250,6 +337,10 @@ export class AutopilotRunner {
       .map((n) => ({ n, o: duelOutlook(s.autopilot.duels, n.level, now) }))
       .filter((x): x is { n: typeof x.n; o: { xp: number; energy: number } } => !!x.o && x.o.energy <= c.energy && x.o.xp / x.o.energy > jobRate)
       .sort((a, b) => b.o.xp / b.o.energy - a.o.xp / a.o.energy)[0];
+    s.debug.add('autopilot', best ? `NPC duels: fight ${best.n.name}` : 'NPC duels: none worth it', {
+      jobXpPerEnergy: jobRate,
+      npcs: data.npcs.map((n) => ({ id: n.id, name: n.name, level: n.level, readyIn: n.readyIn, outlook: duelOutlook(s.autopilot.duels, n.level, now) })),
+    });
     if (!best) return false;
     s.info(`Autopilot: NPC duel ${best.n.name} (level ${best.n.level}): ~${Math.round(best.o.xp)} XP for ~${Math.round(best.o.energy)} energy beats the best job.`);
     await s.fightNpc(best.n.id);
@@ -266,10 +357,14 @@ export class AutopilotRunner {
     const wake = this.wakes.get(head.queueId);
     if (!wake) return false;
     const c = s.character;
-    if (c.energy < wake.energy || c.health < wake.health) return false;
+    if (c.energy < wake.energy || c.health < wake.health) {
+      s.debug.once('wake', 'autopilot', `Sleeping: waiting for wake target (energy ≥ ${Math.round(wake.energy)}, HP ≥ ${Math.round(wake.health)})`, { sleep: head.title, wake });
+      return false;
+    }
     try {
       const before = c.energy;
-      const res = await s.autopilotCall(() => s.tasks.cancel(s.queue, [0]));
+      s.debug.add('autopilot', 'Wake-up: target reached, cancelling the sleep', { energy: c.energy, health: c.health, wake, sleep: head.title });
+      const res = await s.autopilotCall(() => s.tasks.cancel(s.queue, [0]), 'cancel sleep (wake-up)');
       s.queue = res.queue;
       if (res.energy !== undefined) c.setEnergy(res.energy);
       this.wakes.delete(head.queueId);
@@ -299,10 +394,19 @@ export class AutopilotRunner {
     const altKeepValue = altKeep.value + this.queueValue(keep);
     const altAll = running ? this.snapshot([], refund(1)) : null;
     const best = altAll && altAll.value > altKeepValue ? { value: altAll.value, from: 0 } : { value: altKeepValue, from: keep.length };
-    if (best.from >= s.queue.length || best.value <= current * (1 + cfg.cancel.margin) || current <= 0) return false;
+    const cmp = {
+      current, keepRunning: altKeepValue, cancelAll: altAll?.value ?? null, best, margin: cfg.cancel.margin,
+      threshold: current * (1 + cfg.cancel.margin), queue: s.queue.map((t) => t.title),
+      altKeepNext: altKeep.tasks.slice(0, 5).map((t) => t.step.title), altAllNext: altAll?.tasks.slice(0, 5).map((t) => t.step.title),
+    };
+    if (best.from >= s.queue.length || best.value <= current * (1 + cfg.cancel.margin) || current <= 0) {
+      s.debug.once('cancel', 'autopilot', `Cancel check: keep the queue (${s.queue.map((t) => t.title).join(', ')})`, cmp);
+      return false;
+    }
     const positions = s.queue.map((_, i) => i).slice(best.from).reverse();
+    s.debug.add('autopilot', `Cancel check: cancelling ${positions.length} task(s) for a better plan`, { ...cmp, positions });
     try {
-      const res = await s.autopilotCall(() => s.tasks.cancel(s.queue, positions));
+      const res = await s.autopilotCall(() => s.tasks.cancel(s.queue, positions), 'cancel for a better plan');
       s.queue = res.queue;
       if (res.energy !== undefined) s.character.setEnergy(res.energy);
       this.lastCancel = Date.now();
@@ -340,24 +444,30 @@ export class AutopilotRunner {
     const tasks = this.plan!.tasks;
     const first = tasks[0];
     if (!first) return;
+    if (!first) return void s.debug.once('carry', 'autopilot', 'Carry out: nothing planned', { why: this.plan!.why });
     if (first.action) {
-      if (s.queue.length) return; // its turn comes when the queue before it is done
+      if (s.queue.length) return void s.debug.once('carry', 'autopilot', `Carry out: ${first.step.title} waits for the queue to finish`, { task: first, queue: s.queue.length });
+      s.debug.add('autopilot', `Carry out: ${first.step.title}`, { task: first, why: first.why });
       await this.act(first);
       return;
     }
     const free = s.taskLimit - s.queue.length;
-    if (free <= 0) return;
+    if (free <= 0) return void s.debug.once('carry', 'autopilot', `Carry out: queue full (${s.queue.length}/${s.taskLimit})`);
     const batch: PlannedTask[] = [];
+    let stop = 'end of plan';
     for (const t of tasks) {
-      if (batch.length >= free || t.action || !t.post) break;
+      if (batch.length >= free) { stop = `queue room (${free})`; break; }
+      if (t.action || !t.post) { stop = `${t.step.title} is an on-the-spot action`; break; }
       // Jobs pay energy when queued: only what the current energy covers.
-      if (t.step.kind === 'job' && t.step.energy > s.character.energy - batch.reduce((a, b) => a + (b.step.kind === 'job' ? b.step.energy : 0), 0)) break;
+      const left = s.character.energy - batch.reduce((a, b) => a + (b.step.kind === 'job' ? b.step.energy : 0), 0);
+      if (t.step.kind === 'job' && t.step.energy > left) { stop = `${t.step.title} needs ${t.step.energy} energy, ${left} left`; break; }
       batch.push(t);
-      if (t.step.kind === 'sleep') break; // later tasks depend on its wake-up
+      if (t.step.kind === 'sleep') { stop = 'a sleep ends the batch'; break; } // later tasks depend on its wake-up
     }
-    if (!batch.length) return;
+    if (!batch.length) return void s.debug.once('carry', 'autopilot', `Carry out: waiting (${stop.replace(/, \d+ left$/, '')})`, { stop, energy: s.character.energy, next: tasks[0] });
+    s.debug.add('autopilot', `Carry out: queue ${batch.map((b) => b.step.title).join(', ')}`, { stop, energy: s.character.energy, free, batch: batch.map((b) => ({ key: b.key, why: b.why, step: b.step, post: b.post })) });
     try {
-      const res = await s.autopilotCall(() => s.tasks.add(s.queue.length, batch.map((b) => b.post as Record<string, FormValue>), s.taskLimit));
+      const res = await s.autopilotCall(() => s.tasks.add(s.queue.length, batch.map((b) => b.post as Record<string, FormValue>), s.taskLimit), 'queue tasks');
       // Jobs cost their energy when queued; without a server value, subtract what was accepted.
       if (res.energy !== undefined) s.character.setEnergy(res.energy);
       else if (res.added.length) s.character.setEnergy(s.character.energy - batch.slice(0, res.added.length).reduce((a, b) => a + (b.step.kind === 'job' ? b.step.energy : 0), 0));
@@ -391,7 +501,7 @@ export class AutopilotRunner {
     if (t.action?.type === 'use') {
       const itemId = t.action.itemId;
       try {
-        const r = await s.autopilotCall(() => useItem(s.client, itemId, 1, s.inventory.lastInvId, (id) => s.itemName(id)));
+        const r = await s.autopilotCall(() => useItem(s.client, itemId, 1, s.inventory.lastInvId, (id) => s.itemName(id)), `use ${s.itemName(itemId)}`);
         s.inventory.applyChanges(r.changes);
         if (r.energy !== undefined) s.character.setEnergy(r.energy);
         if (r.health !== undefined) s.character.setHealth(r.health);
@@ -409,7 +519,7 @@ export class AutopilotRunner {
     const cash = s.character.cash;
     if (cash <= 0) return void this.replan('nothing to deposit');
     try {
-      const r = await s.autopilotCall(() => deposit(s.client, townId, cash));
+      const r = await s.autopilotCall(() => deposit(s.client, townId, cash), `deposit $${cash}`);
       s.character.cash = r.cash;
       s.character.deposit = r.deposit;
       s.info(`Autopilot: deposited $ ${cash} (fee $ ${r.fee}).`);

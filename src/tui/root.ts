@@ -10,6 +10,8 @@ import { App, LoadingFrame } from './app.ts';
 import { SetupScreen } from './setup.ts';
 import { formatDuration } from './format.ts';
 import { WakeDetector } from '../util/wake.ts';
+import { join } from 'node:path';
+import { CONFIG_DIR } from '../auth/session-store.ts';
 
 const h = React.createElement;
 
@@ -24,6 +26,7 @@ const CONNECT_LABEL = 'Connecting to The West';
 /** `connectedSince`: when connecting began, so the loading screen lists it as its first step. */
 function makeState(game: OpenGame, prev?: GameState | null, connectedSince?: number): GameState {
   const state = new GameState(game, () => ensureGame({ credentials: noPrompt }));
+  state.debug.dir = join(CONFIG_DIR, 'debug'); // hourly files, kept 24 h
   if (prev) state.carryOver(prev);
   void state.start(connectedSince ? { connect: { label: CONNECT_LABEL, startedAt: connectedSince, endedAt: Date.now() } } : {});
   return state;

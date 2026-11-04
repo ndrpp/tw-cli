@@ -500,6 +500,21 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
     await t.keys('\r');
     assert.deepEqual(said, ['more ham m q']);
     said.length = 0;
+    // Debug (B): the log pane's lines are listed; Tab shows what the autopilot sees; / filters.
+    state.debug.add('autopilot', 'Carry out: test decision', { why: 'because' });
+    await t.keys('B');
+    assert.match(t.plain(), /Debug log/);
+    assert.match(t.plain(), /Carry out: test decision/);
+    assert.match(t.plain(), /"why": "because"/);
+    await t.keys('\t');
+    assert.match(t.plain(), /Now \(what the autopilot sees\)/);
+    assert.match(t.plain(), /homeTown: \{"name":"town 1421","at":\{"x":200,"y":200\},"seconds":\d+\}/);
+    assert.match(t.plain(), /quests: \(\d+\)/);
+    await t.keys('\t', '/');
+    await t.type('zzz');
+    await t.keys('\r');
+    assert.match(t.plain(), /0\/\d+ · all · \/zzz/);
+    await t.keys('\u001b');
     // Mail: reports listed, Enter opens one, Tab → telegrams, Enter reads, n composes and sends.
     await t.keys('M');
     await t.settle(300);
@@ -776,6 +791,17 @@ test('autopilot runner: queues what the energy covers, sleeps when out, wakes at
   assert.deepEqual(added.map((a) => a.type + a.jobId), ['job7', 'job7', 'job7', 'sleep'], 'then a sleep in the last slot: 4 energy left, no regen');
   assert.equal(s.queue.length, 4);
   assert.ok(s.log.some((l) => /Autopilot: queued/.test(l.msg)));
+  // Debug log: the planner's input / output with the context, and the decision to queue.
+  const sim = s.debug.entries.find((e) => e.cat === 'sim')!;
+  const simData = sim.data as any;
+  assert.ok(simData.input.jobs.some((j: any) => j.name === 'Cutting tobacco'), 'sim input lists the jobs');
+  assert.ok(simData.output.tasks.length > 0, 'sim output lists the planned tasks');
+  assert.match(simData.context.energy, /^\d+\/\d+$/);
+  assert.equal(simData.context.nearestTown.name, 'Slobozia');
+  assert.ok(Array.isArray(simData.context.inventory) && Array.isArray(simData.context.quests));
+  assert.ok(s.debug.entries.some((e) => e.cat === 'autopilot' && /^Carry out: queue /.test(e.title)));
+  assert.ok(s.debug.entries.some((e) => e.cat === 'request' && /^queue tasks: ok/.test(e.title)));
+  assert.ok(s.debug.entries.some((e) => e.cat === 'log' && /Autopilot: queued/.test(e.title)), 'log lines are mirrored');
 
   // Out of energy, nothing queued: no regen, so it sleeps in the home hotel (free cubby).
   s.queue = [];

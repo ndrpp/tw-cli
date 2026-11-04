@@ -34,6 +34,7 @@ import { DuelApi, duelPost, type DuelData, type DuelOpponent, type NpcDuelResult
 import { loadAutopilot, saveAutopilot, type AutopilotFile } from './autopilot-config.ts';
 import { projectTimeline, type Timeline, type TimelineStep } from './timeline.ts';
 import { AutopilotRunner } from './autopilot-runner.ts';
+import { DebugLog, diffSnapshots } from './debug-log.ts';
 import { RateTracker } from './rates.ts';
 
 export interface LogEntry { at: Date; level: 'info' | 'error'; msg: string }
@@ -93,6 +94,10 @@ export class GameState extends EventEmitter {
   world = new WorldMap();
   tiles = new TileCache();
   log: LogEntry[] = [];
+  /** Everything that happens, with data (Debug screen, B); the TUI also writes it to debug.jsonl. */
+  debug = new DebugLog();
+  private debugSnap: Record<string, unknown> | null = null;
+  private debugStarted = new Set<number>();
   busy = false;
   items: ItemCatalog | null = null;
   itemSets: ItemSetCatalog | null = null;
@@ -187,6 +192,7 @@ export class GameState extends EventEmitter {
   private push(level: LogEntry['level'], msg: string): void {
     this.log.push({ at: new Date(), level, msg });
     if (this.log.length > 200) this.log.shift();
+    this.debug.add('log', msg, { level });
     this.changed();
   }
 
@@ -240,7 +246,47 @@ export class GameState extends EventEmitter {
     }
     const c = this.character;
     this.rates.record(now, c.experience, c.cash + c.deposit);
+    this.watchDebug();
     return changed;
+  }
+
+  /** Server-side values the client tracks, for the debug diff (no regen estimates: they change every tick). */
+  private debugSnapshot(): Record<string, unknown> {
+    const c = this.character;
+    const sv = c.serverValues;
+    return {
+      position: `${c.position.x},${c.position.y}`, town: this.townHere?.name ?? null,
+      level: c.level, experience: c.experience, cash: c.cash, deposit: c.deposit, nuggets: c.nuggets,
+      energy: sv.energy, health: sv.health, maxEnergy: c.maxEnergy, maxHealth: c.maxHealth,
+      queue: this.queue.map((q) => `#${q.queueId} ${q.type} ${q.title}`),
+      quests: this.quests.map((q) => `${q.title}${q.finishable ? ' (finishable)' : ''}: ${q.requirements.map((r) => `${r.solved ? '✓' : '·'} ${r.info}`).join(' | ')}`),
+      bag: [...this.inventory.bag.values()].map((b) => `${this.itemName(b.itemId)} ×${b.count}`),
+      wear: [...this.inventory.wear].map(([slot, id]) => `${slot}: ${this.itemName(id)}`),
+      jobs: this.jobs.length, live: this.liveStatus,
+      autopilot: this.autopilot.config.running ? (this.autopilot.config.modules.dryRun ? 'running (dry run)' : 'running') : 'paused',
+    };
+  }
+
+  /** Logs what changed since the last tick, and queue tasks as they are added, start and leave. */
+  private watchDebug(): void {
+    const snap = this.debugSnapshot();
+    if (this.debugSnap) {
+      const d = diffSnapshots(this.debugSnap, snap);
+      const keys = Object.keys(d);
+      if (keys.length) this.debug.add('state', `Changed: ${keys.join(', ')}`, d);
+    }
+    this.debugSnap = snap;
+    const now = this.clock.now();
+    const head = this.queue[0];
+    if (head && head.start <= now && !this.debugStarted.has(head.queueId)) {
+      this.debugStarted.add(head.queueId);
+      const q = this.queuedJob(head);
+      this.debug.add('state', `Started: ${head.title}`, {
+        task: { queueId: head.queueId, type: head.type, start: head.start, end: head.end, coords: head.coords, way: head.way },
+        job: q ? { id: q.job.id, duration: q.duration, values: q.values, motivation: q.job.motivation, danger: q.job.danger } : undefined,
+        energy: this.character.energy, health: this.character.health,
+      });
+    }
   }
 
   private async guard<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
@@ -250,9 +296,13 @@ export class GameState extends EventEmitter {
     }
     this.busy = true;
     this.changed();
+    const t0 = Date.now();
     try {
-      return await fn();
+      const r = await fn();
+      this.debug.add('request', `${label}: ok (${Date.now() - t0} ms)`);
+      return r;
     } catch (err) {
+      this.debug.add('request', `${label}: failed (${Date.now() - t0} ms)`, { error: err instanceof Error ? err.stack ?? err.message : String(err) });
       this.error(`${label}: ${err instanceof Error ? err.message : String(err)}`);
       return undefined;
     } finally {
@@ -305,6 +355,8 @@ export class GameState extends EventEmitter {
   /** After a rebuild (wake from sleep): keep the log and a running auto-route. */
   carryOver(prev: GameState): void {
     this.log.unshift(...prev.log.slice(-100));
+    for (const e of this.debug.entries) prev.debug.add(e.cat, e.title, e.data);
+    this.debug = prev.debug;
     if (prev.autoRoute) this.autoRoute = { ...prev.autoRoute, retryAt: 0 };
     this.autopilot = prev.autopilot;
     this.mapLayers = prev.mapLayers;
@@ -937,12 +989,21 @@ export class GameState extends EventEmitter {
   }
 
   /** Runs one autopilot request under the busy lock; errors are thrown to the caller (it retries / pauses). */
-  async autopilotCall<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.busy) throw new Error('busy');
+  async autopilotCall<T>(fn: () => Promise<T>, label = 'autopilot request'): Promise<T> {
+    if (this.busy) {
+      this.debug.add('request', `${label}: refused (busy)`);
+      throw new Error('busy');
+    }
     this.busy = true;
     this.changed();
+    const t0 = Date.now();
     try {
-      return await fn();
+      const r = await fn();
+      this.debug.add('request', `${label}: ok (${Date.now() - t0} ms)`, { result: r });
+      return r;
+    } catch (err) {
+      this.debug.add('request', `${label}: failed (${Date.now() - t0} ms)`, { error: err instanceof Error ? err.stack ?? err.message : String(err) });
+      throw err;
     } finally {
       this.busy = false;
       this.changed();

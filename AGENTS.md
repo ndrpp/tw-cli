@@ -21,12 +21,13 @@ the relevant file in `docs/`.
 ## Commands
 - `npm run tw`: full-screen TUI · `npm run tw -- <cmd>` for CLI commands (whoami, jobs, queue, login, …).
 - `npm test`: all tests (`node --test test/*.test.ts`). Some skip without a saved `game.php`.
-  Known failures on `main`: "full login" and "web page" (pre-existing, unrelated).
+  Known failure: "TUI renders status, jobs and queue" (expects the jobs screen at start; the start screen is now Home).
 - `npm run typecheck`: `tsc -p .`. Run it and the tests after every change.
 
 ## Layout
 - `src/game/`: game logic, no UI. `state.ts` (GameState: owns the client, keeps state in sync), one module per area
-  (jobs, tasks, quests, hotel, trade, duels, …), the autopilot (`autopilot*.ts`, `timeline.ts`).
+  (jobs, tasks, quests, hotel, trade, duels, …), the autopilot (`autopilot*.ts`, `timeline.ts`), `debug-log.ts` (`state.debug`: everything, with data;
+  hourly JSONL files kept 24 h in `<config dir>/debug/`, Debug screen `B`).
 - `src/tui/`: Ink (React) screens; `app.ts` is the shell (header, nav, ticker, global keys), `root.ts` connects.
 - `src/http/`, `src/auth/`, `src/fingerprint/`, `src/realtime/`: transport, login, fingerprint, chat long-poll.
 - `test/`: node:test. `features`/`social`/`setup` tests set `TW_CLI_HOME` to a temp dir; new tests that write
@@ -45,6 +46,8 @@ the relevant file in `docs/`.
   escape using the Edit tool, then grep for `(d+)` or broken string literals and typecheck. In a scripted
   `s.replace(a, b)`, `$'` / `$&` inside `b` are patterns (a `'$'` in `b` pasted the file's tail): use
   `s.split(a).join(b)`.
+- New autopilot or state behaviour logs to `state.debug` (`add`, or `once` for per-tick decisions) with the data
+  that drove it; label new `autopilotCall(fn, label)` calls so the request log says what they were.
 - Settings and caches live in `CONFIG_DIR` (`TW_CLI_HOME` or `~/.config/tw-cli`), written with mode 0600.
 
 ## User preferences (learned)

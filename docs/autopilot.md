@@ -12,6 +12,7 @@ screen (`G`; `P` is taken by the trade screen). Spec agreed with the user in a g
 | `src/game/autopilot.ts` | Pure planner `planAutopilot(input)`: HP → bank → inserts → jobs by priority, energy sleeps / consumables when short. `parseConsumable`, `expectedHpLoss`. |
 | `src/game/autopilot-runner.ts` | `AutopilotRunner` (`state.runner`): replans on input change, sends tasks, wakes from sleep, deposits, uses items, cancels for a better plan, NPC duels for XP, retries/backoff, spend cap. |
 | `src/game/autopilot-quests.ts` | `QuestModule`: finish (reward by priority), wear + restore gear, buy in town shops, accept saloon quests. `chooseReward`. |
+| `src/game/debug-log.ts`, `src/tui/debug.ts` | Debug log (`state.debug`) and its screen (`B`); see "Debugging". |
 | `src/tui/autopilot.ts` | Screen: priority, module toggles and values, Now pane, queue projection; `Q` full queue view. |
 | `test/autopilot.test.ts`, `test/social.test.ts` (runner) | Timeline, config, planner, consumables, inserts, screen, queue view, rewards, duels; runner against a fake server. |
 
@@ -24,6 +25,23 @@ screen (`G`; `P` is taken by the trade screen). Spec agreed with the user in a g
 - Quest screen route prompt: `a` = autopilot on, Quests first, limited to the route's quests (`rules.onlyQuests`;
   clear it with the "Quests goal" row).
 - Header shows `autopilot ●` while running. Resumes on launch if it was running (after startup + first replan).
+
+## Debugging
+- `B` opens the Debug screen. Every entry also goes to `<config dir>/debug/YYYY-MM-DDTHH.jsonl` (UTC hour,
+  one JSON object per line: `id, at, cat, title, data`). Files older than 24 h are deleted when a new hour
+  starts. Only the TUI (`root.ts` `makeState`) turns the files on; tests and CLI commands do not write any.
+- Categories: `log` (every log-pane line), `state` (diff of server values, queue, quests, bag, worn gear once
+  a second; "Started: <task>" when a queued task begins), `request` (every guarded / autopilot call, with
+  duration, result or error stack), `autopilot` (runner decisions: idle/acting, wake-up checks, cancel checks
+  with both alternatives' values, what it queues and why the batch stopped, duels, failures), `sim` (every
+  replan: `reason`, `context`, planner `input` without functions, `output` tasks + timeline), `quest` (finish /
+  reward choice, wear, shop, saloon, accept, skips).
+- `runner.context()` is what the autopilot sees: energy, HP, home and nearest town with travel seconds, where
+  you are, open quests with each requirement (have / need, nearest source job and seconds from the queue end),
+  bag, consumables, gear, queue, budget, needs, failures. Logged with every replan; live under **Now**.
+- Per-tick decisions use `debug.once(key, …)`, which logs only when the title changes. Keep titles free of
+  values that change every tick (live energy) and put those in `data`, or the log fills up once a second.
+- Memory: 3000 entries; only the newest 50 `sim` entries keep their data (the files keep all of it).
 
 ## How it plans
 - **Inputs**: character (server values), server queue (fixed steps; queued jobs cost no energy), jobs and

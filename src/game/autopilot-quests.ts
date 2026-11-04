@@ -74,6 +74,7 @@ export class QuestModule {
       const p = s.character.position;
       if (at && (at.x !== p.x || at.y !== p.y) && skip.has(`finish-here:${q.id}`)) {
         if (s.queue.length) continue;
+        s.debug.add('quest', `Walk to ${q.employerName} to finish ${q.title}`, { quest: q.id, giverAt: at, position: p });
         const r = await s.autopilotCall(() => s.tasks.add(s.queue.length, [walkPost(q.employer, 'questgiver', at)], s.taskLimit)).catch((e) => (this.host.fail(`walk:${q.id}`, String(e)), null));
         if (r?.added.length) {
           s.queue.push(...r.added);
@@ -82,6 +83,7 @@ export class QuestModule {
         return true;
       }
       const reward = chooseReward(q.rewardOptions, this.host.config, (t) => this.isUpgrade(t));
+      s.debug.add('quest', `Finish ${q.title}`, { quest: q.id, giver: q.employerName, giverAt: at, position: p, rewardOptions: q.rewardOptions, chosen: reward });
       const before = s.log.length;
       await s.finishQuest(q, reward);
       if (s.log.slice(before).some((l) => l.level === 'error')) this.host.fail(at ? `finish-here:${q.id}` : key, `could not finish ${q.title}`);
@@ -95,6 +97,7 @@ export class QuestModule {
             const id = [...s.inventory.bag.values()].find((b) => Math.floor(b.itemId / 1000) === Math.floor(r.itemId! / 1000))!.itemId;
             const slot = s.items.get(id)?.type ?? '';
             if (!this.swapped.has(q.id)) this.swapped.set(q.id, { slot, prev: s.inventory.wear.get(slot) ?? null });
+            s.debug.add('quest', `Wear ${s.itemName(id)} for ${q.title}`, { quest: q.id, requirement: r.info, slot, previous: this.swapped.get(q.id) });
             const before = s.log.length;
             await s.wear(id);
             if (s.log.slice(before).some((l) => l.level === 'error')) this.host.fail(`wear:${r.itemId}`, `could not wear ${s.itemName(id)} for ${q.title}`);
@@ -118,6 +121,7 @@ export class QuestModule {
       const stillNeeded = q?.requirements.some((r) => r.kind === 'wear' && !r.solved) || (q && !q.finishable && q.requirements.some((r) => r.kind === 'wear'));
       if (stillNeeded) continue;
       this.swapped.delete(qid);
+      s.debug.add('quest', `Quest gear no longer needed (${q?.title ?? qid})`, { slot: sw.slot, previous: sw.prev && s.itemName(sw.prev) });
       if (sw.prev && s.inventory.count(sw.prev) > 0 && !this.betterThan(s.inventory.wear.get(sw.slot), sw.prev)) {
         await s.wear(sw.prev);
         s.info(`Autopilot: put ${s.itemName(sw.prev)} back on.`);
@@ -139,7 +143,7 @@ export class QuestModule {
       let c = this.shops.get(ck);
       if (!c || Date.now() - c.at > 30 * 60_000) {
         try {
-          c = { at: Date.now(), shop: await s.autopilotCall(() => fetchShop(s.client, def.key, town.id)) };
+          c = { at: Date.now(), shop: await s.autopilotCall(() => fetchShop(s.client, def.key, town.id), `shop ${def.key} ${town.name}`) };
           this.shops.set(ck, c);
         } catch {
           continue;
@@ -148,12 +152,13 @@ export class QuestModule {
       if (!c.shop.items.some((i) => Math.floor(i / 1000) === Math.floor(itemId / 1000))) continue;
       const price = Math.round((s.items?.get(itemId)?.price ?? 0) * (c.shop.charge || 1));
       const spent = this.spentOn.get(q.id) ?? 0;
+      s.debug.add('quest', `Shop ${def.key} in ${town.name} sells ${s.itemName(itemId)} for ${q.title}`, { price, spentOnQuest: spent, questLimit: QUEST_BUY_LIMIT, budget: this.host.budget() });
       if (price > this.host.budget() || spent + price > QUEST_BUY_LIMIT) {
         this.once(`afford:${q.id}:${itemId}`, `Autopilot: ${s.itemName(itemId)} ($${price}) for ${q.title} is over the spend limits.`);
         return false;
       }
       try {
-        const r = await s.autopilotCall(() => shopBuy(s.client, def.key, town.id, itemId, s.inventory.lastInvId));
+        const r = await s.autopilotCall(() => shopBuy(s.client, def.key, town.id, itemId, s.inventory.lastInvId), `buy ${s.itemName(itemId)}`);
         s.inventory.applyChanges(r.changes);
         if (typeof r.cash === 'number') s.character.cash = r.cash;
         if (typeof r.deposit === 'number') s.character.deposit = r.deposit;
@@ -177,6 +182,7 @@ export class QuestModule {
     this.saloonChecked.set(town.id, Date.now());
     if (s.questCapacity && s.quests.length >= s.questCapacity) return false;
     await s.loadSaloon();
+    s.debug.add('quest', `Saloon in ${town.name}: ${s.saloon.length} quest giver(s)`, { givers: s.saloon, questLog: `${s.quests.length}/${s.questCapacity || '?'}` });
     const cfg = this.host.config;
     for (const e of s.saloon) {
       if (!(await s.openEmployer(e.key)) || !s.employer) continue;
@@ -184,6 +190,7 @@ export class QuestModule {
         if (!q.acceptable || q.accepted || skip.has(`accept:${q.id}`)) continue;
         if (cfg.quests.excludedChains.includes(q.group) || (!cfg.quests.repeatable && /repeatable/i.test(q.group))) continue;
         if (s.questCapacity && s.quests.length >= s.questCapacity) return true;
+        s.debug.add('quest', `Accept ${q.title}`, { quest: q.id, chain: q.group, giver: e.name, requirements: q.requirements });
         await s.acceptQuest(q);
       }
     }
@@ -215,6 +222,7 @@ export class QuestModule {
   private once(key: string, msg: string): void {
     if (this.logged.has(key)) return;
     this.logged.add(key);
+    this.host.state.debug.add('quest', msg.replace(/^Autopilot: /, 'Skip: '), { key });
     this.host.state.info(msg);
   }
 }

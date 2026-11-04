@@ -14,6 +14,7 @@ import { MailScreen } from './mail.ts';
 import { TradeScreen } from './trade.ts';
 import { DuelsScreen } from './duels.ts';
 import { AutopilotScreen } from './autopilot.ts';
+import { DebugScreen } from './debug.ts';
 import { ChatScreen } from './chat.ts';
 import { HomeScreen } from './home.ts';
 import { defaultRoom } from '../game/hotel.ts';
@@ -435,6 +436,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
     if (input === 'D') return openScreen('duels');
     if (input === 'C') return openScreen('chat');
     if (input === 'G') return openScreen('autopilot');
+    if (input === 'B') return openScreen('debug');
     if (input === 's' && !(mode === 'map' && mapPanel)) return openHotel(state.character.homeTown?.id);
     if (onScreen) return; // the screen handles the rest
     const duration = ({ '1': 'short', '2': 'middle', '3': 'long' } as Record<string, DurationKey>)[input];
@@ -532,7 +534,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
             : mode === 'home'
               ? 'Enter chat · ←/→ room · c cancel current · +/- minimap · W jobs · ? help'
               : onScreen
-                ? `${{ mail: 'M', trade: '$', duels: 'D', chat: 'C' }[mode as 'mail']}/Esc back · ? help`
+                ? `${{ mail: 'M', trade: '$', duels: 'D', chat: 'C', autopilot: 'G', debug: 'B' }[mode as 'mail']}/Esc back · ? help`
                 : 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel · Esc home';
 
   let body;
@@ -564,6 +566,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
           : mode === 'trade' ? h(TradeScreen, props)
             : mode === 'duels' ? h(DuelsScreen, props)
               : mode === 'autopilot' ? h(AutopilotScreen, props)
+              : mode === 'debug' ? h(DebugScreen, props)
               : h(ChatScreen, props);
     screen = h(Box, { display: overlay ? 'none' : 'flex' }, el);
   }
@@ -592,6 +595,7 @@ const NAV: { key: string; label: string; mode?: Mode; overlay?: string }[] = [
   { key: 'D', label: 'duels', mode: 'duels' },
   { key: 'C', label: 'chat', mode: 'chat' },
   { key: 'G', label: 'autopilot', mode: 'autopilot' },
+  { key: 'B', label: 'debug', mode: 'debug' },
   { key: 's', label: 'sleep', overlay: 'hotel' },
   { key: 'p', label: 'places', overlay: 'poi' },
   { key: '?', label: 'help', overlay: 'help' },
