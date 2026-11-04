@@ -11,6 +11,9 @@ the relevant file in `docs/`.
 - Improve what is there: fix anything you find wrong or stale, merge duplicates, move "unverified" items to
   verified once checked live (say how). Keep entries short and factual; no change logs (git has those).
 - Keep the docs index below in sync with the files in `docs/`.
+- **Keep `README.md` up to date** in the same change: commands, keys (the go-to table mirrors `GOTO` in
+  `src/tui/overlays.ts`), what the autopilot does and does not do yet, setup, CI. It is for players, so describe
+  behaviour, not code; link to `docs/` for detail.
 
 ## Docs index
 - `docs/autopilot.md`: Autopilot spec, architecture, modules, decisions, what is not built yet.
