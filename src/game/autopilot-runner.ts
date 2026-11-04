@@ -442,6 +442,8 @@ export class AutopilotRunner {
     const s = this.state;
     const cfg = this.cfg;
     if (s.queue.length === 0 || Date.now() - this.lastCancel < cfg.cancel.cooldown * 1000 || !this.plan) return false;
+    // Construction is a manual town task the autopilot never plans; leave it alone.
+    if (s.queue.some((t) => t.type === 'build')) return false;
     if (Date.now() - this.lastCancelCheck < CANCEL_CHECK_MS) return false;
     this.lastCancelCheck = Date.now();
     const current = this.plan.value + this.queueValue(s.queue);

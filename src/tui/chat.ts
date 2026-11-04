@@ -4,6 +4,7 @@ import { Box, Text, useInput } from 'ink';
 import type { ScreenProps } from './character.ts';
 import { scrollWindow, truncate } from './format.ts';
 import { formKey, formValues, FormView, makeForm, wrapSegments, type FormState } from './form.ts';
+import { chatPresence, TOWN_ROLES, type ChatClient } from '../realtime/chat.ts';
 import { chatSegments, type Segment } from '../game/chatlinks.ts';
 
 const h = React.createElement;
@@ -56,7 +57,10 @@ export function ChatScreen({ state, width, height, onCapture, onExit, active = t
   }, { isActive: active });
 
   const leftW = Math.max(20, Math.min(32, Math.floor(width * 0.3)));
-  const rightW = width - leftW;
+  const chatRoom = room ? live?.rooms.get(room) : undefined;
+  // Town chat: the connected players of the town, with role and level.
+  const rosterW = chatRoom?.kind === 'town' && width >= 90 ? Math.max(24, Math.min(32, Math.floor(width * 0.24))) : 0;
+  const rightW = width - leftW - rosterW;
   const [start, end] = scrollWindow(idx, roomIds.length, Math.max(2, height - 3));
   const left = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width: leftW, height, paddingX: 1 },
     h(Text, { bold: true }, 'Chat'),
@@ -74,11 +78,13 @@ export function ChatScreen({ state, width, height, onCapture, onExit, active = t
     const time = new Date(l.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     return wrapSegments(lineSegments(state, `${time} ${l.from}: `, l.text, l.own), tw);
   });
-  const room4 = Math.max(1, height - 4 - (form ? 6 : 0));
+  const room4 = Math.max(1, height - 4 - (form ? 6 : 0) - (chatRoom?.kind === 'town' && !rosterW ? 1 : 0));
   const shown = wrapped.slice(-room4);
-  const topic = room ? live?.rooms.get(room)?.topic : '';
+  const topic = chatRoom?.topic ?? '';
   const right = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width: rightW, height, paddingX: 1 },
     h(Text, { bold: true, wrap: 'truncate' }, room && live ? live.roomTitle(room) : '', topic ? h(Text, { dimColor: true, bold: false }, ` · ${topic}`) : ''),
+    h(Text, { bold: true, wrap: 'truncate' }, chatRoom?.kind === 'town' ? `Town roster · ${rosterSummary(chatRoom.members, live?.clients)}` : ''),
+    chatRoom?.kind === 'town' && !rosterW ? h(Text, { dimColor: true, wrap: 'truncate' }, 'Widen the terminal to see the town roster.') : null,
     ...shown.map((l, i) => segLine(l, i)),
     lines.length ? null : h(Text, { dimColor: true }, room ? 'No messages since you connected.' : ''),
     h(Box, { flexGrow: 1 }),
@@ -87,7 +93,50 @@ export function ChatScreen({ state, width, height, onCapture, onExit, active = t
       ? h(Text, { wrap: 'truncate' }, h(Text, { color: 'cyan' }, '> '), `${draft}▏`)
       : h(Text, { dimColor: true, wrap: 'truncate' }, 'Enter write · t whisper · ↑↓ room · Esc back'),
   );
-  return h(Box, { width, height }, left, right);
+  const roster = rosterW && chatRoom?.kind === 'town'
+    ? h(TownRoster, { clients: live?.clients, members: chatRoom.members, width: rosterW, height })
+    : null;
+  return h(Box, { width, height }, left, right, roster);
+}
+
+function rosterSummary(members: Set<string>, clients: Map<string, ChatClient> | undefined): string {
+  let online = 0;
+  for (const id of members) if (chatPresence(clients?.get(id)?.actioned) === 'online') online++;
+  return `${online}/${members.size} online`;
+}
+
+const PRESENCE_STYLE = { online: ['●', 'green'], idle: ['◐', 'yellow'], unknown: ['?', 'gray'] } as const;
+
+/** Town chat roster: status, name, role and level of the clients in the room, online first. */
+function TownRoster({ clients, members, width, height }: { clients: Map<string, ChatClient> | undefined; members: Set<string>; width: number; height: number }) {
+  const now = Date.now();
+  const rows = [...members]
+    .map((id) => clients?.get(id))
+    .filter((c): c is ChatClient => !!c)
+    .sort((a, b) => {
+      const pa = chatPresence(a.actioned, now) === 'online' ? 0 : chatPresence(a.actioned, now) === 'idle' ? 1 : 2;
+      const pb = chatPresence(b.actioned, now) === 'online' ? 0 : chatPresence(b.actioned, now) === 'idle' ? 1 : 2;
+      if (pa !== pb) return pa - pb;
+      if (a.townRights !== b.townRights) return b.townRights - a.townRights;
+      return a.name.localeCompare(b.name);
+    });
+  const roomRows = Math.max(1, height - 4);
+  const roleW = 7;
+  // Border (2) + padding (2) + dot + space + space + role + space + "L" + level.
+  const nameW = Math.max(6, width - 4 - 2 - 1 - roleW - 1 - 4);
+  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width, height, paddingX: 1 },
+    h(Text, { bold: true, wrap: 'truncate' }, `Town · ${rosterSummary(members, clients)}`),
+    ...rows.slice(0, roomRows).map((c) => {
+      const presence = chatPresence(c.actioned, now);
+      const [dot, color] = PRESENCE_STYLE[presence];
+      const role = TOWN_ROLES[c.townRights] ?? 'Guest';
+      return h(Text, { key: c.id, wrap: 'truncate' },
+        h(Text, { color }, dot), ' ', h(Text, { bold: c.townRights >= 2 }, truncate(c.name, nameW)), ' ',
+        h(Text, { color: c.townRights >= 2 ? 'yellow' : undefined, dimColor: c.townRights < 2 }, role.padEnd(roleW).slice(0, roleW)), ` L${c.level}`);
+    }),
+    rows.length > roomRows ? h(Text, { dimColor: true }, `+${rows.length - roomRows} more`) : null,
+    rows.length === 0 ? h(Text, { dimColor: true }, 'No clients yet.') : null,
+  );
 }
 
 /** A chat line as coloured runs: own lines cyan, [item=…] / [quest=…] links as names. */

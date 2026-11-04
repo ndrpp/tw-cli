@@ -3,6 +3,7 @@
 //          job:  {jobId, x, y, duration, taskType:'job'}
 //          walk: {unitId, type, x, y, taskType:'walk'}
 //          sleep:{town_id, room, taskType:'sleep'}
+//          build:{x, y, building_key, duration, deposit:'town'|'player', taskType:'build'} (town construction)
 //          reply: {tasks: {<queuePos>: {task?, error?, msg?}}, energy?, buffs?, protection?}
 //  cancel: task/cancel  {tasks: {<queuePos>: {queueId, type}}}
 //          reply: {tasks: {<queuePos>: {extra?, error?, msg?}}, queue: [...]}
@@ -59,7 +60,8 @@ export function parseQueue(list: unknown): QueuedTask[] {
 export type TaskPost =
   | { taskType: 'job'; jobId: number; x: number; y: number; duration: number }
   | { taskType: 'walk'; unitId: number; type: string; x?: number; y?: number }
-  | { taskType: 'sleep'; town_id: number; room: string };
+  | { taskType: 'sleep'; town_id: number; room: string }
+  | { taskType: 'build'; x: number; y: number; building_key: string; duration: number; deposit: 'town' | 'player' };
 
 /** Same key order as the browser's post objects (ctor fields first, taskType appended). */
 export function jobPost(jobId: number, at: Position, duration: number): Record<string, FormValue> {

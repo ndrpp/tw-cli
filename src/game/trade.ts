@@ -8,6 +8,10 @@
 //     item_id, count, last_inv_id} → {money, changes} | {error}.
 //   Item use (ItemUse.doIt @822715): itemuse/use_item {item_id, item_count, lastInvId} → {msg:{changes, effects:[
 //     {type: experience|dollar|energy|hitpoints|buff|content|lottery|...}], cooldown, itemCooldown}} | {error, msg}.
+//   Mobile trader (shop_trader index @2124565, the "trader" tab of the item shop): shop_trader/index (mode) {}
+//     → {inventory:{trader:[{item_id, tab, currency (bitmask 1 bonds · 2 nuggets · 4 dollar · 8 veteran),
+//     price_<currency>, reduced_value, limited_time, limited_count, teaser}]}, currencies, traderTime (epoch s)};
+//     shop_trader/buy {item_id, category, currency} → {bonds, cash, deposit, msg}.
 //   Market (MarketWindow @1659317–@1756000):
 //     building_market/search {pattern, nav:'first', page, sort:'bid', order:'asc', type:'', level_range_min:'0',
 //       level_range_max:'', usable, has_effect, visibility:2, direction_sell:true, direction_buy:false}
@@ -138,6 +142,80 @@ export async function useItem(client: GameClient, itemId: number, count: number,
     effects: effects.flatMap((e) => effectText(e, itemName)),
     energy: effects.find((e) => e.type === 'energy')?.energy,
     health: effects.find((e) => e.type === 'hitpoints')?.hitpoints,
+  };
+}
+
+// ---- mobile trader -------------------------------------------------------------------------
+
+/** Currency bit → name, from shop_trader/index `currencies` (verified live: {1:bonds, 2:nuggets, 4:dollar, 8:veteran}). */
+const SHOP_CURRENCIES: [number, string][] = [[1, 'bonds'], [2, 'nuggets'], [4, 'dollar'], [8, 'veteran']];
+
+export interface MobileTraderPrice { currency: string; amount: number; base: number }
+
+export interface MobileTraderItem {
+  itemId: number;
+  tab: string;
+  /** Prices the offer accepts; the first one is used for a purchase. */
+  prices: MobileTraderPrice[];
+  discount: number;
+  /** Epoch seconds when the offer changes; null when it does not rotate. */
+  limitedAt: number | null;
+  limitedCount: number | null;
+  teaser: string;
+}
+
+export interface MobileTrader {
+  items: MobileTraderItem[];
+  /** Epoch seconds of the next rotation (shop_trader/index `traderTime`). */
+  changesAt: number | null;
+}
+
+export function parseMobileTraderItem(r: Record<string, any>): MobileTraderItem {
+  const currency = Number(r.currency) || 0;
+  const discount = Number(r.reduced_value) || 0;
+  const prices: MobileTraderPrice[] = [];
+  for (const [bit, name] of SHOP_CURRENCIES) {
+    if (!(currency & bit)) continue;
+    const base = Number(r[`price_${name}`]) || 0;
+    if (!base) continue;
+    prices.push({ currency: name, base, amount: discount ? Math.round((base * (100 - discount)) / 100) : base });
+  }
+  // The mobile trader is a dollar shop; prefer that price when an offer accepts several currencies.
+  prices.sort((a, b) => Number(b.currency === 'dollar') - Number(a.currency === 'dollar'));
+  const limited = Number(r.limited_count);
+  const limitedAt = Number(r.limited_time) || null;
+  return {
+    itemId: Number(r.item_id),
+    tab: String(r.tab ?? 'trader'),
+    prices,
+    discount,
+    limitedAt,
+    limitedCount: Number.isFinite(limited) && r.limited_count !== null && r.limited_count !== undefined ? limited : null,
+    teaser: plainText(String(r.teaser ?? '')),
+  };
+}
+
+/** The rotating offers of the mobile trader (the "trader" tab of the item shop). */
+export async function fetchMobileTrader(client: GameClient): Promise<MobileTrader> {
+  const json = await client.remoteCallMode('shop_trader', 'index', {});
+  if (json.error) throw new Error(errText(json, 'Mobile trader'));
+  const raw = Array.isArray(json.inventory?.trader) ? json.inventory.trader : [];
+  return {
+    items: raw.map(parseMobileTraderItem).filter((i: MobileTraderItem) => i.prices.length > 0),
+    changesAt: Number(json.traderTime) || null,
+  };
+}
+
+/** Buys one mobile-trader offer. The reply has no bag changes; refresh the inventory afterwards. */
+export async function buyMobileTrader(client: GameClient, item: MobileTraderItem, currency = item.prices[0]?.currency): Promise<{ cash?: number; deposit?: number; bonds?: number; message: string }> {
+  if (!currency) throw new Error('This offer has no price.');
+  const json = await client.remoteCall('shop_trader', 'buy', { item_id: item.itemId, category: item.tab, currency });
+  if (json.error) throw new Error(errText(json, 'Mobile trader buy'));
+  return {
+    cash: typeof json.cash === 'number' ? json.cash : undefined,
+    deposit: typeof json.deposit === 'number' ? json.deposit : undefined,
+    bonds: typeof json.bonds === 'number' ? json.bonds : undefined,
+    message: plainText(String(json.msg ?? '')),
   };
 }
 

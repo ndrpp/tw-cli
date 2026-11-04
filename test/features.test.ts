@@ -20,7 +20,7 @@ const { CookieJar } = await import('../src/http/cookie-jar.ts');
 const { GameClient } = await import('../src/http/game-client.ts');
 const { resetThrottle, throttledFetch } = await import('../src/http/throttle.ts');
 const { GameState } = await import('../src/game/state.ts');
-const { ItemCatalog, bonusText } = await import('../src/game/items.ts');
+const { ItemCatalog, bonusText, slimItem } = await import('../src/game/items.ts');
 const { Inventory } = await import('../src/game/inventory.ts');
 const { Skills, adjustPlan, emptyPlan, plannedDelta, savePayload } = await import('../src/game/skills.ts');
 const { parseQuest, plainText, groupByChain } = await import('../src/game/quests.ts');
@@ -326,6 +326,14 @@ test('state: wear/unwear, skills save, quest accept/finish, sleep send the clien
   routes['/game.php?window=map&ajax=get_minimap'] = () => ({ towns: {}, job_groups: {} });
   routes['/game.php?window=inventory&action=carry'] = () => ({ changes: [{ item_id: 16000, count: 0, inv_id: 1592886, type: 'right_arm' }, { item_id: 54997000, count: 1, inv_id: 99999999, type: 'right_arm' }], speed: 0.8, wearSets: {}, bonus: { allBonuspoints: {} } });
   routes['/game.php?window=inventory&action=uncarry'] = () => ({ changes: [{ item_id: 54994000, count: 1, inv_id: 99999998, type: 'animal' }], wearSets: {}, bonus: { allBonuspoints: {} } });
+  routes['/game.php?window=inventory&mode=show_equip'] = () => ({ data: [{
+    equip_manager_id: 1334, name: 'xp', head: 54988000, body: 54990000, foot: 54993000, right_arm: 54997000,
+    animal: 54994000, neck: 54989000, yield: null, pants: 54981000, belt: 11118000, left_arm: null,
+  }], max: 3, premium_max: 20, hasPremium: false, price: 50 });
+  routes['/game.php?window=inventory&action=switch_equip'] = () => ({
+    changes: [], speed: 1.1, wear: [54988000, 54990000, 54993000, 54997000, 54994000, 54989000, 54981000, 11118000],
+    setItems: [54977, 54979, 54982, 54986, 54983, 54978, 54984, 54981, 54980], bonus: { allBonuspoints: {} },
+  });
   routes['/game.php?window=skill&action=save_skill_changes'] = () => ({ error: false, msg: 'Skills changed.' });
   routes['/game.php?window=building_quest&mode=get_open_quests'] = () => QUESTS;
   routes['/game.php?window=quest&action=accept_quest'] = () => ({ error: false, finishable: false });
@@ -345,6 +353,15 @@ test('state: wear/unwear, skills save, quest accept/finish, sleep send the clien
   await state.unwear('animal');
   assert.equal(calls.find((c) => c.url.includes('action=uncarry'))!.body, 'last_inv_id=99999999&type=animal');
   assert.equal(state.inventory.wear.has('animal'), false);
+
+  // Equipment sets: list and switch; the flat wear list is mapped back to slots.
+  await state.loadEquipSets();
+  assert.deepEqual([state.equipSets!.sets.length, state.equipSets!.sets[0]!.name], [1, 'xp']);
+  await state.switchEquipSet(1334);
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(calls.find((c) => c.url.includes('action=switch_equip'))!.body)), { id: '1334', last_inv_id: '99999999' });
+  assert.equal(state.inventory.wear.get('head'), 54988000);
+  assert.equal(state.inventory.wear.get('belt'), 11118000);
+  assert.equal(state.character.speed, 1.1);
 
   const plan = emptyPlan();
   adjustPlan(plan, state.skills, 'trade', 1);
@@ -381,13 +398,27 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
   routes['/game.php?window=work&mode=index'] = () => ({ jobs: {} });
   routes['/game.php?window=map&ajax=get_minimap'] = () => ({ towns: {}, job_groups: {} });
   routes['/game.php?window=inventory&action=carry'] = () => ({ changes: [], wearSets: {}, bonus: { allBonuspoints: {} } });
+  routes['/game.php?window=inventory&mode=show_equip'] = () => ({ data: [{
+    equip_manager_id: 1334, name: 'xp', head: 54988000, body: 54990000, foot: 54993000, right_arm: 54997000,
+    animal: 54994000, neck: 54989000, yield: null, pants: 54981000, belt: 11118000, left_arm: null,
+  }], max: 3, premium_max: 20, hasPremium: false, price: 50 });
+  routes['/game.php?window=inventory&action=switch_equip'] = () => ({
+    changes: [], speed: 1, wear: [54988000, 54990000, 54993000, 54997000, 54994000, 54989000, 54981000, 11118000], setItems: [], bonus: { allBonuspoints: {} },
+  });
   routes['/game.php?window=skill&action=save_skill_changes'] = () => ({ error: false, msg: 'Skills changed.' });
   routes['/game.php?window=building_quest&mode=get_open_quests'] = () => QUESTS;
   routes['/game.php?window=building_quest&mode='] = () => ({ questEmployer: [{ key: 'barkeeper', name: 'Barkeeper' }] });
   routes['/game.php?window=building_quest'] = routes['/game.php?window=building_quest&mode='];
   routes['/game.php?window=quest&action=finish_quest'] = () => ({ error: false, msg: 'Done', allRewards: [] });
   routes['/game.php?window=building_hotel&mode=get_data'] = () => ({ hotel_level: 1, town_name: 'Slobozia', own_hotel: true, rooms: { cubby: { name: 'Cubby', level: 1, available: true, free: true, energy: 20, health: 10 } } });
+  routes['/game.php?window=itemuse&action=use_item'] = () => ({ error: false, msg: { changes: [{ item_id: 2128000, count: 0, inv_id: 3000001, type: 'yield' }], effects: [{ type: 'energy', energy: 70 }] } });
   await state.loadQuests();
+  // A usable, non-wearable item: Enter must offer Use, not Equip.
+  state.items = ItemCatalog.fromRaw(ITEMS);
+  state.inventory.retype(state.items);
+  state.items.add(slimItem({ item_id: 2128000, name: 'Coffee', type: 'yield', usetype: 'single', action: true, usebonus: ['Energy increase: 25%'], level: 0, price: 7, sell_price: 0 }));
+  state.inventory.bag.set(2128000, { itemId: 2128000, count: 1, invId: 3000000, type: 'yield' });
+  state.inventory.lastInvId = 3000000;
 
   const stdout = new PassThrough() as PassThrough & { columns: number; rows: number; isTTY: boolean };
   Object.assign(stdout, { columns: 120, rows: 36, isTTY: true });
@@ -417,7 +448,28 @@ test('TUI: character screen (wear, plan + save skills) and quests screen (finish
     assert.match(plain(), /Bowie knife/);
     await keys('\r');
     assert.equal(calls.filter((c) => c.url.includes('action=carry')).length, 1);
-    // Skills tab: plan +1 Trading with '+', save with Enter → y.
+    // Coffee is usable but not wearable: Enter opens the use form instead of trying to equip it.
+    await keys('\x1b', '\x1b', 'i');
+    await settle(200);
+    out = '';
+    await keys('t', 't', 't', 't', 't', 't'); // type filter: Product (yield)
+    assert.match(plain(), /t Product/);
+    assert.match(plain(), /Coffee/);
+    await keys('\r');
+    assert.match(plain(), /Use Coffee/);
+    await keys('\r');
+    assert.equal(new URLSearchParams(calls.find((c) => c.url.includes('action=use_item'))!.body).get('item_id'), '2128000');
+    // Sets tab: list the saved set and switch with Enter → y.
+    await keys('\x1b[C');
+    await settle(200);
+    assert.match(plain(), /Equipment sets/);
+    assert.match(plain(), /xp/);
+    await keys('\r');
+    assert.match(plain(), /Switch to xp\? y \/ n/);
+    await keys('y');
+    await settle(200);
+    assert.equal(new URLSearchParams(calls.find((c) => c.url.includes('action=switch_equip'))!.body).get('id'), '1334');
+    // Skills: plan +1 Trading with '+', save with Enter → y.
     await keys('\x1b[C');
     assert.match(plain(), /Free: .*1 attribute.*3 skill/);
     for (let i = 0; i < 21; i++) {

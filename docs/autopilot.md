@@ -82,7 +82,8 @@ screen (`G`; `P` is taken by the trade screen). Spec agreed with the user in a g
   reach it.
 - **Cancelling**: checked at most every 30 s. Queued tasks are cancelled when planning without them (keep the
   running one, or cancel all) is ≥ `cancel.margin` better over `cancel.horizon`, at most once per
-  `cancel.cooldown`. Queued jobs are valued at the plan's average value per XP + $ (estimate).
+  `cancel.cooldown`. Queued jobs are valued at the plan's average value per XP + $ (estimate). Manual town
+  construction tasks (`type: 'build'`) are never cancelled.
 
 ## Calibration (`calibration.ts`, `calibration.json` in the config dir; TUI only)
 Each estimate blends the game's number (or the old heuristic) with what was observed, the prior counting as 5

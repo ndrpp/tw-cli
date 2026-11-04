@@ -21,7 +21,7 @@ const { resetThrottle } = await import('../src/http/throttle.ts');
 const { GameState } = await import('../src/game/state.ts');
 const { ItemCatalog } = await import('../src/game/items.ts');
 const { parseQuest } = await import('../src/game/quests.ts');
-const { ChatPoller } = await import('../src/realtime/chat.ts');
+const { ChatPoller, chatPresence } = await import('../src/realtime/chat.ts');
 const { MarketApi, parseOffer, depositFee, marketFee, buyOrderProblem, suggestedBid, DEFAULT_FILTER } = await import('../src/game/trade.ts');
 const { bbText, formatReport } = await import('../src/game/mail.ts');
 const { planRoute } = await import('../src/game/route.ts');
@@ -271,6 +271,20 @@ test('trade: bank deposit, shop buy/sell, item use and market requests', async (
   await state.useItem(16000);
   assert.match(state.log.at(-1)!.msg, /cannot be used/);
 
+  // Mobile trader (item shop's "trader" tab): rotating offers, bought with dollars.
+  routes['/game.php?window=shop_trader&mode=index'] = () => ({ inventory: { trader: [
+    { item_id: 700000, tab: 'trader', currency: 4, price_dollar: 15, reduced_value: 0, limited_time: null, limited_count: null, teaser: 'Food' },
+  ] }, currencies: { 4: 'dollar' }, traderTime: Math.floor(Date.now() / 1000) + 600 });
+  routes['/game.php?window=shop_trader&action=buy'] = () => ({ cash: 35, deposit: 10, bonds: 0, msg: 'Bought Ham' });
+  routes['/game.php?window=inventory&action=inventory_changed'] = () => ({ changes: false, wear: {} });
+  await state.openMobileTrader();
+  assert.equal(state.mobileTrader!.items.length, 1);
+  assert.deepEqual([state.mobileTrader!.items[0]!.itemId, state.mobileTrader!.items[0]!.prices[0]!.amount], [700000, 15]);
+  await state.buyMobileTrader(state.mobileTrader!.items[0]!);
+  assert.deepEqual(Object.fromEntries(params(callTo('window=shop_trader&action=buy')[0]!.body)), { item_id: '700000', category: 'trader', currency: 'dollar' });
+  assert.equal(state.character.cash, 35);
+  assert.match(state.log.at(-1)?.msg ?? '', /Bought Ham/);
+
   // Market
   const offer = { market_offer_id: 9, item_id: 16000, item_count: 1, current_bid: 300, max_price: 900, auction_ends_in: 3600, seller_name: 'Ann', seller_player_id: 5, market_town_name: 'Slobozia', market_town_x: 200, market_town_y: 200, direction: 'SELL' };
   routes['/game.php?window=building_market&action=search'] = () => ({ error: false, msg: { search_result: [offer, { ...offer, market_offer_id: 10, auction_ends_in: 0 }], next: false } });
@@ -300,6 +314,72 @@ test('trade: bank deposit, shop buy/sell, item use and market requests', async (
     town_id: '1421', item_id: '700000', itemcount: '1', auctioncount: '1', sellrights: '2', auctionlength: '2', description: '', direction: 'SELL', bidtype: '0', maxprice: '40',
   });
   await assert.rejects(new MarketApi(state.client).sell({ townId: 1, itemId: 1, count: 1, days: 1 }), /starting bid or a buy-now price/);
+});
+
+test('town hall: building levels, construction detail and the build task post', async () => {
+  fakeServer();
+  const state = makeState();
+  routes['/game.php?window=building_cityhall'] = () => ({
+    townName: 'Slobozia', townNoLeave: false,
+    buildings: [{ key: 'general', name: 'General store', maxStage: 25, stage: 10, infinite: false, nextStagePoints: 1100, buildPoints: 455 }],
+  });
+  routes['/game.php?window=cityhall_build&mode=build'] = () => ({
+    error: false, build_key: 'general', build_name: 'General store', description: 'Better goods.',
+    build_skills: { skills: [{ skill: 'build', coefficient: 3 }], malus: 120 }, jobPoints: 3075, build_point: 455, build_point_limit: 1100,
+    deposit: '35.064', motivation: 1, id: 1421, x: 200, y: 200, singleDuration: false,
+    jobDurationData: {
+      900: { calcduration: 900, formatted: '15 minutes (60$)', expCalc: { min: 23, max: 70 } },
+      3600: { calcduration: 3600, formatted: '1 hour (240$)', expCalc: { min: 90, max: 280 } },
+    },
+    defaultData: { calcduration: 900 },
+  });
+  routes['/game.php?window=task&action=add'] = () => ({ tasks: { 0: { task: { queue_id: 5, type: 'build', date_start: 1, date_done: 2, data: { coords: { x: 200, y: 200 }, title: 'General store', building_key: 'general' } } } } });
+
+  await state.loadTownHall();
+  assert.deepEqual([state.townHall!.townName, state.townHall!.buildings[0]!.stage], ['Slobozia', 10]);
+  const con = (await state.openConstruction(state.townHall!.buildings[0]!))!;
+  assert.deepEqual([con.durations.length, con.defaultDuration, con.buildPoints, con.deposit], [2, 900, 455, '35.064']);
+  assert.ok(await state.queueConstruction(3600, 'town'));
+  assert.deepEqual(Object.fromEntries(params(callTo('task&action=add')[0]!.body)), {
+    'tasks[0][x]': '200', 'tasks[0][y]': '200', 'tasks[0][building_key]': 'general', 'tasks[0][duration]': '3600', 'tasks[0][deposit]': 'town', 'tasks[0][taskType]': 'build',
+  });
+});
+
+test('TUI: town screen lists the city hall and queues a construction', async () => {
+  fakeServer();
+  const state = makeState();
+  routes['/game.php?window=building_cityhall'] = () => ({
+    townName: 'Slobozia', townNoLeave: false,
+    buildings: [{ key: 'general', name: 'General store', maxStage: 25, stage: 10, infinite: false, nextStagePoints: 1100, buildPoints: 455 }],
+  });
+  routes['/game.php?window=cityhall_build&mode=build'] = () => ({
+    error: false, build_key: 'general', build_name: 'General store', description: 'Better goods.',
+    build_skills: { skills: [{ skill: 'build', coefficient: 3 }], malus: 120 }, jobPoints: 3075, build_point: 455, build_point_limit: 1100,
+    deposit: '35.064', motivation: 1, id: 1421, x: 200, y: 200, singleDuration: false,
+    jobDurationData: { 900: { calcduration: 900, formatted: '15 minutes (60$)', expCalc: { min: 23, max: 70 } } },
+    defaultData: { calcduration: 900 },
+  });
+  routes['/game.php?window=task&action=add'] = () => ({ tasks: { 0: { task: { queue_id: 5, type: 'build', date_start: 1, date_done: 2, data: { coords: { x: 200, y: 200 }, title: 'General store', building_key: 'general' } } } } });
+
+  const t = tui(state);
+  try {
+    await t.keys('T');
+    await t.settle(300);
+    assert.match(t.plain(), /City hall · Slobozia/);
+    assert.match(t.plain(), /General store/);
+    assert.match(t.plain(), /10\/25/);
+    await t.keys('\r');
+    await t.settle(200);
+    assert.match(t.plain(), /Construction: General store/);
+    assert.match(t.plain(), /Town treasury/);
+    await t.keys('\r', '\r');
+    await t.settle(200);
+    assert.deepEqual(Object.fromEntries(params(callTo('task&action=add')[0]!.body)), {
+      'tasks[0][x]': '200', 'tasks[0][y]': '200', 'tasks[0][building_key]': 'general', 'tasks[0][duration]': '900', 'tasks[0][deposit]': 'town', 'tasks[0][taskType]': 'build',
+    });
+  } finally {
+    t.done();
+  }
 });
 
 test('market: buy orders, filters, paging, selling into a buy order, withdraw, pick up all, fees', async () => {
@@ -420,10 +500,19 @@ test('chat: rooms and history from Status / Text / tells, sending is a second re
   };
   const poller = new ChatPoller(state.client, { policy: { ...FAST, lane: 'chat' } as any, errorPauseMs: 10 });
   poller.handle({ id: 'Status', t: 1, payload: {
-    self: { id: 'client_42', name: 'shallax' }, clients: [{ id: 'client_9', name: 'Bob' }], disabledrooms: [],
-    rooms: [{ roomdescription: { id: 'room_town_1421', room: 'town', title: 'Slobozia' }, members: ['client_42', 'client_9'] }, { roomdescription: { id: 'room_general_1', room: 'general', general_id: 1 }, members: [] }],
+    self: { id: 'client_42', name: 'shallax', level: 30, townId: 1421, town_rights: 3, actioned: Date.now() },
+    clients: [{ id: 'client_9', name: 'Bob', level: 12, townId: 1421, town_rights: 1, actioned: Date.now() - 400_000 }],
+    disabledrooms: [],
+    rooms: [{ roomdescription: { id: 'room_town_1421', room: 'town', title: 'Slobozia', townid: 1421 }, members: ['client_42', 'client_9'] }, { roomdescription: { id: 'room_general_1', room: 'general', general_id: 1 }, members: [] }],
   } });
   assert.deepEqual([...poller.rooms.values()].map((r) => r.title), ['Slobozia', 'Saloon 1']);
+  assert.equal(poller.rooms.get('room_town_1421')!.townId, 1421);
+  assert.deepEqual([poller.clients.get('client_42')!.townRights, poller.clients.get('client_9')!.level], [3, 12]);
+  assert.equal(chatPresence(poller.clients.get('client_9')!.actioned), 'idle');
+  poller.handle({ id: 'UserUpdate', t: 2, payload: { id: 'client_9', level: 13, town_rights: 2, actioned: Date.now() } });
+  assert.equal(poller.clients.get('client_9')!.name, 'Bob', 'missing fields keep their old values');
+  assert.deepEqual([poller.clients.get('client_9')!.level, poller.clients.get('client_9')!.townRights], [13, 2]);
+  assert.equal(chatPresence(poller.clients.get('client_9')!.actioned), 'online');
   poller.handle({ id: 'Text', t: 2, payload: { cid: 'client_9', to: 'room_town_1421', message: 'howdy &amp; hi' } });
   poller.handle({ id: 'TellReceived', t: 3, payload: { from: { id: 'client_7', name: 'Ann' }, message: 'psst' } });
   assert.deepEqual(poller.history.get('room_town_1421')!.map((l) => `${l.from}: ${l.text}`), ['Bob: howdy & hi']);
@@ -467,6 +556,9 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
   routes['/game.php?window=building_general&town_id=1421'] = () => ({ trader_inv: [{ item_id: 700000 }], charge: 1, level: 3, town_name: 'Slobozia' });
   routes['/game.php?window=building_tailor&town_id=1421'] = routes['/game.php?window=building_general&town_id=1421'];
   routes['/game.php?window=building_gunsmith&town_id=1421'] = routes['/game.php?window=building_general&town_id=1421'];
+  routes['/game.php?window=shop_trader&mode=index'] = () => ({ inventory: { trader: [
+    { item_id: 700000, tab: 'trader', currency: 4, price_dollar: 15, reduced_value: 0, limited_time: null, limited_count: null, teaser: 'Food' },
+  ] }, currencies: { 4: 'dollar' }, traderTime: Math.floor(Date.now() / 1000) + 600 });
   routes['/game.php?window=building_market&action=search'] = () => ({ error: false, msg: { search_result: [{ market_offer_id: 21, item_id: 700000, item_count: 2, max_price: 30, auction_ends_in: 7200, seller_name: 'Bob', seller_player_id: 9, market_town_name: 'Slobozia', market_town_x: 200, market_town_y: 200, direction: 'BUY' }], next: false } });
   routes['/game.php?window=building_market&action=fetch_bids'] = () => ({ error: false, msg: { search_result: [] } });
   routes['/game.php?window=building_market&action=fetch_offers'] = () => ({ error: false, msg: { search_result: [] } });
@@ -481,7 +573,11 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
   // Chat: a poller that is "active" with one room (no network loop).
   const poller = new ChatPoller(state.client, { policy: { ...FAST, lane: 'chat' } as any });
   (poller as any).running = true;
-  poller.handle({ id: 'Status', t: 1, payload: { self: { id: 'client_42', name: 'shallax' }, clients: [{ id: 'client_9', name: 'Bob' }], disabledrooms: [], rooms: [{ roomdescription: { id: 'room_town_1421', room: 'town', title: 'Slobozia' }, members: ['client_42'] }] } });
+  poller.handle({ id: 'Status', t: 1, payload: {
+    self: { id: 'client_42', name: 'shallax', level: 30, townId: 1421, town_rights: 3, actioned: Date.now() },
+    clients: [{ id: 'client_9', name: 'Bob', level: 12, townId: 1421, town_rights: 1, actioned: Date.now() }],
+    disabledrooms: [], rooms: [{ roomdescription: { id: 'room_town_1421', room: 'town', title: 'Slobozia', townid: 1421 }, members: ['client_42', 'client_9'] }],
+  } });
   poller.handle({ id: 'Text', t: Date.now(), payload: { cid: 'client_9', to: 'room_town_1421', message: 'anyone selling ham?' } });
   const said: string[] = [];
   poller.say = async (_to: string, m: string) => void said.push(m);
@@ -551,6 +647,11 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
     await t.keys('\r');
     await t.settle(200);
     assert.equal(params(callTo('action=deposit')[0]!.body).get('amount'), '20');
+    // Mobile trader tab: the rotating offers are listed with dollar prices.
+    await t.keys('\x1b[C');
+    await t.settle(200);
+    assert.match(t.plain(), /Mobile trader/);
+    assert.match(t.plain(), /Ham.*\$15/);
     // General store: buying needs you in town.
     await t.keys('\x1b[C');
     await t.settle(200);
@@ -581,9 +682,12 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
     await t.keys('W');
     assert.match(t.plain(), /Task queue/);
 
-    // Chat: history shown; Enter, type, Enter sends.
+    // Chat: history and the town roster (status, role, level); Enter, type, Enter sends.
     await t.keys('C');
     assert.match(t.plain(), /Bob: anyone selling ham\?/);
+    assert.match(t.plain(), /Town · 2\/2 online/);
+    assert.match(t.plain(), /Mayor/);
+    assert.match(t.plain(), /Citizen\s+L12/);
     await t.keys('\r');
     await t.type('yes, 3 q');
     await t.keys('\r');

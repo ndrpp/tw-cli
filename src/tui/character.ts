@@ -8,12 +8,13 @@ import type { ItemStats, StatKind } from '../game/itemstats.ts';
 import {
   adjustPlan, ATTRIBUTE_COLOR, ATTRIBUTE_OF, ATTRIBUTES, emptyPlan, NAMES, plannedDelta, planUsed, SKILLS_OF, type SkillPlan,
 } from '../game/skills.ts';
-import type { BagItem } from '../game/inventory.ts';
+import type { BagItem, EquipSet } from '../game/inventory.ts';
 import { money, scrollWindow, truncate } from './format.ts';
 
 const h = React.createElement;
 
-export type CharTab = 'inventory' | 'skills';
+export type CharTab = 'inventory' | 'sets' | 'skills';
+const CHAR_TABS: CharTab[] = ['inventory', 'sets', 'skills'];
 const TYPE_FILTERS = ['all', ...WEAR_SLOTS, 'collection', 'recipe'];
 
 export interface ScreenProps {
@@ -81,6 +82,8 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
   const [confirm, setConfirm] = useState(false);
   const [detailScroll, setDetailScroll] = useState(0);
   const [useForm, setUseForm] = useState<{ itemId: number; form: FormState } | null>(null);
+  const [setSel, setSetSel] = useState(0);
+  const [setSwitch, setSetSwitch] = useState<EquipSet | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -89,8 +92,11 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
     })();
   }, [state]);
   useEffect(() => {
-    onCapture(filtering || confirm || !!useForm);
-  }, [filtering, confirm, useForm]);
+    onCapture(filtering || confirm || !!useForm || !!setSwitch);
+  }, [filtering, confirm, useForm, setSwitch]);
+  useEffect(() => {
+    if (tab === 'sets') void state.loadEquipSets();
+  }, [tab, state]);
 
   const typeFilter = TYPE_FILTERS[typeIdx]!;
   // New selection → detail panel back to the top.
@@ -100,6 +106,18 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
   const skillRows = ATTRIBUTES.flatMap((a) => [a, ...SKILLS_OF[a]]);
   const used = planUsed(plan);
 
+  const askUse = (it: BagItem) => {
+    const d = state.items?.get(it.itemId);
+    if (d && d.usetype === 'none') return state.error(`${d.name} cannot be used.`);
+    const many = it.count > 1 && d?.usetype !== 'single';
+    return setUseForm({
+      itemId: it.itemId,
+      form: makeForm(`Use ${state.itemName(it.itemId)}${it.count > 1 ? ` (you have ${it.count})` : ''}?`, [
+        many ? { key: 'count', label: 'Number of items', value: '1', kind: 'number', hint: `max ${it.count}` } : { key: 'count', label: 'Use', value: '1', kind: 'choice', options: ['1'] },
+      ]),
+    });
+  };
+
   useInput((input, key) => {
     if (useForm) {
       const r = formKey(useForm.form, input, key);
@@ -108,6 +126,12 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       const n = Math.max(1, Number(formValues(useForm.form).count) || 1);
       setUseForm(null);
       return void state.useItem(useForm.itemId, n);
+    }
+    if (setSwitch) {
+      const set = setSwitch;
+      setSetSwitch(null);
+      if (input === 'y') void state.switchEquipSet(set.id);
+      return;
     }
     if (filtering) {
       if (key.return || key.escape) setFiltering(false);
@@ -122,7 +146,10 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       if (input === 'y') void state.saveSkills(plan).then((ok) => ok && setPlan(emptyPlan()));
       return;
     }
-    if (key.leftArrow || key.rightArrow) return setTab((t) => (t === 'inventory' ? 'skills' : 'inventory'));
+    if (key.leftArrow || key.rightArrow) {
+      const d = key.rightArrow ? 1 : CHAR_TABS.length - 1;
+      return setTab((t) => CHAR_TABS[(CHAR_TABS.indexOf(t) + d) % CHAR_TABS.length]!);
+    }
     if (key.escape) {
       if (tab === 'skills' && (used.attributes || used.skills)) {
         setPlan(emptyPlan());
@@ -152,6 +179,14 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       if (key.return && (used.attributes || used.skills)) return setConfirm(true);
       return;
     }
+    if (tab === 'sets') {
+      const sets = state.equipSets?.sets ?? [];
+      const si = Math.min(setSel, Math.max(0, sets.length - 1));
+      if (up || key.pageUp) return setSetSel(Math.max(0, si - step));
+      if (down || key.pageDown) return setSetSel(Math.min(sets.length - 1, si + step));
+      if (key.return && sets[si]) setSetSwitch(sets[si]!);
+      return;
+    }
     if (input === 'J') return setDetailScroll((n) => n + 3);
     if (input === 'K') return setDetailScroll((n) => Math.max(0, n - 3));
     if (key.tab) return setPane((p) => (p === 'bag' ? 'wear' : 'bag'));
@@ -164,7 +199,7 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       setBagSel(0);
       return setTypeIdx((i) => (i + 1) % TYPE_FILTERS.length);
     }
-    if (input === 'T') {
+    if (input === 'y') {
       setBagSel(0);
       return setTypeIdx((i) => (i + TYPE_FILTERS.length - 1) % TYPE_FILTERS.length);
     }
@@ -177,34 +212,30 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
     if (up || key.pageUp) return setBagSel(Math.max(0, bagIdx - step));
     if (down || key.pageDown) return setBagSel(Math.min(rows.length - 1, bagIdx + step));
     const it = rows[bagIdx];
-    if (input === 'U' && it) {
-      const d = state.items?.get(it.itemId);
-      if (d && d.usetype === 'none') return state.error(`${d.name} cannot be used.`);
-      const many = it.count > 1 && d?.usetype !== 'single';
-      return setUseForm({
-        itemId: it.itemId,
-        form: makeForm(`Use ${state.itemName(it.itemId)}${it.count > 1 ? ` (you have ${it.count})` : ''}?`, [
-          many ? { key: 'count', label: 'Number of items', value: '1', kind: 'number', hint: `max ${it.count}` } : { key: 'count', label: 'Use', value: '1', kind: 'choice', options: ['1'] },
-        ]),
-      });
-    }
+    if (input === 'U' && it) return askUse(it);
     if ((key.return || input === 'e') && it) {
-      const type = state.items?.get(it.itemId)?.type ?? it.type;
-      if (!WEAR_SLOTS.includes(type)) return state.error(`${state.itemName(it.itemId)} can't be worn.`);
-      return void state.wear(it.itemId);
+      const d = state.items?.get(it.itemId);
+      const type = d?.type ?? it.type;
+      // Usable products (coffee is a `yield` item) win over the wearable slot.
+      if (d && d.usetype !== 'none') return askUse(it);
+      if (WEAR_SLOTS.includes(type)) return void state.wear(it.itemId);
+      return state.error(`${state.itemName(it.itemId)} can't be worn or used.`);
     }
   }, { isActive: active });
 
+  const TAB_LABEL: Record<CharTab, string> = { inventory: 'Inventory', sets: 'Sets', skills: 'Skills' };
   const tabs = h(Text, { wrap: 'truncate' },
-    ...(['inventory', 'skills'] as CharTab[]).map((t) =>
-      h(Text, { key: t, inverse: tab === t, bold: tab === t, color: tab === t ? 'cyan' : undefined }, ` ${t === 'inventory' ? 'Inventory' : 'Skills'} `)),
+    ...CHAR_TABS.map((t) =>
+      h(Text, { key: t, inverse: tab === t, bold: tab === t, color: tab === t ? 'cyan' : undefined }, ` ${TAB_LABEL[t]} `)),
     h(Text, { dimColor: true }, '   ← → switch · Esc back'),
     state.items ? null : h(Text, { color: 'yellow' }, '   loading item data…'));
 
   const formH = useForm ? useForm.form.fields.length + 4 : 0;
   const body = tab === 'inventory'
     ? h(InventoryTab, { state, width, height: height - 1 - formH, pane, wearSel, rows, bagIdx, typeFilter, filter, filtering, detailScroll })
-    : h(SkillsTab, { state, width, height: height - 1, rows: skillRows, selected: skillSel, plan, confirm });
+    : tab === 'sets'
+      ? h(SetsTab, { state, width, height: height - 1, selected: setSel, confirm: setSwitch })
+      : h(SkillsTab, { state, width, height: height - 1, rows: skillRows, selected: skillSel, plan, confirm });
   return h(Box, { flexDirection: 'column', width, height }, tabs, body, useForm ? h(FormView, { form: useForm.form, width }) : null);
 }
 
@@ -300,7 +331,11 @@ export function ItemDetail(p: { state: GameState; itemId: number | undefined; co
       else add('  no change', { dimColor: true });
     }
   }
-  const hint = pane === 'wear' ? 'Enter/x take off · Tab bag · J/K scroll' : 'Enter/e wear · / filter · t type · J/K scroll';
+  const canWear = !!def && WEAR_SLOTS.includes(def.type);
+  const canUse = !!def && def.usetype !== 'none';
+  const hint = pane === 'wear'
+    ? 'Enter/x take off · Tab bag · J/K scroll'
+    : `${canUse ? 'Enter/e use' : canWear ? 'Enter/e wear' : 'Enter/e no action'}${canUse ? ' · U use' : ''} · / filter · t/y type · J/K scroll`;
   const room = Math.max(1, height - 3);
   const top = Math.min(scroll, Math.max(0, lines.length - room));
   const more = lines.length - top - room;
@@ -361,6 +396,49 @@ function InventoryTab(p: {
   return side
     ? h(Box, null, wearPane, bagPane, detail)
     : h(Box, { flexDirection: 'column' }, h(Box, null, wearPane, bagPane), detail);
+}
+
+const setFullyWorn = (state: GameState, set: EquipSet): boolean =>
+  WEAR_SLOTS.every((slot) => (state.inventory.wear.get(slot) ?? null) === (set.slots[slot] ?? null));
+
+function SetsTab({ state, width, height, selected, confirm }: { state: GameState; width: number; height: number; selected: number; confirm: EquipSet | null }) {
+  const sets = state.equipSets?.sets ?? [];
+  const idx = Math.min(selected, Math.max(0, sets.length - 1));
+  const set = sets[idx];
+  const listW = Math.max(30, Math.min(46, Math.floor(width * 0.35)));
+  const detailW = width - listW;
+  const listRows = Math.max(2, height - 4);
+  const [start, end] = scrollWindow(idx, sets.length, listRows);
+  const owned = (id: number) => state.inventory.isWorn(id) || state.inventory.count(id) > 0;
+  const worn = set ? WEAR_SLOTS.filter((slot) => (set.slots[slot] ?? null) === (state.inventory.wear.get(slot) ?? null)).length : 0;
+  const left = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width: listW, height, paddingX: 1 },
+    h(Text, { bold: true, wrap: 'truncate' }, `Equipment sets  ${sets.length ? `${idx + 1}/${sets.length}` : '0'}`),
+    h(Text, { dimColor: true, wrap: 'truncate' }, state.equipSets ? `maximum ${state.equipSets.hasPremium ? state.equipSets.premiumMax : state.equipSets.max} · u refresh` : 'Loading…'),
+    ...sets.slice(start, end).map((s, i) => {
+      const full = setFullyWorn(state, s);
+      return h(Text, { key: s.id, inverse: start + i === idx, color: full ? 'green' : undefined, wrap: 'truncate' },
+        `${full ? '●' : '○'} ${truncate(s.name, listW - 6)}`);
+    }),
+    sets.length === 0 && state.equipSets ? h(Text, { dimColor: true, wrap: 'wrap' }, 'No saved sets. Save them in the browser inventory for now.') : null,
+  );
+  const detail = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width: detailW, height, paddingX: 1 },
+    set
+      ? h(Text, { bold: true, wrap: 'truncate' }, `${set.name} · ${worn}/${WEAR_SLOTS.length} worn`)
+      : h(Text, { bold: true }, 'No set selected'),
+    set ? h(Text, { dimColor: true, wrap: 'truncate' }, 'Enter switches. Items you wear now go back to the bag.') : null,
+    ...(set ? WEAR_SLOTS.map((slot) => {
+      const want = set.slots[slot] ?? null;
+      const current = state.inventory.wear.get(slot) ?? null;
+      const same = want === current;
+      return h(Text, { key: slot, color: same ? 'green' : want && !owned(want) ? 'red' : undefined, wrap: 'truncate' },
+        `${(SLOT_NAMES[slot] ?? slot).padEnd(12)} ${want === null ? '—' : state.itemName(want)}`,
+        want && !owned(want) ? '  (not in bag)' : '',
+        !same && current !== null ? h(Text, { dimColor: true }, `  now ${state.itemName(current)}`) : '');
+    }) : []),
+    h(Box, { flexGrow: 1 }),
+    confirm ? h(Text, { color: 'yellow', wrap: 'truncate' }, `Switch to ${confirm.name}? y / n`) : h(Text, { dimColor: true, wrap: 'truncate' }, 'Enter switch · ↑↓ set · u refresh · Esc back'),
+  );
+  return h(Box, null, left, detail);
 }
 
 function SkillsTab(p: { state: GameState; width: number; height: number; rows: string[]; selected: number; plan: SkillPlan; confirm: boolean }) {
