@@ -22,10 +22,13 @@ the relevant file in `docs/`.
 - `npm run tw`: full-screen TUI · `npm run tw -- <cmd>` for CLI commands (whoami, jobs, queue, login, …).
 - `npm test`: all tests (`node --test test/*.test.ts`). Some skip without a saved `game.php`.
 - `npm run typecheck`: `tsc -p .`. Run it and the tests after every change.
+- CI (`.github/workflows/test.yml`, badge in the README): typecheck + tests on Node 26, Ubuntu, for pushes to
+  `main` and every PR. The two login tests that check 0600 file modes fail on Windows only; CI runs them.
 
 ## Layout
 - `src/game/`: game logic, no UI. `state.ts` (GameState: owns the client, keeps state in sync), one module per area
-  (jobs, tasks, quests, hotel, trade, townhall, duels, …), the autopilot (`autopilot*.ts`, `timeline.ts`), `debug-log.ts` (`state.debug`: everything, with data;
+  (jobs, tasks, quests, hotel, trade, townhall, duels, …), the autopilot (`autopilot*.ts`, `timeline.ts`,
+  `quest-buy.ts` for buying quest items), `debug-log.ts` (`state.debug`: everything, with data;
   hourly JSONL files kept 24 h in `<config dir>/debug/`, Debug screen `g x`), `calibration.ts` (what the
   autopilot learns from reports, health, motivation and sleeps; `calibration.json`).
 - `src/tui/`: Ink (React) screens; `app.ts` is the shell (header, nav, ticker, global keys), `root.ts` connects.

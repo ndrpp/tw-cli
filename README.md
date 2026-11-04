@@ -1,5 +1,7 @@
 # tw-cli
 
+[![Tests](https://github.com/saenai255/tw-cli/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/saenai255/tw-cli/actions/workflows/test.yml)
+
 A terminal client for [The West](https://www.the-west.net) (world en32 "Quebec"). It uses the same HTTP requests as the browser game.
 
 > Unofficial. Third-party clients may break InnoGames' terms of service. Use at your own risk.
