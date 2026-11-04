@@ -7,9 +7,9 @@ import type { Hotel } from '../game/hotel.ts';
 
 const h = React.createElement;
 
-export type Mode = 'home' | 'main' | 'map' | 'char' | 'quests' | 'mail' | 'trade' | 'duels' | 'chat' | 'autopilot' | 'debug';
+export type Mode = 'home' | 'main' | 'map' | 'char' | 'quests' | 'mail' | 'trade' | 'duels' | 'chat' | 'autopilot' | 'debug' | 'town';
 /** Full screens that handle their own keys (global shortcuts still work unless they capture input). */
-export const SCREEN_MODES: Mode[] = ['home', 'char', 'quests', 'mail', 'trade', 'duels', 'chat', 'autopilot', 'debug'];
+export const SCREEN_MODES: Mode[] = ['home', 'char', 'quests', 'mail', 'trade', 'duels', 'chat', 'autopilot', 'debug', 'town'];
 
 const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
   global: [
@@ -17,7 +17,8 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
     ['H', 'home: current job, rates, reports, chat (map: Esc)'],
     ['W', 'jobs & queue'],
     ['m', 'map on / off (back to where you were)'],
-    ['i', 'character: inventory & skills'],
+    ['i', 'character: inventory, equipment sets & skills'],
+    ['T', 'town: city hall, building levels & construction'],
     ['o', 'quests: log & quest givers'],
     ['M', 'mail: reports & telegrams'],
     ['$', 'trade: bank, shops, market, buy orders'],
@@ -63,16 +64,23 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
     ['Esc', 'back to the map cursor'],
   ],
   char: [
-    ['← →', 'Inventory ⇄ Skills'],
-    ['Tab', 'equipped ⇄ bag'],
+    ['← →', 'Inventory ⇄ Sets ⇄ Skills'],
+    ['Tab', '(inventory) equipped ⇄ bag'],
     ['↑ ↓  j k', 'move · PgUp/PgDn ×10'],
-    ['Enter  e', '(bag) wear item'],
+    ['Enter  e', '(bag) wear or use the selected item'],
     ['U', '(bag) use item: drinks, buffs, bags…'],
     ['Enter  x', '(equipped) take off'],
-    ['/  t T', 'search bag · cycle item type'],
+    ['Enter', '(sets) switch equipment set (y)'],
+    ['/  t y', 'search bag · cycle item type'],
     ['+  -', '(skills) plan a point'],
     ['Enter', '(skills) save planned points (y)'],
     ['Esc', 'discard plan / back'],
+  ],
+  town: [
+    ['↑ ↓  j k', 'choose a building · PgUp/PgDn ×10'],
+    ['Enter', 'load construction detail and start a job'],
+    ['u', 'refresh building levels'],
+    ['Esc', 'back'],
   ],
   quests: [
     ['Tab', 'quest log ⇄ quest givers'],
@@ -148,7 +156,7 @@ const SHORTCUTS: Record<Mode | 'global', [string, string][]> = {
   ],
 };
 
-const MODE_TITLE: Record<Mode, string> = { home: 'Home', main: 'Jobs & queue', map: 'Map', char: 'Character', quests: 'Quests', mail: 'Mail', trade: 'Trade', duels: 'Duels', chat: 'Chat', autopilot: 'Autopilot', debug: 'Debug' };
+const MODE_TITLE: Record<Mode, string> = { home: 'Home', main: 'Jobs & queue', map: 'Map', char: 'Character', quests: 'Quests', mail: 'Mail', trade: 'Trade', duels: 'Duels', chat: 'Chat', autopilot: 'Autopilot', debug: 'Debug', town: 'Town' };
 
 const LEGEND: [string, string, string][] = [
   ['@', 'green', 'you'], ['1-9', 'cyan', 'queued tasks'], ['H', 'cyan', 'home town'], ['T', 'white', 'town'],

@@ -48,12 +48,41 @@ browser client's code; **unverified** = assumed, check live and update this file
   `{deposit, own_money, fee}`. No withdrawal: purchases take cash first, then the bank. You must be in the town.
 - Cash in pocket can be lost in duels; that is why the autopilot banks over a limit.
 
+## Town buildings and construction
+- `building_cityhall` action '' `{town_id}` → `{townName, townNoLeave, buildings:[{key, name, stage, maxStage,
+  infinite, buildPoints, nextStagePoints}]}` (verified live). The city hall list shows the current level and
+  progress to the next; `infinite` is the church (always more stages).
+- `cityhall_build/build` (mode) `{x, y, building:<key>}` → `{build_name, description, build_skills:{skills:
+  [{skill, coefficient}], malus}, jobPoints, build_point, build_point_limit, deposit, motivation,
+  jobDurationData:{<seconds>:{calcduration, formatted, expCalc:{min,max}}}, defaultData, singleDuration}`
+  (verified live). `x`/`y` are the home town coordinates; `deposit` is a formatted string ("35.064").
+- Construction is a queued task, `taskType: 'build'`: `{x, y, building_key, duration, deposit:'town'|'player',
+  taskType:'build'}` (TaskBuild @689326). `town` pays from the town treasury, `player` from cash/bank. The server
+  walks there first, like a job.
+
 ## Items
 - Item ids: plain id = base id · 1000; upgrades add to the last digits (`baseId`, `upgradeLevel`).
 - `usebonus` texts on `usetype: 'single'` items: `Energy increase: 15%`, `Health point bonus: 20%`,
   `Work motivation increase: 15%`, `Duel motivation increase: 15%`, `Active waytime shortening: 25%`.
   `usetype: 'buff'` items give skills/speed for N uses; `'use'` items are boxes/cards. Verified from the catalog.
+- **Usable products win over their wear slot.** Coffee is `type: 'yield'` (the Product slot) with
+  `usetype: 'single'`/`action: true`; the browser uses it, it is not equipped. Plain products such as The Joker
+  have `usetype: 'none'` and are worn in `yield`.
 - Shops: `building_general|tailor|gunsmith&town_id=N` → `trader_inv` (item ids), `charge` multiplies the price.
+- **Equipment sets**: `inventory/show_equip` (mode) → `{data:[{equip_manager_id, name, head, neck, body,
+  right_arm, left_arm, yield, foot, animal, belt, pants}], max, premium_max, hasPremium, price}` (verified live,
+  en32: two sets, max 3). `inventory/switch_equip {id, last_inv_id}` → `{changes, wear:[item ids], setItems,
+  workPointBonus, speed, weapon}`; `wear` is the complete new worn list (the list endpoint is verified live; the
+  switch shape is from `EquipManager.switchEquip`). Save / replace / delete are `save_equip` / `replace_equip` /
+  `delete_equip`, not used by the TUI yet.
+
+## Mobile trader
+- The "Mobile Trader" is the `trader` tab of the item shop, not a town shop: `shop_trader/index` (mode) {} →
+  `{inventory:{trader:[...]}, currencies, traderTime (epoch s)}` (verified live). Offers rotate; `currency` is a
+  bitmask (1 bonds · 2 nuggets · 4 dollar · 8 veteran) and prices are `price_<currency>`; `reduced_value` is a
+  percent discount, `limited_time` / `limited_count` limit the offer. Live offers were all dollars.
+- Buy: `shop_trader/buy {item_id, category: <tab, trader>, currency:<name>}` → `{cash, deposit, bonds, msg}`.
+  The reply has no bag changes; the inventory has to be re-read.
 
 ## Quests
 - Requirement `jsInfo.type`: `inventory_changed` (have item) · `wear_changed` (wear item) · `task-finish-job`
@@ -79,3 +108,6 @@ browser client's code; **unverified** = assumed, check live and update this file
 - Messages carry links as tags in the text: `[item=<instance id>]` (seen live: `wtb [item=42085000]`). The client
   shows them as names (`chatlinks.ts`: items yellow, set items green). `[quest=<id>]` is assumed the same way
   (unverified); its title is only known for quests in the log or at the open employer, else `quest <id>`.
+- Town room members and every `Status.clients` entry carry `town_rights`: 0 none/guest · 1 citizen · 2 councillor ·
+  3 town founder (shown as mayor). `actioned` is epoch ms; the browser treats a client idle after 5 minutes
+  (Chat.Resource.Client.updateStatus @1029000). Town chat is the only room where the browser shows these roles.

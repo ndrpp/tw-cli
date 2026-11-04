@@ -33,8 +33,30 @@ export interface SelfUpdate {
 
 export interface ChatEvent { id: string; t: number; payload: any }
 
-export interface ChatRoom { id: string; kind: string; title: string; topic: string; members: Set<string> }
+/** A chat client, with what the town roster shows (Client.update @1029207). */
+export interface ChatClient {
+  id: string;
+  playerId: number;
+  name: string;
+  level: number;
+  townId: number;
+  /** 0 none · 1 citizen · 2 councillor · 3 town founder (mayor). */
+  townRights: number;
+  /** Epoch ms of the player's last action (5 min idle threshold, Chat.Resource.Client.updateStatus). */
+  actioned: number;
+}
+
+export interface ChatRoom { id: string; kind: string; title: string; topic: string; members: Set<string>; townId?: number }
 export interface ChatLine { at: number; from: string; text: string; own: boolean }
+
+/** Town role names as the browser's RoomTown.getPlayerInfo shows them (3 is the founder/mayor). */
+export const TOWN_ROLES = ['Guest', 'Citizen', 'Councillor', 'Mayor'];
+
+/** Online within 5 minutes of the last action, as Chat.Resource.Client.updateStatus. */
+export function chatPresence(actioned: number | undefined, now = Date.now()): 'online' | 'idle' | 'unknown' {
+  if (!actioned) return 'unknown';
+  return now - actioned > 300_000 ? 'idle' : 'online';
+}
 
 const ROOM_KIND_TITLE: Record<string, string> = { town: 'Town', general: 'Saloon', maneuver: 'Maneuver', fortbattle: 'Fort battle' };
 export const HISTORY_LIMIT = 200;
@@ -92,9 +114,9 @@ export class ChatPoller extends EventEmitter {
   private clid = makeClientId();
   private policy: HostPolicy;
   private errorPauseMs: number;
-  /** Chat rooms we are in, client id → player name, and per-room history ("tell:<name>" for whispers). */
+  /** Chat rooms we are in, client data, and per-room history ("tell:<name>" for whispers). */
   rooms = new Map<string, ChatRoom>();
-  clients = new Map<string, string>();
+  clients = new Map<string, ChatClient>();
   history = new Map<string, ChatLine[]>();
   unreadRooms = new Set<string>();
 
@@ -195,15 +217,32 @@ export class ChatPoller extends EventEmitter {
     const room = this.rooms.get(id) ?? { id, kind, title, topic: '', members: new Set<string>() };
     room.title = title;
     room.topic = stripTags(d.topic);
+    if (d.townid !== undefined && d.townid !== null) room.townId = Number(d.townid);
     this.rooms.set(id, room);
     return room;
   }
 
-  private acquireClient(d: Record<string, any> | undefined): string {
-    if (!d) return '?';
-    const name = String(d.name ?? d.pname ?? '?');
-    if (d.id !== undefined) this.clients.set(String(d.id), name);
-    return name;
+  /** Creates or updates a client from Status / ClientJoined / UserUpdate data (missing fields keep old values). */
+  private acquireClient(d: Record<string, any> | undefined): ChatClient | null {
+    if (!d || d.id === undefined) return null;
+    const id = String(d.id);
+    const prev = this.clients.get(id);
+    const n = (v: unknown): number | undefined => (v === null || v === undefined || v === '' ? undefined : Number.isFinite(Number(v)) ? Number(v) : undefined);
+    const client: ChatClient = {
+      id,
+      playerId: n(d.westid ?? d.playerId) ?? prev?.playerId ?? 0,
+      name: String(d.name ?? d.pname ?? prev?.name ?? '?'),
+      level: n(d.level) ?? prev?.level ?? 0,
+      townId: n(d.townId ?? d.town_id) ?? prev?.townId ?? 0,
+      townRights: n(d.town_rights ?? d.townRights) ?? prev?.townRights ?? 0,
+      actioned: n(d.actioned) ?? prev?.actioned ?? 0,
+    };
+    this.clients.set(id, client);
+    return client;
+  }
+
+  clientName(id: string): string {
+    return this.clients.get(id)?.name ?? '?';
   }
 
   handle(e: ChatEvent): void {
@@ -233,21 +272,25 @@ export class ChatPoller extends EventEmitter {
         const room = this.rooms.get(String(p.rid));
         this.acquireClient(p.client);
         if (room && p.client?.id !== undefined) room.members.add(String(p.client.id));
+        this.emit('rooms');
         break;
       }
       case 'ClientLeft':
         this.rooms.get(String(p.rid))?.members.delete(String(p.cid));
+        this.emit('rooms');
         break;
       case 'TellConfirmed': {
-        const to = this.acquireClient(p.to);
-        this.addLine(`tell:${to}`, { at: e.t, from: this.clients.get(this.myId ?? '') ?? 'me', text: stripTags(p.message), own: true });
+        const to = this.acquireClient(p.to)?.name ?? '?';
+        this.addLine(`tell:${to}`, { at: e.t, from: this.clients.get(this.myId ?? '')?.name ?? 'me', text: stripTags(p.message), own: true });
         break;
       }
       case 'TellFailed':
         this.emit('tellFailed');
         break;
       case 'UserUpdate':
+        this.acquireClient(p);
         if (this.myId !== null && String(p.id) === this.myId) this.emit('self', selfFrom(p));
+        else if (p.id !== undefined) this.emit('rooms');
         break;
       case 'QuestDataChanged':
         this.emit('quests');
@@ -262,7 +305,7 @@ export class ChatPoller extends EventEmitter {
         this.emit('nuggets', Number(p.nuggets));
         break;
       case 'TellReceived': {
-        const from = this.acquireClient(p.from);
+        const from = this.acquireClient(p.from)?.name ?? '?';
         this.addLine(`tell:${from}`, { at: e.t, from, text: stripTags(p.message), own: false });
         this.emit('tell', { from: String(p.from?.name ?? '?'), message: String(p.message ?? '') });
         break;
@@ -270,7 +313,7 @@ export class ChatPoller extends EventEmitter {
       case 'Text': {
         const cid = String(p.cid ?? '');
         const room = String(p.to ?? '');
-        this.addLine(room, { at: e.t, from: this.clients.get(cid) ?? '?', text: stripTags(p.message), own: cid === this.myId });
+        this.addLine(room, { at: e.t, from: this.clientName(cid), text: stripTags(p.message), own: cid === this.myId });
         this.emit('text', { room, cid, message: String(p.message ?? '') });
         break;
       }

@@ -5,6 +5,8 @@
 //   inventory/carry   {item_id, last_inv_id} → {changes, wearSets, workPointBonus, bonus, speed, error, message}
 //   inventory/uncarry {last_inv_id, type}     → same
 //   inventory/inventory_changed {inv_id}      → {changes|false, wear:{slot:item_id|null}}
+//   inventory/show_equip (mode)               → {data:[{equip_manager_id, name, head, neck, …}], max, premium_max, hasPremium, price}
+//   inventory/switch_equip {id, last_inv_id}  → {changes, wear:[item ids], setItems, workPointBonus, speed, weapon}
 import type { GameClient } from '../http/game-client.ts';
 import { baseId, WEAR_SLOTS, type ItemCatalog } from './items.ts';
 
@@ -15,6 +17,28 @@ export interface ClothChange {
   speed?: number;
   workPointBonus?: unknown;
   error?: string;
+}
+
+/** A saved equipment set: item id per wear slot (null when the slot is empty). */
+export interface EquipSet {
+  id: number;
+  name: string;
+  slots: Record<string, number | null>;
+}
+
+export interface EquipSets {
+  sets: EquipSet[];
+  max: number;
+  premiumMax: number;
+  hasPremium: boolean;
+  price: number;
+}
+
+export interface SwitchEquipResult extends ClothChange {
+  /** All worn item ids after the switch. */
+  wear: number[];
+  /** Base ids of the set's items (WearSet.setItems). */
+  setItems: number[];
 }
 
 const toBagItem = (r: Record<string, any>): BagItem => ({
@@ -78,6 +102,18 @@ export class Inventory {
     }
   }
 
+  /** Replaces the worn items with a flat id list (inventory/switch_equip's `wear`). */
+  setWearIds(ids: number[], catalog?: ItemCatalog): void {
+    this.wear.clear();
+    for (const raw of ids) {
+      const id = Number(raw);
+      if (!id) continue;
+      const type = catalog?.get(id)?.type;
+      this.wear.set(type ?? `#${id}`, id);
+    }
+    if (catalog) this.retype(catalog);
+  }
+
   items(): BagItem[] {
     return [...this.bag.values()];
   }
@@ -126,5 +162,38 @@ export class InventoryApi {
   async changedSince(invId: number): Promise<{ changes: unknown; wear: unknown }> {
     const json = await this.client.remoteCall('inventory', 'inventory_changed', { inv_id: invId });
     return { changes: json.changes === false ? [] : json.changes, wear: json.wear };
+  }
+
+  /** Saved equipment sets (EquipManager.showPopup). */
+  async equipSets(): Promise<EquipSets> {
+    const json = await this.client.remoteCallMode('inventory', 'show_equip', {});
+    if (json.error) throw new Error(String(json.msg ?? json.error));
+    const sets: EquipSet[] = (Array.isArray(json.data) ? json.data : []).map((r: Record<string, any>) => {
+      const slots: Record<string, number | null> = {};
+      for (const slot of WEAR_SLOTS) {
+        const id = Number(r[slot]);
+        slots[slot] = id > 0 ? id : null;
+      }
+      return { id: Number(r.equip_manager_id) || 0, name: String(r.name ?? 'Set'), slots };
+    });
+    return {
+      sets,
+      max: Number(json.max) || 0,
+      premiumMax: Number(json.premium_max) || 0,
+      hasPremium: !!json.hasPremium,
+      price: Number(json.price) || 0,
+    };
+  }
+
+  /** Switches to a saved set (EquipManager.switchEquip). */
+  async switchEquip(id: number, lastInvId: number): Promise<SwitchEquipResult> {
+    const json = await this.client.remoteCall('inventory', 'switch_equip', { id, last_inv_id: lastInvId });
+    if (json.error) throw new Error(String(json.msg ?? json.error));
+    const r = this.cloth(json);
+    return {
+      ...r,
+      wear: Array.isArray(json.wear) ? json.wear.map(Number) : [],
+      setItems: Array.isArray(json.setItems) ? json.setItems.map(Number) : [],
+    };
   }
 }

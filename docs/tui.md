@@ -8,12 +8,13 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
 - `LoadingScreen` (in `App`) shows `state.startup.steps` until `startup.done` (Esc skips).
 
 ## Keys
-- `App`'s `useInput` handles **global keys first**, then screens get the rest: `? q m p u r A i o L H W M $ D C
+- `App`'s `useInput` handles **global keys first**, then screens get the rest: `? q m p u r A i T o L H W M $ D C
   G B s` (`H` is not global on the map, where it pans). A screen cannot use these unless it captures input.
 - Screens (`SCREEN_MODES`) receive `onCapture(bool)`: while true, global keys are skipped (text entry, confirm
   prompts, the autopilot's queue view). Always release it on close/unmount.
-- Taken screen-level uppercase keys: `P` (trade: pick up), `R` (quests/mail; autopilot: run/pause), `T`
-  (character), `U` (character: use item), `X`/`Q` (autopilot). Check `grep "input === '<k>'" src/tui` first.
+- Taken screen-level uppercase keys: `P` (trade: pick up), `R` (quests/mail; autopilot: run/pause), `U`
+  (character: use item), `X`/`Q` (autopilot). `T` is global (town); the character screen's reverse type filter
+  moved from `T` to `y`, leaving `t` for forward. Check `grep "input === '<k>'" src/tui` first.
 - Help text lives in `SHORTCUTS` in `overlays.ts`; add a section for every new screen (`Record<Mode, …>` is
   exhaustive, so does `MODE_TITLE`).
 
@@ -32,6 +33,21 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
 - **Debug** (`debug.ts`, mode `debug`, `B`): left the debug log (`state.debug`, newest followed at the bottom
   until you move up; `f` category, `/` title filter), right the selected entry's data as pretty JSON (`J K`
   scroll). `Tab` switches to **Now**: `runner.context()` live, one line per field, lists one item per line.
+- **Character** (`character.ts`, mode `char`, `i`): three tabs, `← →` cycles Inventory → Sets → Skills. Bag
+  `Enter/e` uses an item when `usetype !== 'none'` (coffee is a usable `yield` product) and equips it only when
+  it has `usetype: 'none'`; `U` always opens the use form. **Sets** lists `inventory/show_equip` sets, shows the
+  slots and the currently worn alternative, and `Enter` + `y` switches (`switch_equip`); saving/replacing sets
+  stays in the browser.
+- **Trade** (`trade.ts`, mode `trade`, `$`): Bank · Mobile trader · General store · Tailor · Gunsmith · Market ·
+  My market. Mobile trader loads `shop_trader`'s `trader` offers anywhere, shows the dollar price and rotation
+  time, and buys with `Enter`; the bag and offers are re-read after a buy.
+- **Chat** (`chat.ts`, mode `chat`, `C`): for the town room, a third column lists the clients in the room with
+  presence (● online / ◐ idle, 5 min), name, role (Mayor / Councillor / Citizen / Guest) and level, online-first.
+  It is hidden below 90 columns with a note; whisper/saloon rooms keep the two-column layout.
+- **Town** (`town.ts`, mode `town`, `T`): the home town's city hall (`building_cityhall`), building levels,
+  progress bars, and construction detail. `Enter` opens a form with the available duration and payer (town
+  treasury / private), then queues a `taskType: 'build'` task. `u` refreshes; it does not use the town you are
+  standing in.
 - **Map**: `m` / Esc go back to the screen it was opened from (`beforeMap`).
 
 ## Rendering

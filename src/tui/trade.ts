@@ -10,9 +10,10 @@ import { formKey, formValues, FormView, makeForm, type FormField, type FormState
 
 const h = React.createElement;
 
-type Tab = 'bank' | ShopKey | 'market' | 'mine';
+type Tab = 'bank' | 'trader' | ShopKey | 'market' | 'mine';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'bank', label: 'Bank' },
+  { key: 'trader', label: 'Mobile trader' },
   ...SHOPS.map((s) => ({ key: s.key as Tab, label: s.label })),
   { key: 'market', label: 'Market' },
   { key: 'mine', label: 'My market' },
@@ -32,6 +33,7 @@ const YES_NO = ['no', 'yes'];
 const catLabel = (type: string) => MARKET_CATEGORIES.find((c) => c.type === type)?.label ?? 'all';
 const catType = (label: string) => MARKET_CATEGORIES.find((c) => c.label === label)?.type ?? '';
 const itemsLabel = (state: ScreenProps['state'], o: MarketOffer) => `${o.count > 1 ? `${o.count}× ` : ''}${state.itemName(o.itemId)}`;
+const priceLabel = (p: { currency: string; amount: number }) => (p.currency === 'dollar' ? money(p.amount) : `${p.amount} ${p.currency}`);
 
 function filterText(f: MarketFilter): string {
   const parts = [f.type ? catLabel(f.type) : '', f.levelMin || f.levelMax ? `level ${f.levelMin || 0}–${f.levelMax || '∞'}` : '', f.usable ? 'usable' : '', f.consumable ? 'consumable' : ''];
@@ -62,6 +64,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
   useEffect(() => {
     setSel(0);
     setSide('goods');
+    if (tab === 'trader') return void state.openMobileTrader();
     if (!town) return;
     if (tab === 'bank') void state.openBank(town.id);
     else if (isShop(tab)) void state.openShop(tab, town.id);
@@ -78,10 +81,12 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
     ...state.marketMine.buyOrders.map((o) => ({ o, mineKind: 'want' as const })),
   ] : [];
   const filter = state.market.filter;
+  const traderItems = state.mobileTrader?.items ?? [];
   const rowsCount = tab === 'bank' ? 0
-    : side === 'bag' ? bagItems.length
-      : isShop(tab) ? shopItems.length
-        : tab === 'market' ? state.market.offers.length : mine.length;
+    : tab === 'trader' ? traderItems.length
+      : side === 'bag' ? bagItems.length
+        : isShop(tab) ? shopItems.length
+          : tab === 'market' ? state.market.offers.length : mine.length;
   const idx = Math.min(sel, Math.max(0, rowsCount - 1));
 
   const ask = (p: Pending, f: FormState) => {
@@ -133,6 +138,16 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
     const step = key.pageUp || key.pageDown ? 10 : 1;
     if (key.upArrow || input === 'k' || key.pageUp) return setSel(Math.max(0, idx - step));
     if (key.downArrow || input === 'j' || key.pageDown) return setSel(Math.min(rowsCount - 1, idx + step));
+    if (tab === 'trader') {
+      const item = traderItems[idx];
+      if (key.return && item?.prices[0]) {
+        const soldOut = item.limitedCount === 0 || (item.limitedAt !== null && item.limitedAt * 1000 <= Date.now());
+        if (soldOut) return state.error('This mobile-trader offer has ended.');
+        const p = item.prices[0];
+        setConfirm({ text: `Buy ${state.itemName(item.itemId)} for ${priceLabel(p)}?`, run: () => void state.buyMobileTrader(item) });
+      }
+      return;
+    }
     if (!town) return;
 
     if (tab === 'bank') {
@@ -254,9 +269,13 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
   const tabs = h(Text, { wrap: 'truncate' }, ...TABS.map((t) =>
     h(Text, { key: t.key, inverse: tab === t.key, bold: tab === t.key, color: tab === t.key ? 'cyan' : undefined }, ` ${t.label} `)),
   h(Text, { dimColor: true }, ' ← →'));
-  const where = town
-    ? `${town.name}${town.here ? ' (you are here)' : ' (home town; you are not there)'} · cash ${money(state.character.cash)} · bank ${money(state.character.deposit)}`
-    : 'No town: stand in a town or join one.';
+  const trader = state.mobileTrader;
+  const traderLeft = trader?.changesAt ? Math.max(0, trader.changesAt - state.clock.now()) : 0;
+  const where = tab === 'trader'
+    ? `${trader ? `Mobile trader · ${trader.items.length} offer(s)` : 'Loading mobile trader…'}${traderLeft ? ` · changes in ${endsIn(traderLeft)}` : ''} · cash ${money(state.character.cash)} · bank ${money(state.character.deposit)}`
+    : town
+      ? `${town.name}${town.here ? ' (you are here)' : ' (home town; you are not there)'} · cash ${money(state.character.cash)} · bank ${money(state.character.deposit)}`
+      : 'No town: stand in a town or join one.';
 
   const rows: React.ReactNode[] = [];
   let detail: React.ReactNode = null;
@@ -268,6 +287,25 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
       rows.push(h(Text, { key: 'd' }, `Bank        ${money(state.character.deposit)}`));
       rows.push(h(Text, { key: 'f' }, `Deposit fee ${b.fee}%`));
       rows.push(h(Text, { key: 'n', dimColor: true, wrap: 'wrap' }, 'Money in the bank is safe from duels. Purchases use cash first, then the bank. Enter: deposit.'));
+    }
+  } else if (tab === 'trader') {
+    rows.push(h(Text, { key: 'hd', dimColor: true, wrap: 'truncate' }, 'Rotating offers · buy with cash, then bank · Enter buy · u refresh'));
+    traderItems.slice(start, end).forEach((item, i) => {
+      const p = item.prices[0];
+      const level = state.items?.get(item.itemId)?.level;
+      const soldOut = item.limitedCount === 0 || (item.limitedAt !== null && item.limitedAt * 1000 <= Date.now());
+      const price = p ? priceLabel(p) : '—';
+      const unaffordable = !!p && p.currency === 'dollar' && p.amount > state.character.cash + state.character.deposit;
+      const limited = item.limitedAt ? endsIn(item.limitedAt - state.clock.now()) : item.limitedCount !== null ? `${item.limitedCount} left` : '';
+      rows.push(h(Text, { key: item.itemId, inverse: start + i === idx, color: soldOut ? 'gray' : unaffordable ? 'red' : undefined, wrap: 'truncate' },
+        `${truncate(state.itemName(item.itemId), leftW - 28)} ${level ? `L${level}`.padStart(4) : '    '} ${price.padStart(9)} ${truncate(limited, 6).padStart(6)}`));
+    });
+    const item = traderItems[idx];
+    if (item) {
+      const p = item.prices[0];
+      detail = h(Box, { flexDirection: 'column', width: rightW, height: bodyH - formH },
+        h(Text, { bold: true, color: 'yellow', wrap: 'truncate' }, p ? `${priceLabel(p)}${item.discount ? ` (${item.discount}% off ${priceLabel({ ...p, amount: p.base })})` : ''}${item.teaser ? ` · ${item.teaser}` : ''}` : 'No price'),
+        h(ItemDetail, { state, itemId: item.itemId, count: 1, wornId: undefined, compare: false, pane: 'bag', width: rightW, height: Math.max(6, bodyH - formH - 2), scroll: 0 }));
     }
   } else if (side === 'bag') {
     rows.push(h(Text, { key: 'hd', dimColor: true, wrap: 'truncate' }, `Your bag: Enter ${isShop(tab) ? 'sells to the shop' : 'offers on the market'} · Tab back`));
@@ -334,15 +372,16 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
   const help = confirm
     ? h(Text, { color: 'yellow', wrap: 'truncate' }, `${confirm.text} y / n`)
     : h(Text, { dimColor: true, wrap: 'truncate' }, tab === 'bank' ? 'Enter deposit · ← → tab · Esc back'
-      : side === 'bag' ? 'Enter sell · Tab back · Esc back'
-        : isShop(tab) ? 'Enter buy · Tab sell · ← → tab · Esc back'
-          : tab === 'market' ? (filter.buyOrders ? '/ search · t for sale · Enter sell now (or ask) · b ask · n buy order · w walk · < > page'
-            : '/ search · t buy orders · Enter buy now (or bid) · b bid · n buy order · w walk · < > page · Tab sell')
-            : 'Enter pick up · P pick up all here · x withdraw · w walk to town · ← → tab · Esc back');
+      : tab === 'trader' ? 'Enter buy · u refresh · ← → tab · Esc back'
+        : side === 'bag' ? 'Enter sell · Tab back · Esc back'
+          : isShop(tab) ? 'Enter buy · Tab sell · ← → tab · Esc back'
+            : tab === 'market' ? (filter.buyOrders ? '/ search · t for sale · Enter sell now (or ask) · b ask · n buy order · w walk · < > page'
+              : '/ search · t buy orders · Enter buy now (or bid) · b bid · n buy order · w walk · < > page · Tab sell')
+              : 'Enter pick up · P pick up all here · x withdraw · w walk to town · ← → tab · Esc back');
   const left = h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width: leftW, height: bodyH, paddingX: 1 },
     h(Text, { color: town?.here ? 'green' : 'yellow', wrap: 'truncate' }, where),
     ...rows,
-    rowsCount === 0 && tab !== 'bank' ? h(Text, { dimColor: true }, tab === 'market' ? '' : 'Nothing here.') : null,
+    rowsCount === 0 && tab !== 'bank' ? h(Text, { dimColor: true }, tab === 'market' ? '' : tab === 'trader' ? (trader ? 'No offers right now.' : 'Loading offers…') : 'Nothing here.') : null,
     h(Box, { flexGrow: 1 }), help);
   const right = h(Box, { flexDirection: 'column', width: rightW, height: bodyH },
     detail ? h(Box, { flexGrow: 1, flexDirection: 'column' }, detail) : h(Box, { flexGrow: 1 }),

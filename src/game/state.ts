@@ -18,7 +18,7 @@ import { WorldMap, type Fort, type Town } from './world.ts';
 import { TileCache } from './tiles.ts';
 import { ItemCatalog, ItemSetCatalog, loadItemCatalog, loadItemSets, statsOf } from './items.ts';
 import { setBonusLines, type ItemStats, type StatContext } from './itemstats.ts';
-import { Inventory, InventoryApi } from './inventory.ts';
+import { Inventory, InventoryApi, type EquipSets } from './inventory.ts';
 import { SkillApi, Skills, type SkillPlan } from './skills.ts';
 import { QuestApi, questEnds, type Quest, type QuestEmployer, type QuestRequirement } from './quests.ts';
 import { fetchHotel, roomRate, type Hotel, type HotelRoom } from './hotel.ts';
@@ -27,9 +27,10 @@ import { cachedJson } from '../util/disk-cache.ts';
 import { planRoute, questNeeds, type RouteNeed, type RouteObjective, type RoutePlan } from './route.ts';
 import { MailApi, type Report, type ReportFolder, type ReportList, type ReportRow, type Telegram, type TelegramList } from './mail.ts';
 import {
-  buyOrderProblem, DEFAULT_FILTER, deposit, fetchBank, fetchShop, MarketApi, shopBuy, shopSell, useItem,
-  type Bank, type MarketFilter, type MarketOffer, type Shop, type ShopKey,
+  buyMobileTrader, buyOrderProblem, DEFAULT_FILTER, deposit, fetchBank, fetchMobileTrader, fetchShop, MarketApi, shopBuy, shopSell, useItem,
+  type Bank, type MarketFilter, type MarketOffer, type MobileTrader, type MobileTraderItem, type Shop, type ShopKey,
 } from './trade.ts';
+import { buildPost, fetchConstruction, fetchTownHall, type Construction, type TownBuilding, type TownHall } from './townhall.ts';
 import { DuelApi, duelPost, type DuelData, type DuelOpponent, type NpcDuelResult } from './duels.ts';
 import { loadAutopilot, saveAutopilot, type AutopilotFile } from './autopilot-config.ts';
 import { projectTimeline, type Timeline, type TimelineStep } from './timeline.ts';
@@ -114,6 +115,8 @@ export class GameState extends EventEmitter {
   items: ItemCatalog | null = null;
   itemSets: ItemSetCatalog | null = null;
   inventory = new Inventory();
+  /** Saved equipment sets (loaded by the character screen's Sets tab). */
+  equipSets: EquipSets | null = null;
   skills = new Skills();
   quests: Quest[] = [];
   questCapacity = 0;
@@ -139,6 +142,11 @@ export class GameState extends EventEmitter {
   /** Trade screen: bank, shop and market of the town you are in (or your home town). */
   bank: Bank | null = null;
   shop: Shop | null = null;
+  /** Rotating offers of the mobile trader (the trade screen's "Mobile trader" tab). */
+  mobileTrader: MobileTrader | null = null;
+  /** Town hall of the home town and the construction detail of its selected building. */
+  townHall: TownHall | null = null;
+  construction: Construction | null = null;
   market: { query: string; page: number; next: boolean; offers: MarketOffer[]; filter: MarketFilter; searched: boolean } =
     { query: '', page: 1, next: false, offers: [], filter: { ...DEFAULT_FILTER }, searched: false };
   /** My market: bids, sell offers and (for the trade town's market) buy orders. */
@@ -173,6 +181,10 @@ export class GameState extends EventEmitter {
     this.itemSetsFile = bootstrap.game?.itemSetsFile;
     this.bagInit = bootstrap.bag ?? bootstrap.character?.inventory ?? null;
     this.inventory = Inventory.fromInit(this.bagInit, this.items ?? undefined);
+    this.equipSets = null;
+    this.mobileTrader = null;
+    this.townHall = null;
+    this.construction = null;
     this.skills = Skills.fromInit(bootstrap.character?.skillData);
     const wasLive = !!this.live?.active;
     this.live?.stop();
@@ -651,6 +663,27 @@ export class GameState extends EventEmitter {
       this.inventory.applyChanges(r.changes);
       this.inventory.applyWear(r.wear);
     });
+  }
+
+  async loadEquipSets(): Promise<void> {
+    await this.guard('Equipment sets', async () => {
+      this.equipSets = await new InventoryApi(this.client).equipSets();
+    });
+  }
+
+  /** Switches to a saved set; gear changes skill bonuses, so skills and jobs are refreshed too. */
+  async switchEquipSet(id: number): Promise<void> {
+    const set = this.equipSets?.sets.find((s) => s.id === id);
+    if (!set) return this.error('That equipment set is no longer available.');
+    const ok = await this.guard('Switch equipment', async () => {
+      const r = await new InventoryApi(this.client).switchEquip(id, this.inventory.lastInvId);
+      this.inventory.applyChanges(r.changes);
+      this.inventory.setWearIds(r.wear, this.items ?? undefined);
+      if (r.speed !== undefined) this.character.speed = r.speed;
+      this.info(`Equipped set: ${set.name}`);
+      return true;
+    });
+    if (ok) await this.afterGearChange();
   }
 
   async wear(itemId: number): Promise<void> {
@@ -1393,6 +1426,39 @@ export class GameState extends EventEmitter {
     });
   }
 
+  /** City hall of the home town (construction rights live there). */
+  async loadTownHall(): Promise<void> {
+    const home = this.character.homeTown;
+    if (!home) return this.error('You are not a member of a town.');
+    await this.guard('Town hall', async () => {
+      this.townHall = await fetchTownHall(this.client, home.id);
+    });
+  }
+
+  async openConstruction(building: TownBuilding): Promise<Construction | null> {
+    const home = this.character.homeTown;
+    if (!home) {
+      this.error('You are not a member of a town.');
+      return null;
+    }
+    const r = await this.guard('Construction', async () => {
+      this.construction = await fetchConstruction(this.client, home.x, home.y, building.key);
+      return this.construction;
+    });
+    return r ?? null;
+  }
+
+  /** Queues TaskBuild; the server walks to the town first when needed. */
+  async queueConstruction(duration: number, pay: 'town' | 'player'): Promise<boolean> {
+    const c = this.construction;
+    if (!c) return false;
+    if (!c.durations.some((d) => d.seconds === duration)) {
+      this.error('That construction duration is not available.');
+      return false;
+    }
+    return this.addTask('Construction', buildPost({ x: c.x, y: c.y }, c.key, duration, pay), `Queued construction: ${c.name}`);
+  }
+
   async depositMoney(amount: number): Promise<void> {
     const bank = this.bank;
     if (!bank) return;
@@ -1411,6 +1477,26 @@ export class GameState extends EventEmitter {
     await this.guard('Shop', async () => {
       this.shop = await fetchShop(this.client, key, townId);
     });
+  }
+
+  /** Rotating offers of the mobile trader; no town needed. */
+  async openMobileTrader(): Promise<void> {
+    await this.guard('Mobile trader', async () => {
+      this.mobileTrader = await fetchMobileTrader(this.client);
+    });
+  }
+
+  async buyMobileTrader(item: MobileTraderItem): Promise<void> {
+    const ok = await this.guard('Buy from mobile trader', async () => {
+      const r = await buyMobileTrader(this.client, item);
+      this.applyMoney(r);
+      const name = this.itemName(item.itemId);
+      this.info(`Bought ${name}${r.message && !r.message.includes(name) ? `: ${r.message}` : ''}`);
+      return true;
+    });
+    if (!ok) return;
+    await this.refreshInventory();
+    await this.openMobileTrader();
   }
 
   /** Shop price: item price × the shop's charge (Trader.addItemToInv). */

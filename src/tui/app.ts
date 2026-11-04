@@ -16,6 +16,7 @@ import { AutopilotScreen } from './autopilot.ts';
 import { DebugScreen } from './debug.ts';
 import { QueuePane } from './queue.ts';
 import { ChatScreen } from './chat.ts';
+import { TownScreen } from './town.ts';
 import { HomeScreen } from './home.ts';
 import { defaultRoom } from '../game/hotel.ts';
 import { poisNear } from '../game/poi.ts';
@@ -382,15 +383,17 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
     }
     if (input === 'r') return void state.reload();
     if (input === 'u') {
-      if (mode === 'char') return void state.refreshInventory().then(() => state.refreshSkills());
+      if (mode === 'char') return void state.refreshInventory().then(() => state.refreshSkills()).then(() => state.loadEquipSets());
       if (mode === 'quests') return void state.loadQuests();
       if (mode === 'mail') return void state.loadReports(state.reports?.page ?? 1).then(() => state.loadTelegrams(state.telegrams?.page ?? 1));
       if (mode === 'duels') return void state.loadDuels();
-      if (mode === 'trade') return void state.loadMarketMine();
+      if (mode === 'trade') return void state.loadMarketMine().then(() => state.openMobileTrader());
+      if (mode === 'town') return void state.loadTownHall();
       return void state.refreshQueue();
     }
     if (input === 'A' && onAccount) return onAccount();
     if (input === 'i') return openScreen('char');
+    if (input === 'T') return openScreen('town');
     if (input === 'o' && !(mode === 'map' && mapPanel)) {
       setQuestsOnGivers(false);
       return openScreen('quests');
@@ -498,14 +501,16 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
           ? '↑↓ select · 1/2/3 start job · w walk · o quests · s hotel · Esc back · ? help'
           : `arrows pan · +/- zoom · . me · / find · v layers · Enter select${state.mapHighlight ? ' · x clear !' : ''}`
         : mode === 'char'
-          ? '← → tab · Tab pane · Enter wear/take off · +/- skills · i/Esc back · ? help'
+          ? '← → tab · Tab pane · Enter wear/use/take off · U use · +/- skills · i/Esc back · ? help'
           : mode === 'quests'
             ? 'Tab log/givers · Enter finish/accept · x cancel · w walk · o/Esc back · ? help'
-            : mode === 'home'
-              ? 'Enter chat · ←/→ room · c cancel current · +/- minimap · W jobs · ? help'
-              : onScreen
-                ? `${{ mail: 'M', trade: '$', duels: 'D', chat: 'C', autopilot: 'G', debug: 'B' }[mode as 'mail']}/Esc back · ? help`
-                : 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel · Esc home';
+            : mode === 'town'
+              ? '↑↓ building · Enter construction · u refresh · T/Esc back · ? help'
+              : mode === 'home'
+                ? 'Enter chat · ←/→ room · c cancel current · +/- minimap · W jobs · ? help'
+                : onScreen
+                  ? `${{ mail: 'M', trade: '$', duels: 'D', chat: 'C', autopilot: 'G', debug: 'B' }[mode as 'mail']}/Esc back · ? help`
+                  : 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel · Esc home';
 
   let body;
   if (overlay === 'help') body = h(HelpOverlay, { mode, width, height: bodyH });
@@ -537,6 +542,7 @@ export function App({ state, size, onAccount }: { state: GameState; size?: { col
             : mode === 'duels' ? h(DuelsScreen, props)
               : mode === 'autopilot' ? h(AutopilotScreen, props)
               : mode === 'debug' ? h(DebugScreen, props)
+              : mode === 'town' ? h(TownScreen, props)
               : h(ChatScreen, props);
     screen = h(Box, { display: overlay ? 'none' : 'flex' }, el);
   }
@@ -559,6 +565,7 @@ const NAV: { key: string; label: string; mode?: Mode; overlay?: string }[] = [
   { key: 'W', label: 'jobs', mode: 'main' },
   { key: 'm', label: 'map', mode: 'map' },
   { key: 'i', label: 'character', mode: 'char' },
+  { key: 'T', label: 'town', mode: 'town' },
   { key: 'o', label: 'quests', mode: 'quests' },
   { key: 'M', label: 'mail', mode: 'mail' },
   { key: '$', label: 'trade', mode: 'trade' },

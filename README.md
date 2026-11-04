@@ -44,9 +44,10 @@ In the TUI, press `?` for help on any screen.
 | `W` | jobs & queue (main view) |
 | `m` | map ⇄ jobs |
 | `1` `2` `3` | start the selected job (short / medium / long) |
-| `i` | inventory & skills |
+| `i` | inventory, equipment sets & skills |
+| `T` | town hall, building levels & construction |
 | `o` | quests |
-| `$` | bank, shops, market |
+| `$` | bank, mobile trader, shops, market |
 | `M` | reports & telegrams |
 | `D` | duels |
 | `Tab` | jobs → queue → chat (Enter to write, ←/→ room) |
