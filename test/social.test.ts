@@ -491,7 +491,7 @@ test('TUI: mail, trade, duels and chat screens; quest reward choice', async () =
   try {
     await t.settle();
     // Home (start screen): chat at the bottom; Enter + typing does not trigger shortcuts.
-    assert.match(t.plain(), /Attention/);
+    assert.match(t.plain(), /Task queue \d+\/\d+/);
     assert.match(t.plain(), /Slobozia/);
     assert.match(t.plain(), /Bob: anyone selling ham\?/);
     assert.match(t.plain(), /Enter chat · ←\/→ room/);

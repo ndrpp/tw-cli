@@ -1,20 +1,19 @@
-// Home screen (H, the start screen): what the character is doing now and what needs attention. No browser
+// Home screen (H, the start screen): what the character is doing now and what is queued. No browser
 // counterpart; it gathers the header, task queue, report list and chat the web shows in separate windows.
-// Layout: working · session · attention (left) | minimap · reports (right) · chat (bottom, interactive).
-import React, { useEffect, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+// Layout: working · session · task queue (left) | minimap · reports (right) · chat (bottom, interactive).
+import React, { useEffect, useRef, useState } from 'react';
+import { Box, Text, measureElement, useInput } from 'ink';
 import type { ScreenProps } from './character.ts';
 import type { GameState } from '../game/state.ts';
 import { regenSeconds } from '../game/timeline.ts';
 import { bar, formatDuration, money, truncate } from './format.ts';
 import { buildGrid, ZOOMS } from './map.ts';
 import { ChatPanel, chatRoomIds } from './chat.ts';
+import { QueuePane } from './queue.ts';
 
 const h = React.createElement;
 /** How long the "done" line shows after a task ends. */
 const DONE_S = 30;
-/** Queue ending sooner than this is flagged. */
-const QUEUE_LOW_S = 15 * 60;
 
 /** Server seconds → local "14:32". */
 const clockTime = (s: number) => new Date(s * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -25,6 +24,14 @@ export function HomeScreen({ state, width, height, onCapture, active = true }: S
   const [draft, setDraft] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
   const [zoom, setZoom] = useState(128);
+  // The queue panel gets what the working and session panels leave: measured after layout.
+  const queueBox = useRef<any>(null);
+  const [queueRows, setQueueRows] = useState(3);
+  useEffect(() => {
+    if (!queueBox.current) return;
+    const rows = Math.max(1, measureElement(queueBox.current).height - 2);
+    if (rows !== queueRows) setQueueRows(rows);
+  });
 
   useEffect(() => {
     onCapture(draft !== null || confirm);
@@ -85,7 +92,8 @@ export function HomeScreen({ state, width, height, onCapture, active = true }: S
       h(Box, { flexDirection: 'column', width: leftW, height: topH },
         h(WorkingPanel, { state, width: leftW, confirm }),
         h(SessionPanel, { state, width: leftW }),
-        h(AttentionPanel, { state }),
+        h(Box, { ref: queueBox, flexGrow: 1, flexDirection: 'column', overflow: 'hidden' },
+          h(QueuePane, { state, selected: 0, focused: false, width: leftW, confirm: false, maxRows: queueRows })),
       ),
       wide ? h(Box, { flexDirection: 'column', width: rightW, height: topH },
         h(Minimap, { state, width: rightW, height: mapH, zoom }),
@@ -184,32 +192,6 @@ function SessionPanel({ state, width }: { state: GameState; width: number }) {
     h(Text, { wrap: 'truncate' },
       h(Text, { color: 'cyan' }, 'EN '), full(c.energy, c.maxEnergy, c.energyRegen), '   ',
       h(Text, { color: 'red' }, 'HP '), full(c.health, c.maxHealth, c.healthRegen)),
-  );
-}
-
-/** Everything that wants a key press, most urgent first. */
-function AttentionPanel({ state }: { state: GameState }) {
-  const now = state.clock.now();
-  const c = state.character;
-  const items: { text: string; color?: string }[] = [];
-  if (!state.queue.length) items.push({ text: 'Queue empty: the character is idle', color: 'red' });
-  else {
-    const end = state.queue[state.queue.length - 1]!.end;
-    if (end - now < QUEUE_LOW_S) items.push({ text: `Queue ends in ${formatDuration(end - now)}`, color: 'yellow' });
-  }
-  if (c.maxHealth && c.health / c.maxHealth < 0.3) items.push({ text: `Low health ${c.health}/${c.maxHealth}: easy duel target`, color: 'red' });
-  if (state.unread.reports) items.push({ text: 'New report (M)', color: 'yellow' });
-  if (state.unread.messages) items.push({ text: 'New telegram (M)', color: 'yellow' });
-  const finishable = state.quests.filter((q) => q.finishable).length;
-  if (finishable) items.push({ text: `${finishable} quest(s) to hand in (o)`, color: 'green' });
-  const unreadChat = state.live?.unreadRooms.size ?? 0;
-  if (unreadChat) items.push({ text: `${unreadChat} chat room(s) unread (C)`, color: 'cyan' });
-  if (state.autoRoute) items.push({ text: `Auto-route: ${state.autoRoute.runs.length} run(s) left`, color: 'magenta' });
-  if (state.liveStatus !== 'on' && state.liveStatus !== 'connecting') items.push({ text: 'Live updates off (L): no chat or report news' });
-  return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', paddingX: 1, flexGrow: 1, overflow: 'hidden' },
-    h(Text, { bold: true }, 'Attention'),
-    ...items.map((it, i) => h(Text, { key: i, color: it.color, dimColor: !it.color, wrap: 'truncate' }, `● ${it.text}`)),
-    items.length ? null : h(Text, { dimColor: true }, 'Nothing needs you.'),
   );
 }
 

@@ -547,7 +547,7 @@ test('TUI: loading screen, job filter by product + sort + LP toggle, map layers,
     await keys('\x1b');
     await settle(200);
     // Starts on home; W opens the jobs view. Jobs without enough labor points are hidden until `a`.
-    assert.match(plain(), /Attention/);
+    assert.match(plain(), /Task queue \d+\/\d+/);
     assert.match(plain(), / 25%  45:00 left/);
     assert.match(plain(), /\+50 xp  \$90  luck \$0–\$400/);
     assert.match(plain(), /Drops: Ham 200%/);

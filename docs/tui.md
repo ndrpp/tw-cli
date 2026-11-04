@@ -21,7 +21,8 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
 - **Home** (`home.ts`, mode `home`, the start screen; Esc from any screen comes back here): working panel
   (queue head: progress bar, time left, expected rewards via `state.queuedJob()`, "✓ done" with the report
   summary for 30 s, autopilot status), session (measured XP/h and $/h from `state.rates`, queued rate from
-  `state.timeline()`, level ETA, regen "full at"), attention list, minimap (`buildGrid` around `@`, +/-),
+  `state.timeline()`, level ETA, regen "full at"), task queue (`QueuePane` from `queue.ts`, shared with the jobs
+  screen; fills the rest of the left column, rows measured with `measureElement`), minimap (`buildGrid` around `@`, +/-),
   newest reports (`state.recentReports`), interactive chat. Small terminals drop chat (< 24 rows), then the
   right column (< 96 cols).
 - Reports on home cost no polling: one read on first show, then the live "new report" push (which already
