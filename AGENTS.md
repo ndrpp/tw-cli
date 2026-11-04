@@ -23,7 +23,8 @@ the relevant file in `docs/`.
 - `npm test`: all tests (`node --test test/*.test.ts`). Some skip without a saved `game.php`.
 - `npm run typecheck`: `tsc -p .`. Run it and the tests after every change.
 - CI (`.github/workflows/test.yml`, badge in the README): typecheck + tests on Node 26, Ubuntu, for pushes to
-  `main` and every PR. The two login tests that check 0600 file modes fail on Windows only; CI runs them.
+  `main` and every PR. The two login tests that check 0600 file modes fail on Windows only; CI runs them. The test
+  step sets `CI=false`: with `CI` set, Ink (is-in-ci) writes only the last frame and every TUI test sees nothing.
 
 ## Layout
 - `src/game/`: game logic, no UI. `state.ts` (GameState: owns the client, keeps state in sync), one module per area
