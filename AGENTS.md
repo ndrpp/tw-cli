@@ -3,6 +3,11 @@
 Guide for coding agents working on tw-cli, a terminal client for The West (world en32). Read this first, then
 the relevant file in `docs/`.
 
+## 1 % better every day
+Leave the project a little better than you found it, every session, on top of the task: fix one stale doc line,
+one misleading name, one missing test, one rough edge you passed by. Small and safe, in the same change, said in
+the summary. Small gains compound; nobody needs to schedule a cleanup.
+
 ## Keep this knowledge current (do this every time)
 - **Update this file and `docs/` as part of every change**, in the same commit or edit session, without being
   asked. If you learn something non-obvious about the game, the code or the user's preferences, write it down.
