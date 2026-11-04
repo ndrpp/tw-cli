@@ -74,7 +74,9 @@ function http(
       },
     );
     req.on('error', reject);
-    if (opts.body) req.write(opts.body);
+    if (opts.body) {
+      req.write(opts.body);
+    }
     req.end();
   });
 }
@@ -83,7 +85,9 @@ after(() => rmSync(home, { recursive: true, force: true }));
 
 test('vendored Fingerprint2 is byte-identical to the build in game.php', () => {
   const gamePhp = fileURLToPath(new URL('../../en32.the_west.net/en32.the-west.net/game.php', import.meta.url));
-  if (!existsSync(gamePhp)) return;
+  if (!existsSync(gamePhp)) {
+    return;
+  }
   const lib = readFileSync(new URL('../src/web/assets/fingerprint2.js', import.meta.url), 'utf8');
   const body = lib.slice(lib.indexOf('!function(e,t,n)'), lib.lastIndexOf(';'));
   assert.ok(readFileSync(gamePhp, 'utf8').includes(body));
@@ -99,7 +103,9 @@ test('web page: token + host checks, no external assets, fingerprint save, login
     onFingerprint: (fp) => saved.push(fp),
     login: async (name, password, profileValue) => {
       logins.push(`${name}:${password}:${profileValue.fp}`);
-      if (password !== 'secret') throw new Error('Login rejected: Wrong name or password');
+      if (password !== 'secret') {
+        throw new Error('Login rejected: Wrong name or password');
+      }
       return { name: 'shallax', level: 30, world: 'Quebec' };
     },
   });
@@ -188,27 +194,38 @@ test('TUI setup: type fingerprint + User-Agent, log in with name/password', asyn
     const cookie = headers.get('cookie') ?? '';
     const res = (status: number, items: [string, string][] = [], text: string | null = null) =>
       new Response(text, { status, headers: items });
-    if (url === `${PORTAL}/`) return res(200, [['set-cookie', 'PHPSESSID=p; path=/']], '<html>');
+    if (url === `${PORTAL}/`) {
+      return res(200, [['set-cookie', 'PHPSESSID=p; path=/']], '<html>');
+    }
     if (url.includes('check_login')) {
       const urlValue = new URLSearchParams(body);
-      if (urlValue.get('password') !== 'secret') return Response.json({ error: 'Wrong name or password' });
+      if (urlValue.get('password') !== 'secret') {
+        return Response.json({ error: 'Wrong name or password' });
+      }
       return Response.json({ player_id: 42, password: 'tok', playerWorlds: { 38: [38, 1] } });
     }
-    if (url.endsWith('action=login')) return res(302, [['location', `${GAME}/game.php?sid=s1`]]);
-    if (url.includes('game.php?sid='))
+    if (url.endsWith('action=login')) {
+      return res(302, [['location', `${GAME}/game.php?sid=s1`]]);
+    }
+    if (url.includes('game.php?sid=')) {
       return res(302, [
         ['location', '/game.php'],
         ['set-cookie', 'sid=s1; path=/'],
       ]);
+    }
     if (url === `${GAME}/game.php`) {
-      if (!cookie.includes('sid=s1')) return res(302, [['location', `${PORTAL}/`]]);
+      if (!cookie.includes('sid=s1')) {
+        return res(302, [['location', `${PORTAL}/`]]);
+      }
       return res(
         200,
         [],
         '<script>Game.init({"currentWorldName":"Quebec","jobs":[]});Player.init({"h":"0b89b1"});Character.init({"playerId":42,"name":"shallax","level":30,"pos":{"x":1,"y":1},"taskQueue":[]});</script>',
       );
     }
-    if (url.includes('record_fp')) return Response.json({ error: false });
+    if (url.includes('record_fp')) {
+      return Response.json({ error: false });
+    }
     return res(404, [], 'unexpected');
   }) as typeof fetch;
 
@@ -274,7 +291,9 @@ test('TUI setup: type fingerprint + User-Agent, log in with name/password', asyn
     assert.match(plain(), /Password: ••••••/);
     assert.doesNotMatch(plain(), /secret/);
     await type('\r');
-    for (let index = 0; index < 50 && !ready; index++) await settle(50);
+    for (let index = 0; index < 50 && !ready; index++) {
+      await settle(50);
+    }
     assert.ok(ready, 'login finished');
     assert.equal(ready.bootstrap.character.name, 'shallax');
     assert.ok(seen.every((source) => source.ua === 'Mozilla/5.0 Test'));

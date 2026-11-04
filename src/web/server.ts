@@ -50,7 +50,9 @@ function readBody(req: IncomingMessage): Promise<string> {
       if (size > MAX_BODY) {
         reject(new Error('body too large'));
         req.destroy();
-      } else chunks.push(candidate);
+      } else {
+        chunks.push(candidate);
+      }
     });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
@@ -104,15 +106,18 @@ export function startWebServer(
       // Reject requests whose Host is not this server (DNS-rebinding guard).
       const host = (req.headers.host ?? '').replace(/:\d+$/, '');
       const allowed = new Set(['localhost', '127.0.0.1', '[::1]', opts.host]);
-      if (!allowed.has(host) && opts.host !== '0.0.0.0') return send(res, 421, 'text/plain', 'wrong host');
+      if (!allowed.has(host) && opts.host !== '0.0.0.0') {
+        return send(res, 421, 'text/plain', 'wrong host');
+      }
       const auth = url.searchParams.get('t') ?? req.headers['x-tw-token'];
-      if (auth !== token)
+      if (auth !== token) {
         return send(
           res,
           403,
           'text/plain',
           'Open the exact URL printed in the terminal (it contains a one-time token).',
         );
+      }
 
       if (req.method === 'GET' && url.pathname === '/') {
         const existing = readProfileRaw(profileFile);
@@ -123,12 +128,14 @@ export function startWebServer(
           page({ token, world: DEFAULT_WORLD.url, existingFp: existing?.fp ?? null }),
         );
       }
-      if (req.method === 'GET' && url.pathname === '/fingerprint2.js')
+      if (req.method === 'GET' && url.pathname === '/fingerprint2.js') {
         return send(res, 200, 'text/javascript; charset=utf-8', FP_LIB);
+      }
 
       if (req.method === 'POST' && (url.pathname === '/api/fingerprint' || url.pathname === '/api/login')) {
-        if (!(req.headers['content-type'] ?? '').startsWith('application/json'))
+        if (!(req.headers['content-type'] ?? '').startsWith('application/json')) {
           return json(res, 415, { error: 'JSON only' });
+        }
         const body = obj(JSON.parse(await readBody(req)));
 
         if (url.pathname === '/api/fingerprint') {
@@ -151,10 +158,14 @@ export function startWebServer(
           return json(res, 200, { ok: true, fp: profile.fp, previous });
         }
 
-        if (loginRunning) return json(res, 409, { error: 'A login is already running' });
+        if (loginRunning) {
+          return json(res, 409, { error: 'A login is already running' });
+        }
         const name = String(body.name ?? '').trim();
         const password = String(body.password ?? '');
-        if (!name || !password) return json(res, 400, { error: 'Name and password are required' });
+        if (!name || !password) {
+          return json(res, 400, { error: 'Name and password are required' });
+        }
         let profile: FingerprintProfile;
         try {
           profile = validateProfile(readProfileRaw(profileFile));
@@ -168,7 +179,9 @@ export function startWebServer(
           const who = await login(name, password, profile);
           log(`Logged in as ${who.name} (level ${who.level}) on ${who.world}. Session saved.`);
           json(res, 200, { ok: true, ...who });
-          if (opts.exitAfterLogin) setTimeout(resolveDone, EXIT_DELAY_MS);
+          if (opts.exitAfterLogin) {
+            setTimeout(resolveDone, EXIT_DELAY_MS);
+          }
         } catch (loginError) {
           json(res, 401, { error: errorMessage(loginError) });
         } finally {

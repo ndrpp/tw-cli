@@ -102,7 +102,9 @@ export class TaskApi {
 
   async list(): Promise<QueuedTask[]> {
     const json = await this.client.remoteCallMode('task', 'get_tasks');
-    if (json.error) throw new Error(String(json.msg ?? 'task/get_tasks failed'));
+    if (json.error) {
+      throw new Error(String(json.msg ?? 'task/get_tasks failed'));
+    }
     return parseQueue(json.queue);
   }
 
@@ -112,7 +114,9 @@ export class TaskApi {
    */
   async add(queueLength: number, posts: Record<string, FormValue>[], limit: number): Promise<AddResult> {
     const room = limit - queueLength;
-    if (room <= 0) throw new TaskLimitError(`Task queue is full (${queueLength}/${limit})`);
+    if (room <= 0) {
+      throw new TaskLimitError(`Task queue is full (${queueLength}/${limit})`);
+    }
     const batch = posts.slice(0, room);
     const tasks: Record<string, FormValue> = {};
     batch.forEach((pick, index) => {
@@ -121,11 +125,19 @@ export class TaskApi {
     const json = await this.client.remoteCall('task', 'add', { tasks });
     const result: AddResult = { added: [], errors: [] };
     for (const jsonValue of vals(json.tasks).map(obj)) {
-      if (jsonValue.task) result.added.push(parseQueueEntry(obj(jsonValue.task)));
-      if (jsonValue.error) result.errors.push(String(jsonValue.msg ?? jsonValue.error));
+      if (jsonValue.task) {
+        result.added.push(parseQueueEntry(obj(jsonValue.task)));
+      }
+      if (jsonValue.error) {
+        result.errors.push(String(jsonValue.msg ?? jsonValue.error));
+      }
     }
-    if (json.error && json.msg) result.errors.push(String(json.msg));
-    if (json.energy !== undefined) result.energy = Number(json.energy);
+    if (json.error && json.msg) {
+      result.errors.push(String(json.msg));
+    }
+    if (json.energy !== undefined) {
+      result.energy = Number(json.energy);
+    }
     return result;
   }
 
@@ -137,7 +149,9 @@ export class TaskApi {
     const tasks: Record<string, FormValue> = {};
     for (const pos of positions) {
       const task = queue[pos];
-      if (task?.queueId) tasks[String(pos)] = { queueId: task.queueId, type: task.type };
+      if (task?.queueId) {
+        tasks[String(pos)] = { queueId: task.queueId, type: task.type };
+      }
     }
     const json = await this.client.remoteCall('task', 'cancel', { tasks });
     const errors: string[] = [];
@@ -145,9 +159,15 @@ export class TaskApi {
     let money: number | undefined;
     for (const jsonValue of vals(json.tasks).map(obj)) {
       const extra = obj(jsonValue.extra);
-      if (jsonValue.error) errors.push(String(jsonValue.msg ?? jsonValue.error));
-      if (extra.energy !== undefined) energy = Number(extra.energy);
-      if (extra.money !== undefined) money = Number(extra.money);
+      if (jsonValue.error) {
+        errors.push(String(jsonValue.msg ?? jsonValue.error));
+      }
+      if (extra.energy !== undefined) {
+        energy = Number(extra.energy);
+      }
+      if (extra.money !== undefined) {
+        money = Number(extra.money);
+      }
     }
     return { queue: parseQueue(json.queue), errors, energy, money };
   }
@@ -155,7 +175,9 @@ export class TaskApi {
 
 /** Seconds of walking still ahead for a task (its wayData leg), from `now`. */
 export function walkLeft(task: QueuedTask, now: number): number {
-  if (!task.way) return 0;
+  if (!task.way) {
+    return 0;
+  }
   return Math.max(0, task.way.end - Math.max(now, task.way.start));
 }
 
@@ -174,7 +196,9 @@ export interface QueueSummary {
 }
 
 export function queueSummary(queue: QueuedTask[], now: number): QueueSummary | null {
-  if (!queue.length) return null;
+  if (!queue.length) {
+    return null;
+  }
   const doneAt = Math.max(...queue.map((task) => task.end));
   const walk = queue.reduce(
     (accumulator, current) =>

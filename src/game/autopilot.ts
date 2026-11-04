@@ -33,7 +33,9 @@ export interface ConsumableEffect {
 }
 
 export function parseConsumable(usebonus: string[], usetype: string): ConsumableEffect | null {
-  if (usetype !== 'single') return null;
+  if (usetype !== 'single') {
+    return null;
+  }
   const pct = (re: RegExp) =>
     usebonus.reduce((accumulator, current) => accumulator + Number(current.match(re)?.[1] ?? 0), 0) / 100;
   const entry = {
@@ -143,8 +145,12 @@ export function chooseCancel<Value extends CancelOption>(
     );
   const best = top(cuts);
   // A queue worth nothing: anything worth something is better.
-  if (cur.value <= 0) return best && best.value > 0 ? { ...best, why: 'better' } : null;
-  if (best && best.value > cur.value * (1 + candidate.margin)) return { ...best, why: 'better' };
+  if (cur.value <= 0) {
+    return best && best.value > 0 ? { ...best, why: 'better' } : null;
+  }
+  if (best && best.value > cur.value * (1 + candidate.margin)) {
+    return { ...best, why: 'better' };
+  }
   const lessWalk = top(
     cuts.filter(
       (options) =>
@@ -156,7 +162,9 @@ export function chooseCancel<Value extends CancelOption>(
 
 /** Expected HP lost on a run: a heuristic until danger damage is known (danger % of 10 % max HP per hour). */
 export function expectedHpLoss(danger: number | null, seconds: number, maxHealth: number): number {
-  if (!danger) return 0;
+  if (!danger) {
+    return 0;
+  }
   return (danger / 100) * 0.1 * maxHealth * Math.min(1, seconds / 3600);
 }
 
@@ -182,8 +190,11 @@ const GOAL_KEYS: Goal[] = ['quests', 'xp', 'money', 'products'];
 /** Best gain per cost of each goal in a candidate list. */
 function bestRates(list: { raw: Record<Goal, number>; cost: number }[]): Record<Goal, number> {
   const best: Record<Goal, number> = { quests: 0, xp: 0, money: 0, products: 0 };
-  for (const candidate of list)
-    for (const group of GOAL_KEYS) best[group] = Math.max(best[group], candidate.raw[group] / candidate.cost);
+  for (const candidate of list) {
+    for (const group of GOAL_KEYS) {
+      best[group] = Math.max(best[group], candidate.raw[group] / candidate.cost);
+    }
+  }
   return best;
 }
 
@@ -193,8 +204,9 @@ function closestDuration(job: JobInfo, seconds: number): DurationKey | undefined
   let gap = Infinity;
   for (const entryKey of DURATION_KEYS) {
     const jobInfo = job.values[entryKey];
-    if (jobInfo && Math.abs(jobInfo.duration - seconds) < gap)
+    if (jobInfo && Math.abs(jobInfo.duration - seconds) < gap) {
       [found, gap] = [entryKey, Math.abs(jobInfo.duration - seconds)];
+    }
   }
   return found;
 }
@@ -247,13 +259,20 @@ export function planAutopilot(input: PlanInput): Plan {
   const beforeQueue = { remaining: { ...remaining }, runs: new Map<number, number>() };
   // Jobs already queued drop items too: what they will bring is not needed again.
   for (const st of input.fixed) {
-    if (st.kind !== 'job') continue;
+    if (st.kind !== 'job') {
+      continue;
+    }
     const job = input.jobs.find((jobInfo) => jobInfo.id === st.jobId);
     const dur = job && closestDuration(job, st.duration);
-    if (!job || !dur) continue;
+    if (!job || !dur) {
+      continue;
+    }
     runs.set(job.id, (runs.get(job.id) ?? 0) + 1);
-    for (const [entryKey, currentValue] of Object.entries(runGains(job, dur, input.needs)))
-      if ((remaining[entryKey] ?? 0) > 0) remaining[entryKey] = Math.max(0, (remaining[entryKey] ?? 0) - currentValue);
+    for (const [entryKey, currentValue] of Object.entries(runGains(job, dur, input.needs))) {
+      if ((remaining[entryKey] ?? 0) > 0) {
+        remaining[entryKey] = Math.max(0, (remaining[entryKey] ?? 0) - currentValue);
+      }
+    }
   }
   const needInfo = new Map(input.needs.map((routeNeed) => [routeNeed.key, routeNeed]));
   let rates: Record<Goal, number> | null = input.rates ?? null;
@@ -270,9 +289,12 @@ export function planAutopilot(input: PlanInput): Plan {
         (stock.get(consumable.itemId) ?? 0) <= 0 ||
         consumable.effect[kind] < min ||
         skip.has(`use:${consumable.itemId}`)
-      )
+      ) {
         continue;
-      if (!best || consumable.value / consumable.effect[kind] < best.value / best.effect[kind]) best = consumable;
+      }
+      if (!best || consumable.value / consumable.effect[kind] < best.value / best.effect[kind]) {
+        best = consumable;
+      }
     }
     return best;
   };
@@ -315,25 +337,39 @@ export function planAutopilot(input: PlanInput): Plan {
     const xpPerLevel = levelStartXp(level + 1, start.maxLevel) - levelStartXp(level, start.maxLevel);
     const refundPerXp = xpPerLevel > 0 ? start.maxEnergy / xpPerLevel : 0;
     for (const job of input.jobs) {
-      if (!isDoable(job) || excluded.has(job.id)) continue;
+      if (!isDoable(job) || excluded.has(job.id)) {
+        continue;
+      }
       const locs = input.locations(job.groupid);
-      if (!locs?.length) continue;
+      if (!locs?.length) {
+        continue;
+      }
       const firstLoc = locs[0];
-      if (!firstLoc) continue;
+      if (!firstLoc) {
+        continue;
+      }
       let at = firstLoc;
       let travel = wayTime(from, at);
       for (const position of locs) {
         const time = wayTime(from, position);
-        if (time < travel) [at, travel] = [position, time];
+        if (time < travel) {
+          [at, travel] = [position, time];
+        }
       }
       for (const duration of DURATION_KEYS) {
         const jobInfo = job.values[duration];
-        if (!jobInfo) continue;
-        if (skip.has(`job:${job.id}:${duration}`)) continue;
+        if (!jobInfo) {
+          continue;
+        }
+        if (skip.has(`job:${job.id}:${duration}`)) {
+          continue;
+        }
         const hpLoss = expectedHpLoss(job.danger, jobInfo.duration, start.maxHealth) * hpScale;
         // Never plan a run that could take HP under the sleep threshold, HP sleeps on or off. A run that costs
         // no HP is always fine: under the threshold with no hotel, safe jobs go on while HP regenerates.
-        if (hpLoss > 0 && health - hpLoss < cfg.hp.sleepBelow * start.maxHealth) continue;
+        if (hpLoss > 0 && health - hpLoss < cfg.hp.sleepBelow * start.maxHealth) {
+          continue;
+        }
         const gains = runGains(job, duration, input.needs);
         // Quest progress (weighted by deadline), plus the share of the quests' rewards this progress earns.
         let quests = 0;
@@ -341,7 +377,9 @@ export function planAutopilot(input: PlanInput): Plan {
         let rewardMoney = 0;
         for (const [entryKey, currentValue] of Object.entries(gains)) {
           const rem = done.remaining[entryKey] ?? 0;
-          if (rem <= 1e-9) continue;
+          if (rem <= 1e-9) {
+            continue;
+          }
           const got = Math.min(rem, currentValue);
           const entry = needInfo.get(entryKey);
           quests += (got / (totals[entryKey] || 1)) * (entry?.weight ?? 1);
@@ -387,7 +425,11 @@ export function planAutopilot(input: PlanInput): Plan {
     // Each goal in units of its exchange rate (the best rate at the plan's start), so a crumb of quest
     // progress stays a crumb and values of different plans compare. A goal with no rate yet: this list's best.
     const best = bestRates(list);
-    for (const group of GOAL_KEYS) if (rates && rates[group] > 0) best[group] = rates[group];
+    for (const group of GOAL_KEYS) {
+      if (rates && rates[group] > 0) {
+        best[group] = rates[group];
+      }
+    }
     for (const candidate of list) {
       candidate.score = 0;
       for (const groupInfo of Object.keys(best) as Goal[]) {
@@ -419,14 +461,21 @@ export function planAutopilot(input: PlanInput): Plan {
   /** Energy to reach the next level with the best XP-per-energy job; null when out of reach of one refill. */
   const levelUpEnergy = (from: Position, health: number, experience: number, level: number): number | null => {
     const gap = levelStartXp(level + 1, start.maxLevel) - experience;
-    if (gap <= 0) return 0;
+    if (gap <= 0) {
+      return 0;
+    }
     let best: { xp: number; energy: number } | null = null;
     for (const candidate of candidates(from, health, level)) {
-      if (candidate.energy <= 0 || candidate.xp <= 0) continue;
-      if (!best || candidate.xp / candidate.energy > best.xp / best.energy)
+      if (candidate.energy <= 0 || candidate.xp <= 0) {
+        continue;
+      }
+      if (!best || candidate.xp / candidate.energy > best.xp / best.energy) {
         best = { xp: candidate.xp, energy: candidate.energy };
+      }
     }
-    if (!best) return null;
+    if (!best) {
+      return null;
+    }
     const need = Math.ceil(gap / best.xp) * best.energy;
     return need <= start.maxEnergy ? need : null;
   };
@@ -462,12 +511,16 @@ export function planAutopilot(input: PlanInput): Plan {
     }
     if (wake.full || !reasons.length) {
       energy = start.maxEnergy;
-      if (wake.full || reason === 'energy') reasons.push('full');
+      if (wake.full || reason === 'energy') {
+        reasons.push('full');
+      }
     }
     energy = Math.min(start.maxEnergy, Math.max(energy, minEnergy));
     const health =
       wake.hpSafe || reason === 'hp' ? Math.max(source.health, cfg.hp.wakeAbove * start.maxHealth) : source.health;
-    if (reason === 'hp') reasons.push(`HP ${Math.round(cfg.hp.wakeAbove * 100)}%`);
+    if (reason === 'hp') {
+      reasons.push(`HP ${Math.round(cfg.hp.wakeAbove * 100)}%`);
+    }
     let best: { task: PlannedTask; ready: number; travel: number; own: boolean } | null = null;
     for (const hotel of input.hotels) {
       const travel = wayTime(source.at, hotel.at);
@@ -482,16 +535,24 @@ export function planAutopilot(input: PlanInput): Plan {
         source.health + (start.maxHealth * start.healthRegen * travel) / 3600,
       );
       for (const result of hotel.rooms) {
-        if (result.cost > budget || result.energyRate <= 0) continue;
-        if (skip.has(`sleep:${hotel.townId}:${result.key}`)) continue;
+        if (result.cost > budget || result.energyRate <= 0) {
+          continue;
+        }
+        if (skip.has(`sleep:${hotel.townId}:${result.key}`)) {
+          continue;
+        }
         const secs = Math.max(
           regenSeconds(arriveEnergy, energy, start.maxEnergy, result.energyRate),
           regenSeconds(arriveHealth, health, start.maxHealth, result.healthRate),
         );
-        if (!Number.isFinite(secs)) continue;
+        if (!Number.isFinite(secs)) {
+          continue;
+        }
         const ready = travel + secs;
         const better = !best || (own && !best.own) || (own === best.own && ready < best.ready);
-        if (!better) continue;
+        if (!better) {
+          continue;
+        }
         best = {
           own,
           ready,
@@ -522,7 +583,9 @@ export function planAutopilot(input: PlanInput): Plan {
   const bankPlan = (bankOptions: { anyDistance?: boolean; townId?: number | undefined } = {}): PlannedTask[] | null => {
     const source = tl.final;
     const named = input.towns.filter((target) => !skip.has(`bank:${target.id}`));
-    if (!named.length) return null;
+    if (!named.length) {
+      return null;
+    }
     const home = named.find((target) => target.id === input.homeTownId);
     let town =
       named.find((target) => target.id === bankOptions.townId) ??
@@ -532,7 +595,9 @@ export function planAutopilot(input: PlanInput): Plan {
         wayTime(source.at, current.at) < wayTime(source.at, accumulator.at) ? current : accumulator,
       );
       // Without anyDistance, only bank when the route passes a town.
-      if (!bankOptions.anyDistance && wayTime(source.at, town.at) > cfg.bank.maxDetour) return null;
+      if (!bankOptions.anyDistance && wayTime(source.at, town.at) > cfg.bank.maxDetour) {
+        return null;
+      }
     }
     const cash = `$${Math.round(source.cash).toLocaleString('en-US')}`;
     const why =
@@ -546,7 +611,9 @@ export function planAutopilot(input: PlanInput): Plan {
       step: { kind: 'action', title: `Deposit at ${town.name}`, cash: -source.cash },
       action: { type: 'deposit', townId: town.id },
     };
-    if (source.at.x === town.at.x && source.at.y === town.at.y) return [deposit];
+    if (source.at.x === town.at.x && source.at.y === town.at.y) {
+      return [deposit];
+    }
     return [
       {
         module: 'bank',
@@ -567,13 +634,18 @@ export function planAutopilot(input: PlanInput): Plan {
     let bestWay = Infinity;
     for (const [index, target] of trips.entries()) {
       const width = wayTime(source.at, target.at);
-      if (target.cost > budget || width > cfg.quests.buyTrip || skip.has(`buy:${target.townId}`) || width >= bestWay)
+      if (target.cost > budget || width > cfg.quests.buyTrip || skip.has(`buy:${target.townId}`) || width >= bestWay) {
         continue;
+      }
       [best, bestWay] = [index, width];
     }
-    if (best < 0) return null;
+    if (best < 0) {
+      return null;
+    }
     const targetValue = trips.splice(best, 1)[0];
-    if (!targetValue) return null;
+    if (!targetValue) {
+      return null;
+    }
     budget -= targetValue.cost;
     const why = `quest items: ${targetValue.what.join('; ')}`;
     const buy: PlannedTask = {
@@ -587,7 +659,9 @@ export function planAutopilot(input: PlanInput): Plan {
       },
       action: { type: 'buy', townId: targetValue.townId },
     };
-    if (source.at.x === targetValue.at.x && source.at.y === targetValue.at.y) return [buy];
+    if (source.at.x === targetValue.at.x && source.at.y === targetValue.at.y) {
+      return [buy];
+    }
     return [
       {
         module: 'quests',
@@ -601,16 +675,22 @@ export function planAutopilot(input: PlanInput): Plan {
   };
 
   // Exchange rates: fixed for the whole plan, from where the server queue ends (unless passed in).
-  if (!rates) rates = bestRates(candidates(tl.final.at, tl.final.health, tl.final.level));
+  if (!rates) {
+    rates = bestRates(candidates(tl.final.at, tl.final.health, tl.final.level));
+  }
 
   // Queued jobs, scored like planned ones in queue order, so a queue and an alternative without it compare.
   let queuedValue = 0;
   input.fixed.forEach((st, index) => {
-    if (st.kind !== 'job') return;
+    if (st.kind !== 'job') {
+      return;
+    }
     const job = input.jobs.find((jobInfo) => jobInfo.id === st.jobId);
     const dur = job && closestDuration(job, st.duration);
     const self = tl.steps[index];
-    if (!job || !dur || !self) return;
+    if (!job || !dur || !self) {
+      return;
+    }
     const prev = tl.steps[index - 1];
     const foundValue = candidates(
       prev?.at ?? start.at,
@@ -621,11 +701,15 @@ export function planAutopilot(input: PlanInput): Plan {
     ).find((xCoord) => xCoord.job.id === job.id && xCoord.duration === dur);
     const inside =
       self.end <= horizonEnd ? 1 : Math.max(0, (horizonEnd - self.start) / Math.max(1, self.end - self.start));
-    if (foundValue) queuedValue += foundValue.score * foundValue.cost * inside;
+    if (foundValue) {
+      queuedValue += foundValue.score * foundValue.cost * inside;
+    }
     beforeQueue.runs.set(job.id, (beforeQueue.runs.get(job.id) ?? 0) + 1);
-    for (const [entryKey, currentValue] of Object.entries(runGains(job, dur, input.needs)))
-      if ((beforeQueue.remaining[entryKey] ?? 0) > 0)
+    for (const [entryKey, currentValue] of Object.entries(runGains(job, dur, input.needs))) {
+      if ((beforeQueue.remaining[entryKey] ?? 0) > 0) {
         beforeQueue.remaining[entryKey] = Math.max(0, (beforeQueue.remaining[entryKey] ?? 0) - currentValue);
+      }
+    }
   });
 
   // Your inserted sleeps / bank stops, in time order: each goes in once the plan reaches its time.
@@ -635,13 +719,19 @@ export function planAutopilot(input: PlanInput): Plan {
     const source = tl.final;
     if (inserts.length && (inserts[0]?.at ?? Number.POSITIVE_INFINITY) <= tl.end) {
       const ins = inserts.shift();
-      if (!ins) continue;
+      if (!ins) {
+        continue;
+      }
       const key = `insert:${ins.kind}:${ins.at}`;
       const bank = ins.kind === 'bank' ? bankPlan({ anyDistance: true }) : null;
       const got = ins.kind === 'sleep' ? sleepPlan('energy', 0)?.task : bank?.[0];
-      if (got) push({ ...got, key, why: `you inserted a ${ins.kind === 'sleep' ? 'sleep' : 'bank stop'} here` });
+      if (got) {
+        push({ ...got, key, why: `you inserted a ${ins.kind === 'sleep' ? 'sleep' : 'bank stop'} here` });
+      }
       const lastBank = bank?.at(-1);
-      if (ins.kind === 'bank' && got?.step.kind === 'walk' && lastBank) push(lastBank);
+      if (ins.kind === 'bank' && got?.step.kind === 'walk' && lastBank) {
+        push(lastBank);
+      }
       continue;
     }
     if (mods.hpSleep && source.health < cfg.hp.sleepBelow * start.maxHealth) {
@@ -684,9 +774,13 @@ export function planAutopilot(input: PlanInput): Plan {
         continue;
       }
     }
-    if (!mods.jobs) break;
+    if (!mods.jobs) {
+      break;
+    }
     const candidate = candidates(source.at, source.health, source.level, Math.max(0, tl.end - start.now) / 3600)[0];
-    if (!candidate) break;
+    if (!candidate) {
+      break;
+    }
     if (useMod && cfg.consumables.motivation && candidate.job.motivation < 0.75) {
       const item = pickItem('motivation', 0.01);
       if (
@@ -738,7 +832,9 @@ export function planAutopilot(input: PlanInput): Plan {
       }
     }
     const jobInfo = candidate.job.values[candidate.duration];
-    if (!jobInfo) continue;
+    if (!jobInfo) {
+      continue;
+    }
     const goal = (Object.keys(candidate.by) as Goal[]).reduce((accumulator, current) =>
       candidate.by[current] > candidate.by[accumulator] ? current : accumulator,
     );
@@ -765,15 +861,20 @@ export function planAutopilot(input: PlanInput): Plan {
           : `best ${GOAL_WORD[goal]} per ${cfg.per === 'energy' ? 'energy' : 'hour'}${forQuests.length ? ` · also ${forQuests.join('; ')}` : ''}`,
     });
     const last = tl.steps[tl.steps.length - 1];
-    if (!last) continue;
+    if (!last) {
+      continue;
+    }
     // Value inside the horizon; a run crossing it counts for its share.
     const inside =
       last.end <= horizonEnd ? 1 : Math.max(0, (horizonEnd - last.start) / Math.max(1, last.end - last.start));
     value += candidate.score * candidate.cost * inside;
     runs.set(candidate.job.id, (runs.get(candidate.job.id) ?? 0) + 1);
     jobsPlanned++;
-    for (const [gainKey, gainValue] of Object.entries(candidate.gains))
-      if ((remaining[gainKey] ?? 0) > 1e-9) remaining[gainKey] = Math.max(0, (remaining[gainKey] ?? 0) - gainValue);
+    for (const [gainKey, gainValue] of Object.entries(candidate.gains)) {
+      if ((remaining[gainKey] ?? 0) > 1e-9) {
+        remaining[gainKey] = Math.max(0, (remaining[gainKey] ?? 0) - gainValue);
+      }
+    }
   }
   const first = tasks[0];
   const why =

@@ -26,14 +26,30 @@ export interface RawBonus {
 export function parseRawBonus(currentValue: unknown): RawBonus {
   const json = obj(currentValue);
   const second: RawBonus = { type: String(json.type ?? '') };
-  if (typeof json.key === 'string') second.key = json.key;
-  if (typeof json.name === 'string') second.name = json.name;
-  if (json.value !== undefined && json.value !== null) second.value = Number(json.value);
-  if (typeof json.job === 'string' || typeof json.job === 'number') second.job = json.job;
-  if (typeof json.desc === 'string') second.desc = json.desc;
-  if (typeof json.roundingMethod === 'string') second.roundingMethod = json.roundingMethod;
-  if (json.isSector !== undefined) second.isSector = !!json.isSector;
-  if (isObj(json.bonus)) second.bonus = parseRawBonus(json.bonus);
+  if (typeof json.key === 'string') {
+    second.key = json.key;
+  }
+  if (typeof json.name === 'string') {
+    second.name = json.name;
+  }
+  if (json.value !== undefined && json.value !== null) {
+    second.value = Number(json.value);
+  }
+  if (typeof json.job === 'string' || typeof json.job === 'number') {
+    second.job = json.job;
+  }
+  if (typeof json.desc === 'string') {
+    second.desc = json.desc;
+  }
+  if (typeof json.roundingMethod === 'string') {
+    second.roundingMethod = json.roundingMethod;
+  }
+  if (json.isSector !== undefined) {
+    second.isSector = !!json.isSector;
+  }
+  if (isObj(json.bonus)) {
+    second.bonus = parseRawBonus(json.bonus);
+  }
   return second;
 }
 
@@ -74,8 +90,12 @@ export interface ItemStats {
 
 /** ItemManager.calculateItemLevelBonus */
 export function calculateItemLevelBonus(level: number, value: number): number {
-  if (!level || !value) return 0;
-  if (value < 1) return Math.round(Math.max(1, value * 1000 * level)) / 10000;
+  if (!level || !value) {
+    return 0;
+  }
+  if (value < 1) {
+    return Math.round(Math.max(1, value * 1000 * level)) / 10000;
+  }
   return Math.round(Math.max(1, (value * level) / 10));
 }
 
@@ -134,18 +154,23 @@ export class BonusExtractor {
 
   value(second: RawBonus, mod?: Modifier, rounding?: string): number {
     let currentValue = mod ? mod(second.value ?? 0) : (second.value ?? 0);
-    if (this.itemLevel && second.type !== 'speed')
+    if (this.itemLevel && second.type !== 'speed') {
       currentValue += calculateItemLevelBonus(this.itemLevel, currentValue);
-    else if (this.itemLevel && second.type === 'speed')
+    } else if (this.itemLevel && second.type === 'speed') {
       currentValue += Math.round(((currentValue * this.itemLevel) / 10) * 100) / 100;
-    if (rounding) currentValue = roundBy(currentValue, rounding);
+    }
+    if (rounding) {
+      currentValue = roundBy(currentValue, rounding);
+    }
     return tidy(currentValue);
   }
 
   desc(second: RawBonus, mod?: Modifier, rounding?: string): string {
     switch (second.type) {
       case 'character':
-        if (this.charLevel === undefined || second.key !== 'level' || !second.bonus) return second.desc ?? '';
+        if (this.charLevel === undefined || second.key !== 'level' || !second.bonus) {
+          return second.desc ?? '';
+        }
         return this.desc(second.bonus, this.perLevel(second), second.roundingMethod);
       case 'attribute':
       case 'skill':
@@ -153,10 +178,12 @@ export class BonusExtractor {
       case 'job': {
         const currentValue = this.value(second, mod, rounding);
         const lp = currentValue === 1 ? 'Labor point' : 'labor points';
-        if (Number(second.job) === BUILD_JOB_ID && second.job !== 'all')
+        if (Number(second.job) === BUILD_JOB_ID && second.job !== 'all') {
           return `+ ${currentValue} ${lp} towards Construction`;
-        if (second.job !== 'all' && second.job !== undefined)
+        }
+        if (second.job !== 'all' && second.job !== undefined) {
           return `+ ${currentValue} ${lp} towards ${this.jobName?.(Number(second.job)) ?? `job ${second.job}`}`;
+        }
         return `+ ${currentValue} ${lp}`;
       }
       case 'pray':
@@ -166,10 +193,11 @@ export class BonusExtractor {
       case 'fortbattle':
         return `+${this.value(second, mod, rounding)} ${FORT_NAMES[second.name ?? ''] ?? ''} (${second.isSector ? 'Fort battle sector bonus' : 'Fort battle bonus'})`;
       default:
-        if (second.type in PERCENT_DESC)
+        if (second.type in PERCENT_DESC) {
           return (
             PERCENT_DESC[second.type]?.replace('%1', String(Math.round(this.value(second, mod, rounding) * 100))) ?? ''
           );
+        }
         return second.desc ?? '';
     }
   }
@@ -184,7 +212,9 @@ export class BonusExtractor {
           ? this.value(second.bonus ?? second)
           : this.value(second.bonus, this.perLevel(second), second.roundingMethod);
       inner = second.bonus ?? second;
-    } else value = this.value(second);
+    } else {
+      value = this.value(second);
+    }
     switch (inner.type) {
       case 'skill':
       case 'attribute':
@@ -203,20 +233,25 @@ export class BonusExtractor {
     mod?: Modifier,
     rounding?: string,
   ): Record<string, number> {
-    if (second.type === 'skill') return { [String(second.name)]: this.value(second, mod, rounding) };
+    if (second.type === 'skill') {
+      return { [String(second.name)]: this.value(second, mod, rounding) };
+    }
     if (second.type === 'attribute') {
       const currentValue = this.value(second, mod, rounding);
       return Object.fromEntries((skillsOf[String(second.name)] ?? []).map((textValue) => [textValue, currentValue]));
     }
-    if (second.type === 'character' && second.key === 'level' && second.bonus)
+    if (second.type === 'character' && second.key === 'level' && second.bonus) {
       return this.affectedSkills(second.bonus, skillsOf, this.perLevel(second), second.roundingMethod);
+    }
     return {};
   }
 }
 
 /** Item.handleItemUpgrade: every fixed number (attributes, skills, fort bonuses) gains the upgrade bonus. */
 function upgraded(options: Record<string, number>, level: number): Record<string, number> {
-  if (!level) return { ...options };
+  if (!level) {
+    return { ...options };
+  }
   return Object.fromEntries(
     Object.entries(options).map(([key, currentValue]) => [
       key,
@@ -227,7 +262,9 @@ function upgraded(options: Record<string, number>, level: number): Record<string
 
 /** Item.parseSpeed */
 export function upgradedSpeed(speed: number | null, level: number): number | null {
-  if (!speed || speed === 1 || !level) return speed;
+  if (!speed || speed === 1 || !level) {
+    return speed;
+  }
   let currentValue = Math.round((1 / speed - 1) * 10000);
   currentValue += calculateItemLevelBonus(level, currentValue);
   return 1 / (currentValue / 10000 + 1);
@@ -245,7 +282,9 @@ function weaponDamage(
   level: number,
   charLevel: number | undefined,
 ): { min: number; max: number } | null {
-  if (!data.damage) return null;
+  if (!data.damage) {
+    return null;
+  }
   let { min, max } = data.damage;
   if (level && data.upgradeable) {
     min += calculateItemLevelBonus(level, min);
@@ -289,7 +328,9 @@ export function itemStats(data: StatSource, itemId: number, ctx: StatContext = {
   }
   const attributes = upgraded(data.attributes, level);
   for (const [key, currentValue] of Object.entries(attributes)) {
-    if (!currentValue) continue;
+    if (!currentValue) {
+      continue;
+    }
     lines.push({
       kind: 'attribute',
       text: `${currentValue > 0 ? '+ ' : ''}${tidy(currentValue)} ${NAMES[key] ?? key}`,
@@ -298,7 +339,9 @@ export function itemStats(data: StatSource, itemId: number, ctx: StatContext = {
   }
   const skills = upgraded(data.skills, level);
   for (const [entryKey, skillValue] of Object.entries(skills)) {
-    if (!skillValue) continue;
+    if (!skillValue) {
+      continue;
+    }
     lines.push({
       kind: 'skill',
       text: `${skillValue > 0 ? '+ ' : ''}${tidy(skillValue)} ${NAMES[entryKey] ?? entryKey}`,
@@ -307,12 +350,18 @@ export function itemStats(data: StatSource, itemId: number, ctx: StatContext = {
   }
   for (const second of data.bonusItems) {
     const inner = second.type === 'character' ? second.bonus : second;
-    if (withChar && inner?.type === 'damage' && second.type === 'character') continue; // already in Damage
+    if (withChar && inner?.type === 'damage' && second.type === 'character') {
+      continue; // already in Damage
+    }
     const kind: StatKind = inner?.type === 'skill' ? 'skill' : inner?.type === 'attribute' ? 'attribute' : 'other';
     const text = extractor.desc(second);
-    if (text) lines.push({ kind, text });
+    if (text) {
+      lines.push({ kind, text });
+    }
     const entry = extractor.exportValue(second);
-    if (isWeapon && entry.key === 'damage') continue;
+    if (isWeapon && entry.key === 'damage') {
+      continue;
+    }
     add(entry.key, entry.key === 'speed' ? entry.value * 100 : entry.value);
   }
   const speed = upgradedSpeed(data.speed, level);
@@ -326,7 +375,9 @@ export function itemStats(data: StatSource, itemId: number, ctx: StatContext = {
     lines.push({ kind: 'fort', text: 'Fort battle bonus' });
     for (const fortField of ['defense', 'offense', 'resistance']) {
       const value = fb[fortField];
-      if (!value) continue;
+      if (!value) {
+        continue;
+      }
       lines.push({ kind: 'fort', text: `  +${tidy(value)} ${FORT_NAMES[fortField]}` });
       add(`fort_${fortField}`, value);
     }
@@ -336,7 +387,9 @@ export function itemStats(data: StatSource, itemId: number, ctx: StatContext = {
     lines.push({ kind: 'fort', text: 'Fort battle sector bonus' });
     for (const sectorField of ['defense', 'offense', 'damage']) {
       const value = fs[sectorField];
-      if (!value) continue;
+      if (!value) {
+        continue;
+      }
       lines.push({ kind: 'fort', text: `  +${tidy(value)} ${FORT_NAMES[sectorField]}` });
       add(`fort_${sectorField}_sector`, value);
     }
@@ -356,15 +409,18 @@ export interface ItemSetDef {
 /** ItemSet.getMergedStages(cnt): stage bonuses up to `cnt` worn items, same bonuses summed. */
 export function mergedStages(set: ItemSetDef, cnt: number): RawBonus[] {
   const merge = (bb: RawBonus, second: RawBonus): boolean => {
-    if (bb.type !== second.type) return false;
+    if (bb.type !== second.type) {
+      return false;
+    }
     if (
       second.type === 'character' &&
       second.roundingMethod === bb.roundingMethod &&
       second.key === bb.key &&
       bb.bonus &&
       second.bonus
-    )
+    ) {
       return merge(bb.bonus, second.bonus);
+    }
     if (second.type === 'job' && second.job === bb.job) {
       bb.value = (bb.value ?? 0) + (second.value ?? 0);
       return true;
@@ -385,9 +441,15 @@ export function mergedStages(set: ItemSetDef, cnt: number): RawBonus[] {
   };
   const out: RawBonus[] = [];
   for (const [stage, list] of Object.entries(set.bonus ?? {})) {
-    if (parseInt(stage, 10) > cnt || !Array.isArray(list)) continue;
+    if (parseInt(stage, 10) > cnt || !Array.isArray(list)) {
+      continue;
+    }
     next: for (const sb of list) {
-      for (const match of out) if (merge(match, sb)) continue next;
+      for (const match of out) {
+        if (merge(match, sb)) {
+          continue next;
+        }
+      }
       out.push(structuredClone(sb));
     }
   }
@@ -401,12 +463,24 @@ export function mergedStages(set: ItemSetDef, cnt: number): RawBonus[] {
       ab = tag(second, 'attribute'),
       sa = tag(first, 'skill'),
       sb = tag(second, 'skill');
-    if (aa && ab) return aa < ab ? -1 : 1;
-    if (aa) return -1;
-    if (ab) return 1;
-    if (sa && sb) return 0;
-    if (sa) return -1;
-    if (sb) return 1;
+    if (aa && ab) {
+      return aa < ab ? -1 : 1;
+    }
+    if (aa) {
+      return -1;
+    }
+    if (ab) {
+      return 1;
+    }
+    if (sa && sb) {
+      return 0;
+    }
+    if (sa) {
+      return -1;
+    }
+    if (sb) {
+      return 1;
+    }
     return 0;
   });
 }

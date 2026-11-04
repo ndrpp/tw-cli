@@ -23,8 +23,12 @@ const DURATION_LABEL = { short: '15 s', middle: '10 min', long: '1 h' } as const
 
 /** Compact estimate for a list row: "~2h10", "~2h10+?" when some need can't come from jobs, "" when nothing to do. */
 export function estimateTag(plan: RoutePlan | undefined): string {
-  if (!plan || (!plan.stops.length && !plan.unmet.length)) return '';
-  if (!plan.stops.length) return '?';
+  if (!plan || (!plan.stops.length && !plan.unmet.length)) {
+    return '';
+  }
+  if (!plan.stops.length) {
+    return '?';
+  }
   return `~${shortDuration(plan.totals.seconds)}${plan.unmet.length ? '+?' : ''}`;
 }
 
@@ -50,11 +54,17 @@ function wrapLines(text: string, width: number): string[] {
   for (const para of text.split('\n')) {
     let line = '';
     for (const word of para.split(/\s+/)) {
-      if (!word) continue;
+      if (!word) {
+        continue;
+      }
       if (`${line} ${word}`.trim().length > width) {
-        if (line) out.push(line);
+        if (line) {
+          out.push(line);
+        }
         line = word;
-      } else line = `${line} ${word}`.trim();
+      } else {
+        line = `${line} ${word}`.trim();
+      }
     }
     out.push(line);
   }
@@ -82,7 +92,9 @@ export function QuestsScreen({
   useEffect(() => {
     void (async () => {
       await state.loadItems();
-      if (!state.saloon.length) await state.loadSaloon();
+      if (!state.saloon.length) {
+        await state.loadSaloon();
+      }
     })();
   }, [state]);
   useEffect(() => {
@@ -111,17 +123,25 @@ export function QuestsScreen({
       ),
     );
   }
-  for (const source of state.saloon)
-    if (source.key !== emp?.key)
+  for (const source of state.saloon) {
+    if (source.key !== emp?.key) {
       giverRows.push({ kind: 'giver', key: source.key, name: `${source.name} (saloon)`, at: null });
+    }
+  }
   const rows: AnyRow[] = list === 'log' ? logRows : giverRows;
   // Chain headers are labels: the cursor always lands on a quest or giver row.
   const selectable = (index: number) => rows[index] !== undefined && rows[index]?.kind !== 'chain';
   const nearestSelectable = (index: number, dir: 1 | -1): number => {
-    for (let innerIndex = index; innerIndex >= 0 && innerIndex < rows.length; innerIndex += dir)
-      if (selectable(innerIndex)) return innerIndex;
-    for (let candidateIndex = index; candidateIndex >= 0 && candidateIndex < rows.length; candidateIndex -= dir)
-      if (selectable(candidateIndex)) return candidateIndex;
+    for (let innerIndex = index; innerIndex >= 0 && innerIndex < rows.length; innerIndex += dir) {
+      if (selectable(innerIndex)) {
+        return innerIndex;
+      }
+    }
+    for (let candidateIndex = index; candidateIndex >= 0 && candidateIndex < rows.length; candidateIndex -= dir) {
+      if (selectable(candidateIndex)) {
+        return candidateIndex;
+      }
+    }
     return 0;
   };
   const idx = nearestSelectable(Math.min(sel, Math.max(0, rows.length - 1)), 1);
@@ -133,16 +153,21 @@ export function QuestsScreen({
   const estimates = useMemo(() => {
     const byQuest = new Map<number, RoutePlan>();
     const byChain = new Map<string, RoutePlan>();
-    if (!state.jobs.length) return { byQuest, byChain };
+    if (!state.jobs.length) {
+      return { byQuest, byChain };
+    }
     const all = [...state.quests, ...(state.employer?.open ?? [])];
-    for (const currentQuest of all)
-      if (!currentQuest.finishable && !byQuest.has(currentQuest.id))
+    for (const currentQuest of all) {
+      if (!currentQuest.finishable && !byQuest.has(currentQuest.id)) {
         byQuest.set(currentQuest.id, state.planQuestRoute([currentQuest]));
-    for (const candidate of groupByChain(state.quests))
+      }
+    }
+    for (const candidate of groupByChain(state.quests)) {
       byChain.set(
         `${candidate.groupId}:${candidate.title}`,
         state.planQuestRoute(candidate.quests.filter((currentQuest) => !currentQuest.finishable)),
       );
+    }
     return { byQuest, byChain };
   }, [state, state.quests, state.employer, state.jobs, state.inventory.bag.size, state.queue.length]);
 
@@ -152,39 +177,68 @@ export function QuestsScreen({
         // Reward choice (quest.rewardOptions): ← → or the option number, then y.
         if (confirm.kind === 'finish' && confirm.quest.rewardOptions.length > 1) {
           const count = confirm.quest.rewardOptions.length;
-          if (key.leftArrow || input === 'h')
+          if (key.leftArrow || input === 'h') {
             return setConfirm({ ...confirm, choice: (confirm.choice + count - 1) % count });
-          if (key.rightArrow || input === 'l' || key.tab)
+          }
+          if (key.rightArrow || input === 'l' || key.tab) {
             return setConfirm({ ...confirm, choice: (confirm.choice + 1) % count });
+          }
           const value = Number(input);
-          if (Number.isInteger(value) && value >= 1 && value <= count)
+          if (Number.isInteger(value) && value >= 1 && value <= count) {
             return setConfirm({ ...confirm, choice: value - 1 });
+          }
         }
         setConfirm(null);
-        if (confirm.kind === 'route' && input === 'a')
+        if (confirm.kind === 'route' && input === 'a') {
           return state.startAutopilotForQuests(
             routeQuests.map((currentQuest) => currentQuest.id),
             route ? SCOPE_LABEL[route.scope] : 'route',
           );
-        if (input !== 'y') return;
-        if (confirm.kind === 'route') void state.queueRoute(confirm.plan);
-        else if (confirm.kind === 'finish')
+        }
+        if (input !== 'y') {
+          return;
+        }
+        if (confirm.kind === 'route') {
+          void state.queueRoute(confirm.plan);
+        } else if (confirm.kind === 'finish') {
           void state.finishQuest(confirm.quest, confirm.quest.rewardOptions[confirm.choice]?.id);
-        else void state.cancelQuest(confirm.quest);
+        } else {
+          void state.cancelQuest(confirm.quest);
+        }
         return;
       }
       if (route) {
-        if (key.escape || input === 'R') return setRoute(null);
-        if (input === '1') return setRoute({ ...route, scope: 'quest' });
-        if (input === '2') return setRoute({ ...route, scope: 'chain' });
-        if (input === '3') return setRoute({ ...route, scope: 'all' });
-        if (input === 'e') return setRoute({ ...route, objective: route.objective === 'energy' ? 'time' : 'energy' });
+        if (key.escape || input === 'R') {
+          return setRoute(null);
+        }
+        if (input === '1') {
+          return setRoute({ ...route, scope: 'quest' });
+        }
+        if (input === '2') {
+          return setRoute({ ...route, scope: 'chain' });
+        }
+        if (input === '3') {
+          return setRoute({ ...route, scope: 'all' });
+        }
+        if (input === 'e') {
+          return setRoute({ ...route, objective: route.objective === 'energy' ? 'time' : 'energy' });
+        }
         const rstep = key.pageUp || key.pageDown ? 10 : 1;
-        if (key.upArrow || input === 'k' || key.pageUp) return setScroll((value) => Math.max(0, value - rstep));
-        if (key.downArrow || input === 'j' || key.pageDown) return setScroll((value) => value + rstep);
-        if (input === 'x' && state.autoRoute) return state.stopAutoRoute();
-        if (!plan?.stops.length) return;
-        if (key.return) return setConfirm({ kind: 'route', plan });
+        if (key.upArrow || input === 'k' || key.pageUp) {
+          return setScroll((value) => Math.max(0, value - rstep));
+        }
+        if (key.downArrow || input === 'j' || key.pageDown) {
+          return setScroll((value) => value + rstep);
+        }
+        if (input === 'x' && state.autoRoute) {
+          return state.stopAutoRoute();
+        }
+        if (!plan?.stops.length) {
+          return;
+        }
+        if (key.return) {
+          return setConfirm({ kind: 'route', plan });
+        }
         if (input === 'v') {
           const at = state.highlightRoute(plan, `route: ${SCOPE_LABEL[route.scope]}`);
           if (at) {
@@ -194,11 +248,19 @@ export function QuestsScreen({
         }
         return;
       }
-      if (detail && (key.escape || input === 'h')) return setDetail(false);
-      if (key.escape) return onExit();
-      if (input === 'l' && cur) return setDetail(true);
+      if (detail && (key.escape || input === 'h')) {
+        return setDetail(false);
+      }
+      if (key.escape) {
+        return onExit();
+      }
+      if (input === 'l' && cur) {
+        return setDetail(true);
+      }
       if (input === 'R') {
-        if (!state.quests.length) return state.error('No accepted quests to plan for.');
+        if (!state.quests.length) {
+          return state.error('No accepted quests to plan for.');
+        }
         setScroll(0);
         return setRoute({ scope: quest?.accepted && !quest.finishable ? 'quest' : 'all', objective: 'energy' });
       }
@@ -210,8 +272,12 @@ export function QuestsScreen({
       }
       const step = key.pageUp || key.pageDown ? 10 : 1;
       if (detail) {
-        if (key.upArrow || input === 'k' || key.pageUp) return setScroll((value) => Math.max(0, value - step));
-        if (key.downArrow || input === 'j' || key.pageDown) return setScroll((value) => value + step);
+        if (key.upArrow || input === 'k' || key.pageUp) {
+          return setScroll((value) => Math.max(0, value - step));
+        }
+        if (key.downArrow || input === 'j' || key.pageDown) {
+          return setScroll((value) => value + step);
+        }
       }
       if (key.upArrow || input === 'k' || key.pageUp) {
         setScroll(0);
@@ -221,17 +287,26 @@ export function QuestsScreen({
         setScroll(0);
         return setSel(nearestSelectable(Math.min(rows.length - 1, idx + step), 1));
       }
-      if (cur?.kind === 'giver' && key.return) return void state.openEmployer(cur.key, cur.at).then(() => setSel(0));
-      if (cur?.kind === 'giver' && input === 'w' && cur.at)
+      if (cur?.kind === 'giver' && key.return) {
+        return void state.openEmployer(cur.key, cur.at).then(() => setSel(0));
+      }
+      if (cur?.kind === 'giver' && input === 'w' && cur.at) {
         return void state.walkToQuestGiver(cur.key, cur.name, cur.at);
-      if (!quest) return;
+      }
+      if (!quest) {
+        return;
+      }
       if (input === 'a') {
-        if (quest.accepted) return state.error('Already accepted.');
+        if (quest.accepted) {
+          return state.error('Already accepted.');
+        }
         return void state.acceptQuest(quest);
       }
       if (key.return || input === 'f') {
-        if (!quest.accepted && list === 'givers') return void state.acceptQuest(quest);
-        if (!quest.finishable)
+        if (!quest.accepted && list === 'givers') {
+          return void state.acceptQuest(quest);
+        }
+        if (!quest.finishable) {
           return state.error(
             'Not finished yet: ' +
               quest.requirements
@@ -239,17 +314,23 @@ export function QuestsScreen({
                 .map((requirement) => requirement.info)
                 .join('; '),
           );
+        }
         return setConfirm({ kind: 'finish', quest, choice: 0 });
       }
-      if (input === 'x' && quest.accepted) return setConfirm({ kind: 'cancel', quest });
+      if (input === 'x' && quest.accepted) {
+        return setConfirm({ kind: 'cancel', quest });
+      }
       if (input === 'v') {
         const at = state.highlightQuest(quest);
-        if (!at) return state.error('No job on the map provides what this quest still needs.');
+        if (!at) {
+          return state.error('No job on the map provides what this quest still needs.');
+        }
         state.info(`Marked ${state.mapHighlight?.jobIds.size} job(s) for "${quest.title}" with ! on the map.`);
         return onShowOnMap?.(at);
       }
-      if (input === 'w' && quest.employerAt)
+      if (input === 'w' && quest.employerAt) {
         return void state.walkToQuestGiver(quest.employer, quest.employerName, quest.employerAt);
+      }
     },
     { isActive: active },
   );
@@ -300,7 +381,7 @@ export function QuestsScreen({
               ),
         );
       }
-      if (result.kind === 'giver')
+      if (result.kind === 'giver') {
         return createElement(
           Text,
           {
@@ -312,6 +393,7 @@ export function QuestsScreen({
           },
           truncate(result.name, leftW - 4),
         );
+      }
       const currentQuest = result.quest;
       const mark = currentQuest.finishable ? '✔' : currentQuest.accepted ? '·' : result.tag === 'new' ? '!' : ' ';
       const est = currentQuest.finishable ? '' : estimateTag(estimates.byQuest.get(currentQuest.id));
@@ -368,17 +450,20 @@ export function QuestsScreen({
           { key: `r${index}`, color: requirement.solved ? 'green' : 'red', wrap: 'truncate' },
           `${requirement.solved ? '✔' : '✘'} ${requirement.info}`,
         );
-        if (requirement.solved) return [row];
+        if (requirement.solved) {
+          return [row];
+        }
         // Where to get it: jobs that drop the item (or the job itself), nearest first.
         const src = state
           .requirementSources(requirement)
           .sort((first, second) => (first.way ?? Infinity) - (second.way ?? Infinity));
         const have = requirement.itemId !== undefined ? state.inventory.countBase(requirement.itemId) : 0;
         const extra = [];
-        if (have)
+        if (have) {
           extra.push(
             createElement(Text, { key: `h${index}`, dimColor: true, wrap: 'truncate' }, `    in bag: ${have}`),
           );
+        }
         for (const source of src.slice(0, 3)) {
           const ok = source.job.jobPoints >= source.job.workPoints;
           extra.push(
@@ -389,7 +474,7 @@ export function QuestsScreen({
             ),
           );
         }
-        if (src.length > 3)
+        if (src.length > 3) {
           extra.push(
             createElement(
               Text,
@@ -397,6 +482,7 @@ export function QuestsScreen({
               `    +${src.length - 3} more jobs (v shows all on the map)`,
             ),
           );
+        }
         return [row, ...extra];
       }),
       createElement(Text, { key: 'rw', bold: true }, 'Rewards'),
@@ -438,7 +524,9 @@ export function QuestsScreen({
     ];
   }
   useEffect(() => {
-    if (scroll > maxTop) setScroll(maxTop);
+    if (scroll > maxTop) {
+      setScroll(maxTop);
+    }
   });
   const keys = confirm
     ? confirm.kind === 'finish' && confirm.quest.rewardOptions.length > 1
@@ -555,13 +643,18 @@ function routeLines({
         ? `${value}× ${label(entryKey)}`
         : `~${Math.round(value * 10) / 10} ${label(entryKey)}`;
   add('Needs', { bold: true });
-  for (const need of plan.needs)
+  for (const need of plan.needs) {
     add(
       `  ${need.unit === 'seconds' ? formatDuration(need.amount) : need.amount}${need.unit === 'items' ? '×' : need.unit === 'runs' ? ' runs' : ''} ${need.label} — ${need.quests.join(', ')}`,
       { dimColor: true },
     );
-  if (!plan.needs.length) add('  nothing — all requirements met or not job-related', { dimColor: true });
-  if (plan.stops.length) add('Stops', { bold: true });
+  }
+  if (!plan.needs.length) {
+    add('  nothing — all requirements met or not job-related', { dimColor: true });
+  }
+  if (plan.stops.length) {
+    add('Stops', { bold: true });
+  }
   plan.stops.forEach((source, index) => {
     add(
       `${String(index + 1).padStart(2)}. ${source.job.name} · ${source.runs}× ${DURATION_LABEL[source.duration]} @ ${source.at.x},${source.at.y}`,
@@ -578,13 +671,17 @@ function routeLines({
       { color: 'green' },
     );
   });
-  for (const value of plan.unmet) add(`✘ ${value.need.label}: ${value.why}`, { color: 'red' });
-  for (const [entryKey, currentValue] of Object.entries(plan.leftover))
+  for (const value of plan.unmet) {
+    add(`✘ ${value.need.label}: ${value.why}`, { color: 'red' });
+  }
+  for (const [entryKey, currentValue] of Object.entries(plan.leftover)) {
     add(`… ${label(entryKey)}: ~${Math.round(currentValue * 10) / 10} still open after the run limit`, {
       color: 'yellow',
     });
-  if (plan.stops.length)
+  }
+  if (plan.stops.length) {
     add('Drop amounts are expected values (job window %); re-plan after the jobs finish.', { dimColor: true });
+  }
   const body = Math.max(0, room - head.length);
   const maxTop = Math.max(0, out.length - body);
   const top = Math.min(scroll, maxTop);
@@ -593,7 +690,9 @@ function routeLines({
 
 /** Quest detail: "≈ 2h 10m · 24 energy · 3 jobs (12m walking)", with what the estimate can't cover. */
 function estimateLines(plan: RoutePlan | undefined, finishable: boolean): React.ReactNode[] {
-  if (finishable || !plan || (!plan.stops.length && !plan.unmet.length)) return [];
+  if (finishable || !plan || (!plan.stops.length && !plan.unmet.length)) {
+    return [];
+  }
   const target = plan.totals;
   const out: React.ReactNode[] = [];
   if (plan.stops.length) {

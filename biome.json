@@ -21,6 +21,9 @@
       "preset": "recommended",
       "correctness": {
         "useExhaustiveDependencies": "off"
+      },
+      "style": {
+        "useBlockStatements": "error"
       }
     }
   },

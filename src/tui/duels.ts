@@ -34,7 +34,11 @@ export function DuelsScreen({ state, width, height, onCapture, onExit, active = 
   ];
   const selectable = (index: number) => rows[index] !== undefined && rows[index]?.kind !== 'head';
   const move = (from: number, direction: 1 | -1) => {
-    for (let index = from; index >= 0 && index < rows.length; index += direction) if (selectable(index)) return index;
+    for (let index = from; index >= 0 && index < rows.length; index += direction) {
+      if (selectable(index)) {
+        return index;
+      }
+    }
     return sel;
   };
   const idx = selectable(sel) ? sel : move(Math.min(sel, rows.length - 1), 1);
@@ -44,16 +48,27 @@ export function DuelsScreen({ state, width, height, onCapture, onExit, active = 
     (input, key) => {
       if (confirm) {
         setConfirm(null);
-        if (input === 'y') confirm.run();
+        if (input === 'y') {
+          confirm.run();
+        }
         return;
       }
-      if (key.escape) return onExit();
-      if (key.upArrow || input === 'k') return setSel(move(idx - 1, -1));
-      if (key.downArrow || input === 'j') return setSel(move(idx + 1, 1));
-      if (!selected || !key.return) return;
+      if (key.escape) {
+        return onExit();
+      }
+      if (key.upArrow || input === 'k') {
+        return setSel(move(idx - 1, -1));
+      }
+      if (key.downArrow || input === 'j') {
+        return setSel(move(idx + 1, 1));
+      }
+      if (!selected || !key.return) {
+        return;
+      }
       if (selected.kind === 'npc') {
-        if (selected.npc.readyIn > 0)
+        if (selected.npc.readyIn > 0) {
           return state.error(`${selected.npc.name} is ready in ${formatDuration(selected.npc.readyIn)}.`);
+        }
         return setConfirm({
           text: `Duel ${selected.npc.name} (level ${selected.npc.level}) now?`,
           run: () => void state.fightNpc(selected.npc.id),
@@ -84,8 +99,9 @@ export function DuelsScreen({ state, width, height, onCapture, onExit, active = 
     ),
     ...rows.slice(start, end).map((result, innerIndex) => {
       const count = start + innerIndex;
-      if (result.kind === 'head')
+      if (result.kind === 'head') {
         return createElement(Text, { key: `h${count}`, bold: true, color: 'yellow', wrap: 'truncate' }, result.text);
+      }
       if (result.kind === 'npc') {
         return createElement(
           Text,

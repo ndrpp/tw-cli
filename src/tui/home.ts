@@ -33,9 +33,13 @@ export function HomeScreen({ state, width, height, onCapture, active = true }: S
   const queueBox = useRef<DOMElement>(null);
   const [queueRows, setQueueRows] = useState(3);
   useEffect(() => {
-    if (!queueBox.current) return;
+    if (!queueBox.current) {
+      return;
+    }
     const rows = Math.max(1, measureElement(queueBox.current).height - 2);
-    if (rows !== queueRows) setQueueRows(rows);
+    if (rows !== queueRows) {
+      setQueueRows(rows);
+    }
   });
 
   useEffect(() => {
@@ -46,10 +50,14 @@ export function HomeScreen({ state, width, height, onCapture, active = true }: S
   // Reports: one read on first show; then the live "new report" push refreshes them (announceNewReport).
   // Without live updates, re-read a few seconds after a job ends, when its report has been written.
   useEffect(() => {
-    if (state.recentReports === null) void state.loadRecentReports();
+    if (state.recentReports === null) {
+      void state.loadRecentReports();
+    }
   }, []);
   useEffect(() => {
-    if (!state.rates.jobsDone || state.live?.active) return;
+    if (!state.rates.jobsDone || state.live?.active) {
+      return;
+    }
     const target = setTimeout(() => void state.loadRecentReports(), 5000);
     return () => clearTimeout(target);
   }, [state.rates.jobsDone]);
@@ -57,36 +65,56 @@ export function HomeScreen({ state, width, height, onCapture, active = true }: S
   useInput(
     (input, key) => {
       if (confirm) {
-        if (input === 'y') void state.cancel(0);
+        if (input === 'y') {
+          void state.cancel(0);
+        }
         return setConfirm(false);
       }
       if (draft !== null) {
-        if (key.escape) return setDraft(null);
+        if (key.escape) {
+          return setDraft(null);
+        }
         if (key.return) {
           const id = chatRoomIds(state)[room];
           setDraft(null);
-          if (id && draft.trim()) void state.chatSay(id, draft);
+          if (id && draft.trim()) {
+            void state.chatSay(id, draft);
+          }
           return;
         }
-        if (key.backspace || key.delete) return setDraft(draft.slice(0, -1));
-        if (input && !key.ctrl && !key.meta) setDraft(draft + input);
+        if (key.backspace || key.delete) {
+          return setDraft(draft.slice(0, -1));
+        }
+        if (input && !key.ctrl && !key.meta) {
+          setDraft(draft + input);
+        }
         return;
       }
       const count = chatRoomIds(state).length;
-      if (key.leftArrow || input === 'h')
+      if (key.leftArrow || input === 'h') {
         return setRoom((index) => (count ? (Math.min(index, count - 1) + count - 1) % count : 0));
-      if (key.rightArrow || input === 'l')
+      }
+      if (key.rightArrow || input === 'l') {
         return setRoom((index) => (count ? (Math.min(index, count - 1) + 1) % count : 0));
+      }
       if (key.return) {
-        if (!state.live?.active) return state.error('Live updates are off: press g L to connect to chat.');
-        if (!count) return state.error('No chat room yet (still connecting).');
+        if (!state.live?.active) {
+          return state.error('Live updates are off: press g L to connect to chat.');
+        }
+        if (!count) {
+          return state.error('No chat room yet (still connecting).');
+        }
         return setDraft('');
       }
-      if ((input === 'c' || key.delete) && state.queue[0]) return setConfirm(true);
-      if (input === '+' || input === '=')
+      if ((input === 'c' || key.delete) && state.queue[0]) {
+        return setConfirm(true);
+      }
+      if (input === '+' || input === '=') {
         return setZoom((value) => ZOOMS[Math.max(0, ZOOMS.indexOf(value) - 1)] ?? value);
-      if (input === '-' || input === '_')
+      }
+      if (input === '-' || input === '_') {
         return setZoom((value) => ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(value) + 1)] ?? value);
+      }
     },
     { isActive: active },
   );
@@ -219,7 +247,9 @@ function WorkingPanel({ state, width, confirm }: { state: GameState; width: numb
       )
         .map((pick) => `${pick.name}${pick.percent !== null ? ` ${pick.percent}%` : ''}`)
         .join(' · ');
-      if (drops) rows.push(createElement(Text, { key: 'd', color: 'magenta', wrap: 'truncate' }, `Drops: ${drops}`));
+      if (drops) {
+        rows.push(createElement(Text, { key: 'd', color: 'magenta', wrap: 'truncate' }, `Drops: ${drops}`));
+      }
     }
     const next = state.queue[1];
     if (next) {
@@ -256,8 +286,9 @@ function WorkingPanel({ state, width, confirm }: { state: GameState; width: numb
       ),
     );
   }
-  if (confirm && head)
+  if (confirm && head) {
     rows.push(createElement(Text, { key: 'cf', color: 'red', wrap: 'truncate' }, `Cancel ${head.title}? y / n`));
+  }
   return createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', width, paddingX: 1, flexShrink: 0 },

@@ -76,8 +76,9 @@ test('R6 "Go to …", "Resolve: …" and "Lose against …" stay other (nothing 
     'Go to The Mexican',
     'Resolve: Discipline 1 (Pinkerton Agency)',
     'Lose against Billy the blind eagle',
-  ])
+  ]) {
     assert.equal(req(text).kind, 'other');
+  }
 });
 
 // ---- B: chooseBuys -----------------------------------------------------------------------------------------
@@ -769,10 +770,11 @@ function makeState(options: { bag?: Record<number, number> } = {}) {
   state.autopilot = parseAutopilotFile(null);
   state.items = ItemCatalog.fromSlim(ITEMS as any);
   state.inventory.bag.clear();
-  for (const [id, countValue] of Object.entries(options.bag ?? {}))
+  for (const [id, countValue] of Object.entries(options.bag ?? {})) {
     state.inventory.applyChanges([
       { item_id: Number(id) * 1000, count: countValue, inv_id: 100 + Number(id), type: 'yield' },
     ]);
+  }
   state.world.towns = TOWNS;
   return state;
 }

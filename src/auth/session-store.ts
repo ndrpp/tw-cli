@@ -24,10 +24,14 @@ export function saveSession(worldUrl: string, jar: CookieJar, file = SESSION_FIL
 }
 
 export function loadSession(worldUrl: string, file = SESSION_FILE): CookieJar | null {
-  if (!existsSync(file)) return null;
+  if (!existsSync(file)) {
+    return null;
+  }
   try {
     const data = obj(JSON.parse(readFileSync(file, 'utf8')));
-    if (data.worldUrl !== worldUrl) return null;
+    if (data.worldUrl !== worldUrl) {
+      return null;
+    }
     return CookieJar.fromJSON(arr(data.cookies) as Cookie[]);
   } catch {
     return null;

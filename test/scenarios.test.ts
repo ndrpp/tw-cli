@@ -51,7 +51,9 @@ function job(id: number, options: JobOpt): any {
   const values: Record<string, unknown> = {};
   for (const key of ['long', 'middle', 'short'] as const) {
     const result = options[key];
-    if (!result) continue;
+    if (!result) {
+      continue;
+    }
     values[key] = {
       duration: DUR[key][0],
       energy: result[2] ?? DUR[key][1],

@@ -52,33 +52,50 @@ export function makeForm(title: string, fields: FormField[], note?: FormState['n
 
 /** Applies one key press. Returns the new form, 'submit', or 'cancel'. */
 export function formKey(form: FormState, input: string, key: KeyLike): FormState | 'submit' | 'cancel' {
-  if (key.escape) return 'cancel';
+  if (key.escape) {
+    return 'cancel';
+  }
   const field = form.fields[form.focus];
-  if (!field) return 'cancel';
+  if (!field) {
+    return 'cancel';
+  }
   const set = (value: string): FormState => ({
     ...form,
     fields: form.fields.map((candidate, innerIndex) =>
       innerIndex === form.focus ? { ...candidate, value } : candidate,
     ),
   });
-  if (key.return) return form.focus >= form.fields.length - 1 ? 'submit' : { ...form, focus: form.focus + 1 };
-  if (key.tab || key.downArrow)
+  if (key.return) {
+    return form.focus >= form.fields.length - 1 ? 'submit' : { ...form, focus: form.focus + 1 };
+  }
+  if (key.tab || key.downArrow) {
     return {
       ...form,
       focus: key.shift
         ? (form.focus + form.fields.length - 1) % form.fields.length
         : (form.focus + 1) % form.fields.length,
     };
-  if (key.upArrow) return { ...form, focus: (form.focus + form.fields.length - 1) % form.fields.length };
+  }
+  if (key.upArrow) {
+    return { ...form, focus: (form.focus + form.fields.length - 1) % form.fields.length };
+  }
   if (field.kind === 'choice') {
     const options = field.options ?? [];
     const index = Math.max(0, options.indexOf(field.value));
-    if (key.leftArrow) return set(options[(index + options.length - 1) % options.length] ?? field.value);
-    if (key.rightArrow || input === ' ') return set(options[(index + 1) % options.length] ?? field.value);
+    if (key.leftArrow) {
+      return set(options[(index + options.length - 1) % options.length] ?? field.value);
+    }
+    if (key.rightArrow || input === ' ') {
+      return set(options[(index + 1) % options.length] ?? field.value);
+    }
     return form;
   }
-  if (key.backspace || key.delete) return set(field.value.slice(0, -1));
-  if (!input || key.ctrl || key.meta) return form;
+  if (key.backspace || key.delete) {
+    return set(field.value.slice(0, -1));
+  }
+  if (!input || key.ctrl || key.meta) {
+    return form;
+  }
   if (field.kind === 'number') {
     const digits = input.replace(/[^0-9]/g, '');
     return digits ? set(field.value + digits) : form;
@@ -128,8 +145,11 @@ export function wrapSegments(segs: Segment[], width: number): Segment[][] {
   let len = 0;
   const put = (text: string, color?: string) => {
     const last = line[line.length - 1];
-    if (last && last.color === color) last.text += text;
-    else line.push({ text, color });
+    if (last && last.color === color) {
+      last.text += text;
+    } else {
+      line.push({ text, color });
+    }
     len += text.length;
   };
   const words = segs.flatMap((segment) =>
@@ -146,7 +166,9 @@ export function wrapSegments(segs: Segment[], width: number): Segment[][] {
         line = [];
         len = 0;
       }
-      if (len) put(' ', line.at(-1)?.color === color ? color : undefined);
+      if (len) {
+        put(' ', line.at(-1)?.color === color ? color : undefined);
+      }
       put(piece, color);
     }
   }
@@ -160,18 +182,25 @@ export function wrap(text: string, width: number): string[] {
   for (const para of text.split('\n')) {
     let line = '';
     for (const word of para.split(/\s+/)) {
-      if (!word) continue;
+      if (!word) {
+        continue;
+      }
       if (word.length > width) {
-        if (line) out.push(line);
-        for (let innerIndex = 0; innerIndex < word.length; innerIndex += width)
+        if (line) {
+          out.push(line);
+        }
+        for (let innerIndex = 0; innerIndex < word.length; innerIndex += width) {
           out.push(word.slice(innerIndex, innerIndex + width));
+        }
         line = out.pop() ?? '';
         continue;
       }
       if ((line ? line.length + 1 : 0) + word.length > width) {
         out.push(line);
         line = word;
-      } else line = line ? `${line} ${word}` : word;
+      } else {
+        line = line ? `${line} ${word}` : word;
+      }
     }
     out.push(line);
   }

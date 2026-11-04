@@ -73,7 +73,9 @@ function state(host: string): HostState {
 }
 
 async function acquire(source: HostState, policy: HostPolicy): Promise<void> {
-  if (source.active >= policy.concurrency) await new Promise<void>((resolve) => source.queue.push(resolve));
+  if (source.active >= policy.concurrency) {
+    await new Promise<void>((resolve) => source.queue.push(resolve));
+  }
   source.active++;
   const start = Math.max(Date.now(), source.nextStart);
   let gap = policy.minIntervalMs + Math.random() * policy.jitterMs;
@@ -86,7 +88,9 @@ async function acquire(source: HostState, policy: HostPolicy): Promise<void> {
   }
   source.nextStart = start + gap;
   const wait = start - Date.now();
-  if (wait > 0) await sleep(wait);
+  if (wait > 0) {
+    await sleep(wait);
+  }
 }
 
 function release(source: HostState): void {
@@ -100,9 +104,13 @@ const RETRY_AFTER_JITTER_MS: Range = [1_000, 5_000];
 
 function retryAfterMs(res: Response): number | undefined {
   const entry = res.headers.get('retry-after');
-  if (!entry) return undefined;
+  if (!entry) {
+    return undefined;
+  }
   const secs = Number(entry);
-  if (Number.isFinite(secs)) return secs * 1000;
+  if (Number.isFinite(secs)) {
+    return secs * 1000;
+  }
   const date = Date.parse(entry);
   return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
 }
@@ -116,7 +124,9 @@ export async function throttledFetch(
 ): Promise<Response> {
   const host = new URL(url).host;
   const source = state(policy.lane ? `${host}#${policy.lane}` : host);
-  if (source.pausedUntil > Date.now()) throw new HostPausedError(host, source.pausedUntil);
+  if (source.pausedUntil > Date.now()) {
+    throw new HostPausedError(host, source.pausedUntil);
+  }
 
   for (let attempt = 0; ; attempt++) {
     await acquire(source, policy);
@@ -132,19 +142,25 @@ export async function throttledFetch(
     }
 
     if (res && !retryable(res.status)) {
-      if (res.status >= 400) throw new HttpError(res.status, url);
+      if (res.status >= 400) {
+        throw new HttpError(res.status, url);
+      }
       source.failures = 0;
       return res;
     }
 
-    if (init.signal?.aborted) throw error ?? new Error('aborted');
+    if (init.signal?.aborted) {
+      throw error ?? new Error('aborted');
+    }
     source.failures++;
     if (source.failures >= policy.breakerThreshold) {
       source.pausedUntil = Date.now() + policy.breakerCooldownMs;
       throw new HostPausedError(host, source.pausedUntil);
     }
     if (attempt >= policy.maxRetries) {
-      if (res) throw new HttpError(res.status, url);
+      if (res) {
+        throw new HttpError(res.status, url);
+      }
       throw error;
     }
     const exp = policy.baseBackoffMs * 2 ** attempt * (res?.status === 429 ? RATE_LIMIT_BACKOFF_FACTOR : 1);

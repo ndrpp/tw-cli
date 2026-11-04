@@ -34,7 +34,9 @@ function makeState(game: OpenGame, prev?: GameState | null, connectedSince?: num
   const state = new GameState(game, () => ensureGame({ credentials: noPrompt }));
   state.debug.dir = join(CONFIG_DIR, 'debug'); // hourly files, kept 24 h
   state.calibration = new Calibration(); // calibration.json: what the autopilot learned
-  if (prev) state.carryOver(prev);
+  if (prev) {
+    state.carryOver(prev);
+  }
   void state.start(
     connectedSince ? { connect: { label: CONNECT_LABEL, startedAt: connectedSince, endedAt: Date.now() } } : {},
   );
@@ -51,13 +53,17 @@ export function Root() {
   const connecting = phase.kind === 'connecting';
   // Spinner and timer while connecting (the game's own ticker is not running yet).
   useEffect(() => {
-    if (!connecting) return;
+    if (!connecting) {
+      return;
+    }
     const timer = setInterval(() => setFrame((frame) => frame + 1), 120);
     return () => clearInterval(timer);
   }, [connecting]);
   useInput(
     (input) => {
-      if (input === 'q') exit();
+      if (input === 'q') {
+        exit();
+      }
     },
     { isActive: connecting },
   );
@@ -71,7 +77,9 @@ export function Root() {
     let cancelled = false;
     let retry: ReturnType<typeof setTimeout> | null = null;
     const reconnect = (why: string, attempt = 1) => {
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
       const prev = stateRef.current;
       prev?.stopLive();
       const startedAt = Date.now();
@@ -82,7 +90,9 @@ export function Root() {
       });
       ensureGame({ credentials: noPrompt })
         .then((game) => {
-          if (cancelled) return;
+          if (cancelled) {
+            return;
+          }
           const next = makeState(game, prev, startedAt);
           next.info(`${why.replace(/…$/, '')} Reloaded.`);
           setState(next);
@@ -90,15 +100,23 @@ export function Root() {
           setPhase({ kind: 'game' });
         })
         .catch((entry) => {
-          if (cancelled) return;
-          if (entry instanceof AuthError) return setPhase({ kind: 'setup', canGoBack: false, message: entry.message });
+          if (cancelled) {
+            return;
+          }
+          if (entry instanceof AuthError) {
+            return setPhase({ kind: 'setup', canGoBack: false, message: entry.message });
+          }
           retry = setTimeout(() => reconnect(why, attempt + 1), RETRY_MS);
         });
     };
     const wake = new WakeDetector(
       (slept) => {
-        if (!stateRef.current) return; // still in setup / first connect
-        if (retry) clearTimeout(retry);
+        if (!stateRef.current) {
+          return; // still in setup / first connect
+        }
+        if (retry) {
+          clearTimeout(retry);
+        }
         reconnect(`Woke up after ${formatDuration(Math.round(slept / 1000))}: reconnecting…`);
       },
       { intervalMs: 2_000, gapMs: 30_000 },
@@ -106,7 +124,9 @@ export function Root() {
     return () => {
       cancelled = true;
       wake.stop();
-      if (retry) clearTimeout(retry);
+      if (retry) {
+        clearTimeout(retry);
+      }
     };
   }, []);
 
@@ -115,12 +135,16 @@ export function Root() {
     const startedAt = Date.now();
     ensureGame({ credentials: noPrompt })
       .then((game) => {
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         setState(makeState(game, null, startedAt));
         setPhase({ kind: 'game' });
       })
       .catch((entry) => {
-        if (!cancelled) setPhase({ kind: 'setup', canGoBack: false, message: errorMessage(entry) });
+        if (!cancelled) {
+          setPhase({ kind: 'setup', canGoBack: false, message: errorMessage(entry) });
+        }
       });
     return () => {
       cancelled = true;

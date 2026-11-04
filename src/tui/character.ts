@@ -68,14 +68,20 @@ const PERCENT_KEYS = new Set(['luck', 'dollar', 'experience', 'drop', 'regen']);
 
 /** Difference if `item` replaced `worn`, from the web's computed totals (upgrade + per-level values). */
 export function gearDelta(item: ItemStats | null | undefined, worn: ItemStats | null | undefined): string {
-  if (!item) return '';
+  if (!item) {
+    return '';
+  }
   const keys = new Set([...Object.keys(item.totals), ...Object.keys(worn?.totals ?? {})]);
   const parts: string[] = [];
   for (const entryKey of keys) {
     let diff = (item.totals[entryKey] ?? 0) - (worn?.totals[entryKey] ?? 0);
-    if (PERCENT_KEYS.has(entryKey)) diff *= 100;
+    if (PERCENT_KEYS.has(entryKey)) {
+      diff *= 100;
+    }
     diff = Math.round(diff * 100) / 100;
-    if (diff) parts.push(`${diff > 0 ? '+' : ''}${diff} ${NAMES[entryKey] ?? TOTAL_LABEL[entryKey] ?? entryKey}`);
+    if (diff) {
+      parts.push(`${diff > 0 ? '+' : ''}${diff} ${NAMES[entryKey] ?? TOTAL_LABEL[entryKey] ?? entryKey}`);
+    }
   }
   return parts.join(', ');
 }
@@ -135,7 +141,9 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
     onCapture(filtering || confirm || !!useForm || !!setSwitch);
   }, [filtering, confirm, useForm, setSwitch]);
   useEffect(() => {
-    if (tab === 'sets') void state.loadEquipSets();
+    if (tab === 'sets') {
+      void state.loadEquipSets();
+    }
   }, [tab, state]);
 
   const typeFilter = TYPE_FILTERS[typeIdx] ?? 'all';
@@ -151,7 +159,9 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
 
   const askUse = (it: BagItem) => {
     const entry = state.items?.get(it.itemId);
-    if (entry && entry.usetype === 'none') return state.error(`${entry.name} cannot be used.`);
+    if (entry && entry.usetype === 'none') {
+      return state.error(`${entry.name} cannot be used.`);
+    }
     const many = it.count > 1 && entry?.usetype !== 'single';
     return setUseForm({
       itemId: it.itemId,
@@ -167,8 +177,12 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
     (input, key) => {
       if (useForm) {
         const form = formKey(useForm.form, input, key);
-        if (form === 'cancel') return setUseForm(null);
-        if (form !== 'submit') return setUseForm({ ...useForm, form: form });
+        if (form === 'cancel') {
+          return setUseForm(null);
+        }
+        if (form !== 'submit') {
+          return setUseForm({ ...useForm, form: form });
+        }
         const countValue = Math.max(1, Number(formValues(useForm.form).count) || 1);
         setUseForm(null);
         // biome-ignore lint/correctness/useHookAtTopLevel: state.useItem is a game action, not a React hook
@@ -177,23 +191,35 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
       if (setSwitch) {
         const set = setSwitch;
         setSetSwitch(null);
-        if (input === 'y') void state.switchEquipSet(set.id);
+        if (input === 'y') {
+          void state.switchEquipSet(set.id);
+        }
         return;
       }
       if (filtering) {
-        if (key.return || key.escape) setFiltering(false);
-        if (key.escape) setFilter('');
-        else if (key.backspace || key.delete) setFilter((textValue) => textValue.slice(0, -1));
-        else if (input && !key.ctrl && !key.meta && !key.return) setFilter((textValue) => textValue + input);
+        if (key.return || key.escape) {
+          setFiltering(false);
+        }
+        if (key.escape) {
+          setFilter('');
+        } else if (key.backspace || key.delete) {
+          setFilter((textValue) => textValue.slice(0, -1));
+        } else if (input && !key.ctrl && !key.meta && !key.return) {
+          setFilter((textValue) => textValue + input);
+        }
         setBagSel(0);
         return;
       }
       if (confirm) {
         setConfirm(false);
-        if (input === 'y') void state.saveSkills(plan).then((ok) => ok && setPlan(emptyPlan()));
+        if (input === 'y') {
+          void state.saveSkills(plan).then((ok) => ok && setPlan(emptyPlan()));
+        }
         return;
       }
-      if (detail && (key.escape || input === 'h')) return setDetail(false);
+      if (detail && (key.escape || input === 'h')) {
+        return setDetail(false);
+      }
       if (key.leftArrow || key.rightArrow) {
         setDetail(false);
         const value = key.rightArrow ? 1 : CHAR_TABS.length - 1;
@@ -204,45 +230,72 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
           setPlan(emptyPlan());
           return state.info('Discarded planned skill points.');
         }
-        if (tab === 'inventory' && filter) return setFilter('');
+        if (tab === 'inventory' && filter) {
+          return setFilter('');
+        }
         return onExit();
       }
       const up = key.upArrow || input === 'k';
       const down = key.downArrow || input === 'j';
       const step = key.pageUp || key.pageDown ? 10 : 1;
       if (tab === 'skills') {
-        if (up || key.pageUp) return setSkillSel((innerIndex) => Math.max(0, innerIndex - step));
-        if (down || key.pageDown) return setSkillSel((innerIndex) => Math.min(skillRows.length - 1, innerIndex + step));
+        if (up || key.pageUp) {
+          return setSkillSel((innerIndex) => Math.max(0, innerIndex - step));
+        }
+        if (down || key.pageDown) {
+          return setSkillSel((innerIndex) => Math.min(skillRows.length - 1, innerIndex + step));
+        }
         const entryKey = skillRows[skillSel];
-        if (!entryKey) return;
+        if (!entryKey) {
+          return;
+        }
         if (input === '+' || input === '=') {
           const pick = structuredClone(plan);
-          if (adjustPlan(pick, state.skills, entryKey, 1)) setPlan(pick);
-          else state.error(entryKey in SKILLS_OF ? 'No free attribute points.' : 'No free skill points.');
+          if (adjustPlan(pick, state.skills, entryKey, 1)) {
+            setPlan(pick);
+          } else {
+            state.error(entryKey in SKILLS_OF ? 'No free attribute points.' : 'No free skill points.');
+          }
           return;
         }
         if (input === '-' || input === '_') {
           const pickInfo = structuredClone(plan);
-          if (adjustPlan(pickInfo, state.skills, entryKey, -1)) setPlan(pickInfo);
+          if (adjustPlan(pickInfo, state.skills, entryKey, -1)) {
+            setPlan(pickInfo);
+          }
           return;
         }
-        if (key.return && (used.attributes || used.skills)) return setConfirm(true);
+        if (key.return && (used.attributes || used.skills)) {
+          return setConfirm(true);
+        }
         return;
       }
       if (tab === 'sets') {
         const sets = state.equipSets?.sets ?? [];
         const si = Math.min(setSel, Math.max(0, sets.length - 1));
-        if (up || key.pageUp) return setSetSel(Math.max(0, si - step));
-        if (down || key.pageDown) return setSetSel(Math.min(sets.length - 1, si + step));
+        if (up || key.pageUp) {
+          return setSetSel(Math.max(0, si - step));
+        }
+        if (down || key.pageDown) {
+          return setSetSel(Math.min(sets.length - 1, si + step));
+        }
         const set = sets[si];
-        if (key.return && set) setSetSwitch(set);
+        if (key.return && set) {
+          setSetSwitch(set);
+        }
         return;
       }
       if (detail) {
-        if (up || key.pageUp) return setDetailScroll((countValue) => Math.max(0, countValue - step));
-        if (down || key.pageDown) return setDetailScroll((countValue) => countValue + step);
+        if (up || key.pageUp) {
+          return setDetailScroll((countValue) => Math.max(0, countValue - step));
+        }
+        if (down || key.pageDown) {
+          return setDetailScroll((countValue) => countValue + step);
+        }
       }
-      if (input === 'l') return setDetail(true);
+      if (input === 'l') {
+        return setDetail(true);
+      }
       if (key.tab) {
         setDetail(false);
         return setPane((pick) => (pick === 'bag' ? 'wear' : 'bag'));
@@ -262,22 +315,38 @@ export function CharacterScreen({ state, width, height, onCapture, onExit, activ
         return setTypeIdx((innerIndex) => (innerIndex + TYPE_FILTERS.length - 1) % TYPE_FILTERS.length);
       }
       if (pane === 'wear') {
-        if (up || key.pageUp) return setWearSel((innerIndex) => Math.max(0, innerIndex - step));
-        if (down || key.pageDown) return setWearSel((innerIndex) => Math.min(WEAR_SLOTS.length - 1, innerIndex + step));
+        if (up || key.pageUp) {
+          return setWearSel((innerIndex) => Math.max(0, innerIndex - step));
+        }
+        if (down || key.pageDown) {
+          return setWearSel((innerIndex) => Math.min(WEAR_SLOTS.length - 1, innerIndex + step));
+        }
         const slot = WEAR_SLOTS[wearSel];
-        if ((key.return || input === 'x') && slot && state.inventory.wear.has(slot)) return void state.unwear(slot);
+        if ((key.return || input === 'x') && slot && state.inventory.wear.has(slot)) {
+          return void state.unwear(slot);
+        }
         return;
       }
-      if (up || key.pageUp) return setBagSel(Math.max(0, bagIdx - step));
-      if (down || key.pageDown) return setBagSel(Math.min(rows.length - 1, bagIdx + step));
+      if (up || key.pageUp) {
+        return setBagSel(Math.max(0, bagIdx - step));
+      }
+      if (down || key.pageDown) {
+        return setBagSel(Math.min(rows.length - 1, bagIdx + step));
+      }
       const it = rows[bagIdx];
-      if (input === 'U' && it) return askUse(it);
+      if (input === 'U' && it) {
+        return askUse(it);
+      }
       if ((key.return || input === 'e') && it) {
         const entry = state.items?.get(it.itemId);
         const type = entry?.type ?? it.type;
         // Usable products (coffee is a `yield` item) win over the wearable slot.
-        if (entry && entry.usetype !== 'none') return askUse(it);
-        if (WEAR_SLOTS.includes(type)) return void state.wear(it.itemId);
+        if (entry && entry.usetype !== 'none') {
+          return askUse(it);
+        }
+        if (WEAR_SLOTS.includes(type)) {
+          return void state.wear(it.itemId);
+        }
         return state.error(`${state.itemName(it.itemId)} can't be worn or used.`);
       }
     },
@@ -346,11 +415,15 @@ function wrapText(text: string, width: number): string[] {
   for (const para of text.split('\n')) {
     let line = '';
     for (const word of para.split(/\s+/)) {
-      if (!word) continue;
+      if (!word) {
+        continue;
+      }
       if (line && `${line} ${word}`.length > width) {
         out.push(line);
         line = word;
-      } else line = line ? `${line} ${word}` : word;
+      } else {
+        line = line ? `${line} ${word}` : word;
+      }
     }
     out.push(line);
   }
@@ -412,14 +485,17 @@ export function ItemDetail(transform: {
   const fieldWidth = Math.max(10, width - 4);
   const lines: React.ReactNode[] = [];
   const add = (text: string, props: Record<string, unknown> = {}) => {
-    for (const textValue of wrapText(text, fieldWidth))
+    for (const textValue of wrapText(text, fieldWidth)) {
       lines.push(createElement(Text, { key: lines.length, ...props }, textValue || ' '));
+    }
   };
   const gap = () => lines.push(createElement(Text, { key: lines.length }, ' '));
   const character = state.character;
-  if (itemId === undefined) add('Nothing selected', { dimColor: true });
-  else if (!def) add(state.itemName(itemId), { bold: true });
-  else {
+  if (itemId === undefined) {
+    add('Nothing selected', { dimColor: true });
+  } else if (!def) {
+    add(state.itemName(itemId), { bold: true });
+  } else {
     const up = itemId % 1000;
     const stats = state.itemStats(itemId);
     add(state.itemName(itemId), { bold: true, color: def.set ? 'greenBright' : 'yellow' });
@@ -430,58 +506,88 @@ export function ItemDetail(transform: {
       `${type}${count > 1 ? ` · ×${count}` : ''}${up ? ` · upgrade ${up}` : ''}${def.action ? (def.type === 'recipe' ? ' · learnable' : ' · usable') : ''}`,
       { dimColor: true },
     );
-    if (def.unique) add('Unique', { color: 'magenta' });
-    if (def.type === 'recipe' && def.profession)
+    if (def.unique) {
+      add('Unique', { color: 'magenta' });
+    }
+    if (def.type === 'recipe' && def.profession) {
       add(`Requires ${def.profession} (${def.professionLevel ?? '?'})`, { color: 'green' });
+    }
     if (def.usebonus.length && def.type !== 'recipe') {
       add(def.usebonus.length > 1 ? 'Effects:' : 'Effect:', { bold: true });
-      for (const url of def.usebonus) add(`  ${url}`, { color: 'green' });
+      for (const url of def.usebonus) {
+        add(`  ${url}`, { color: 'green' });
+      }
     }
     gap();
     add('Bonuses', { bold: true });
-    if (stats?.lines.length)
-      for (const lineValue of stats.lines) add(`  ${lineValue.text.trim()}`, STAT_COLOR[lineValue.kind]);
-    else add('  none', { dimColor: true });
+    if (stats?.lines.length) {
+      for (const lineValue of stats.lines) {
+        add(`  ${lineValue.text.trim()}`, STAT_COLOR[lineValue.kind]);
+      }
+    } else {
+      add('  none', { dimColor: true });
+    }
     const set = state.itemSet(itemId);
     if (set) {
       gap();
       add(`${set.name} (${set.worn}/${set.items.length} worn)`, { bold: true, color: 'greenBright' });
-      for (const textValue of set.bonus) add(`  ${textValue}`, { color: 'green' });
-      for (const innerIndex of set.items)
+      for (const textValue of set.bonus) {
+        add(`  ${textValue}`, { color: 'green' });
+      }
+      for (const innerIndex of set.items) {
         add(`  ${innerIndex.worn ? '●' : '○'} ${innerIndex.name}`, { dimColor: !innerIndex.worn });
+      }
     }
     const req = state.requiredLevel(itemId);
     const reqs: [string, boolean][] = [];
-    if (req)
+    if (req) {
       reqs.push([
         req.level !== req.base ? `Level ${req.level} (${req.base})` : `Level ${req.level}`,
         character.level < req.level,
       ]);
-    if (def.duelLevel) reqs.push([`Duel level ${def.duelLevel}`, character.duelLevel < def.duelLevel]);
-    if (def.charClass)
+    }
+    if (def.duelLevel) {
+      reqs.push([`Duel level ${def.duelLevel}`, character.duelLevel < def.duelLevel]);
+    }
+    if (def.charClass) {
       reqs.push([`Class: ${CLASS_TITLE[def.charClass] ?? def.charClass}`, character.charClass !== def.charClass]);
-    if (def.charSex)
+    }
+    if (def.charSex) {
       reqs.push([
         `Gender: ${def.charSex === 'male' ? 'Male' : 'Female'}${character.charClass === 'greenhorn' ? ' (No Greenhorn)' : ''}`,
         character.charSex !== def.charSex || character.charClass === 'greenhorn',
       ]);
+    }
     if (reqs.length) {
       gap();
       add('Requires', { bold: true });
-      for (const [requirementText, bad] of reqs) add(`  ${requirementText}`, bad ? { color: 'red' } : {});
+      for (const [requirementText, bad] of reqs) {
+        add(`  ${requirementText}`, bad ? { color: 'red' } : {});
+      }
     }
     gap();
-    if (!def.sellable) add('Unsalable', { color: 'red' });
-    else add(`Sells for ${money(def.sell)}${def.price ? ` · buy ${money(def.price)}` : ''}`);
-    if (def.auctionable) add('Auctionable', { color: 'green' });
-    if (!def.upgradeable) add('Not upgradeable', { color: 'red' });
+    if (!def.sellable) {
+      add('Unsalable', { color: 'red' });
+    } else {
+      add(`Sells for ${money(def.sell)}${def.price ? ` · buy ${money(def.price)}` : ''}`);
+    }
+    if (def.auctionable) {
+      add('Auctionable', { color: 'green' });
+    }
+    if (!def.upgradeable) {
+      add('Not upgradeable', { color: 'red' });
+    }
     if (compare && WEAR_SLOTS.includes(def.type)) {
       gap();
       add(`Instead of ${wornId !== undefined ? state.itemName(wornId) : 'nothing'}`, { bold: true });
       const diff = gearDelta(stats, wornId !== undefined && worn ? state.itemStats(wornId) : null);
-      if (diff)
-        for (const date of diff.split(', ')) add(`  ${date}`, { color: date.startsWith('-') ? 'red' : 'green' });
-      else add('  no change', { dimColor: true });
+      if (diff) {
+        for (const date of diff.split(', ')) {
+          add(`  ${date}`, { color: date.startsWith('-') ? 'red' : 'green' });
+        }
+      } else {
+        add('  no change', { dimColor: true });
+      }
     }
   }
   const canWear = !!def && WEAR_SLOTS.includes(def.type);
@@ -496,7 +602,9 @@ export function ItemDetail(transform: {
   const top = Math.min(scroll, maxTop);
   const more = lines.length - top - room;
   useEffect(() => {
-    if (scroll > maxTop) clampScroll?.(maxTop);
+    if (scroll > maxTop) {
+      clampScroll?.(maxTop);
+    }
   });
   return createElement(
     Box,

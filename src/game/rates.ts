@@ -38,20 +38,31 @@ export class RateTracker {
     const source = { t: time, xp, money };
     this.first ??= source;
     const last = this.samples[this.samples.length - 1];
-    if (last && time - last.t < SAMPLE_S) return;
+    if (last && time - last.t < SAMPLE_S) {
+      return;
+    }
     this.samples.push(source);
-    while (this.samples.length > 2 && (this.samples[1]?.t ?? Number.POSITIVE_INFINITY) <= time - this.keepS)
+    while (this.samples.length > 2 && (this.samples[1]?.t ?? Number.POSITIVE_INFINITY) <= time - this.keepS) {
       this.samples.shift();
+    }
   }
 
   /** Rates over the last `windowS` up to `now` with the current values; null until MIN_SPAN_S of data. */
   rates(now: number, xp: number, money: number, windowS = 3600): Rates | null {
     // The newest sample at or before the window start, else the oldest kept.
     let base = this.samples[0];
-    for (const source of this.samples) if (source.t <= now - windowS) base = source;
-    if (!base) return null;
+    for (const source of this.samples) {
+      if (source.t <= now - windowS) {
+        base = source;
+      }
+    }
+    if (!base) {
+      return null;
+    }
     const span = now - base.t;
-    if (span < MIN_SPAN_S) return null;
+    if (span < MIN_SPAN_S) {
+      return null;
+    }
     return { xpH: ((xp - base.xp) * 3600) / span, moneyH: ((money - base.money) * 3600) / span, span };
   }
 }

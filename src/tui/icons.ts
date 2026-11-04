@@ -31,8 +31,14 @@ const USE_TITLE = /^Use /;
 
 /** Icon for a planned or projected step; `action` tells deposits from item uses. */
 export function stepIcon(step: TimelineStep, action?: { type: string }): string {
-  if (step.kind !== 'action') return taskIcon(step.kind);
-  if (action?.type === 'deposit' || DEPOSIT_TITLE.test(step.title)) return ICON.bank;
-  if (action?.type === 'use' || USE_TITLE.test(step.title)) return ICON.item;
+  if (step.kind !== 'action') {
+    return taskIcon(step.kind);
+  }
+  if (action?.type === 'deposit' || DEPOSIT_TITLE.test(step.title)) {
+    return ICON.bank;
+  }
+  if (action?.type === 'use' || USE_TITLE.test(step.title)) {
+    return ICON.item;
+  }
   return ICON.action;
 }

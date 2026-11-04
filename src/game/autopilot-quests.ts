@@ -24,13 +24,21 @@ export function chooseReward(
   config: AutopilotConfig,
   isUpgrade: (text: string) => boolean = () => false,
 ): number | undefined {
-  if (options.length <= 1) return options[0]?.id;
+  if (options.length <= 1) {
+    return options[0]?.id;
+  }
   const width = goalWeights(config);
   const score = (textValue: string) => {
-    if (isUpgrade(textValue)) return Infinity;
+    if (isUpgrade(textValue)) {
+      return Infinity;
+    }
     const count = parseGameNumber(textValue) || 1;
-    if (/experience|xp/i.test(textValue)) return width.xp * count;
-    if (/dollar|\$/i.test(textValue)) return width.money * count;
+    if (/experience|xp/i.test(textValue)) {
+      return width.xp * count;
+    }
+    if (/dollar|\$/i.test(textValue)) {
+      return width.money * count;
+    }
     return width.products * 100; // an item: valued like a product
   };
   return options.reduce((accumulator, current) =>
@@ -69,18 +77,24 @@ export class QuestModule {
   /** One quest step if there is one to do now; true when it sent a request. */
   async step(): Promise<boolean> {
     const gameState = this.host.state;
-    if (!gameState.items) return false;
+    if (!gameState.items) {
+      return false;
+    }
     const skip = this.host.skipped();
     const quests = this.quests();
 
     for (const currentQuest of quests.filter((quest) => quest.finishable)) {
       const key = `finish:${currentQuest.id}`;
-      if (skip.has(key)) continue;
+      if (skip.has(key)) {
+        continue;
+      }
       // Map quest givers want you there: walk first when not at the giver.
       const at = currentQuest.employerAt;
       const position = gameState.character.position;
       if (at && (at.x !== position.x || at.y !== position.y) && skip.has(`finish-here:${currentQuest.id}`)) {
-        if (gameState.queue.length) continue;
+        if (gameState.queue.length) {
+          continue;
+        }
         gameState.debug.add('quest', `Walk to ${currentQuest.employerName} to finish ${currentQuest.title}`, {
           quest: currentQuest.id,
           giverAt: at,
@@ -117,8 +131,9 @@ export class QuestModule {
       });
       const before = gameState.log.length;
       await gameState.finishQuest(currentQuest, reward);
-      if (gameState.log.slice(before).some((line) => line.level === 'error'))
+      if (gameState.log.slice(before).some((line) => line.level === 'error')) {
         this.host.fail(at ? `finish-here:${currentQuest.id}` : key, `could not finish ${currentQuest.title}`);
+      }
       return true;
     }
 
@@ -130,10 +145,13 @@ export class QuestModule {
             const id = [...gameState.inventory.bag.values()].find(
               (second) => baseId(second.itemId) === requiredBase,
             )?.itemId;
-            if (id === undefined) continue;
+            if (id === undefined) {
+              continue;
+            }
             const slot = gameState.items.get(id)?.type ?? '';
-            if (!this.swapped.has(wearQuest.id))
+            if (!this.swapped.has(wearQuest.id)) {
               this.swapped.set(wearQuest.id, { slot, prev: gameState.inventory.wear.get(slot) ?? null });
+            }
             gameState.debug.add('quest', `Wear ${gameState.itemName(id)} for ${wearQuest.title}`, {
               quest: wearQuest.id,
               requirement: requirement.info,
@@ -142,12 +160,14 @@ export class QuestModule {
             });
             const before = gameState.log.length;
             await gameState.wear(id);
-            if (gameState.log.slice(before).some((line) => line.level === 'error'))
+            if (gameState.log.slice(before).some((line) => line.level === 'error')) {
               this.host.fail(
                 `wear:${requirement.itemId}`,
                 `could not wear ${gameState.itemName(id)} for ${wearQuest.title}`,
               );
-            else void gameState.loadQuests(true);
+            } else {
+              void gameState.loadQuests(true);
+            }
             return true;
           }
         } else if (requirement.kind === 'other') {
@@ -159,7 +179,9 @@ export class QuestModule {
       }
     }
 
-    if (await this.buyStep(quests, skip)) return true;
+    if (await this.buyStep(quests, skip)) {
+      return true;
+    }
 
     // Everything done but the time window: re-read the quest log now and then (the server should mark the
     // window solved inside it; unverified), so the finish above happens in time.
@@ -191,7 +213,9 @@ export class QuestModule {
       const stillNeeded =
         found?.requirements.some((requirement) => requirement.kind === 'wear' && !requirement.solved) ||
         (found && !found.finishable && found.requirements.some((requirement) => requirement.kind === 'wear'));
-      if (stillNeeded) continue;
+      if (stillNeeded) {
+        continue;
+      }
       this.swapped.delete(qid);
       gameState.debug.add('quest', `Quest gear no longer needed (${found?.title ?? qid})`, {
         slot: sw.slot,
@@ -228,15 +252,23 @@ export class QuestModule {
       await this.pickUp(pickup);
       return true;
     }
-    if (!this.host.config.quests.buy) return false;
+    if (!this.host.config.quests.buy) {
+      return false;
+    }
     const all = gameState.questPurchases(quests);
     for (const currentQuest of quests) {
       const entry = all.get(currentQuest.id);
-      if (!entry || entry.blocker || entry.problem) continue;
+      if (!entry || entry.blocker || entry.problem) {
+        continue;
+      }
       for (const pick of entry.picks) {
-        if (pick.source.kind === 'shop' && pick.source.townId !== here?.id) continue;
+        if (pick.source.kind === 'shop' && pick.source.townId !== here?.id) {
+          continue;
+        }
         const key = `item:${baseId(pick.itemId)}`;
-        if (skip.has(key)) continue;
+        if (skip.has(key)) {
+          continue;
+        }
         if (pick.cost > this.host.budget()) {
           this.once(
             `budget:${currentQuest.id}:${baseId(pick.itemId)}`,
@@ -255,8 +287,12 @@ export class QuestModule {
     const gameState = this.host.state;
     const src = pick.source;
     const money = (result: { cash?: number | undefined; deposit?: number | undefined }) => {
-      if (typeof result.cash === 'number') gameState.character.cash = result.cash;
-      if (typeof result.deposit === 'number') gameState.character.deposit = result.deposit;
+      if (typeof result.cash === 'number') {
+        gameState.character.cash = result.cash;
+      }
+      if (typeof result.deposit === 'number') {
+        gameState.character.deposit = result.deposit;
+      }
     };
     gameState.debug.add('quest', `Buy ${pick.count}× ${pick.name} for ${currentQuest.title} (${where(src)})`, {
       quest: currentQuest.id,
@@ -276,13 +312,14 @@ export class QuestModule {
           money(result);
         }
       } else if (src.kind === 'mobile') {
-        for (let innerIndex = 0; innerIndex < pick.count; innerIndex++)
+        for (let innerIndex = 0; innerIndex < pick.count; innerIndex++) {
           money(
             await gameState.autopilotCall(
               () => buyMobileTrader(gameState.client, src.item, 'dollar'),
               `buy ${pick.name} (mobile trader)`,
             ),
           );
+        }
         gameState.buyCatalog.mobile = null; // stock and limited counts changed: read it again
         await gameState.refreshInventory();
       } else {
@@ -293,7 +330,9 @@ export class QuestModule {
           `buy ${pick.name} (${where(src)})`,
         );
         gameState.buyCatalog.dropOffer(src.offer.id);
-        if (!resultValue.instant) throw new Error('the offer did not sell at its buy-now price (bid placed instead)');
+        if (!resultValue.instant) {
+          throw new Error('the offer did not sell at its buy-now price (bid placed instead)');
+        }
         money(resultValue);
         gameState.updateAutopilot((autopilotFile) =>
           autopilotFile.pickups.push({
@@ -345,9 +384,13 @@ export class QuestModule {
   private async acceptInTown(skip: Set<string>): Promise<boolean> {
     const gameState = this.host.state;
     const town = gameState.townHere;
-    if (!town || Date.now() - (this.saloonChecked.get(town.id) ?? 0) < 3600_000) return false;
+    if (!town || Date.now() - (this.saloonChecked.get(town.id) ?? 0) < 3600_000) {
+      return false;
+    }
     this.saloonChecked.set(town.id, Date.now());
-    if (gameState.questCapacity && gameState.quests.length >= gameState.questCapacity) return false;
+    if (gameState.questCapacity && gameState.quests.length >= gameState.questCapacity) {
+      return false;
+    }
     await gameState.loadSaloon();
     gameState.debug.add('quest', `Saloon in ${town.name}: ${gameState.saloon.length} quest giver(s)`, {
       givers: gameState.saloon,
@@ -355,15 +398,22 @@ export class QuestModule {
     });
     const cfg = this.host.config;
     for (const entry of gameState.saloon) {
-      if (!(await gameState.openEmployer(entry.key)) || !gameState.employer) continue;
+      if (!(await gameState.openEmployer(entry.key)) || !gameState.employer) {
+        continue;
+      }
       for (const currentQuest of gameState.employer.open) {
-        if (!currentQuest.acceptable || currentQuest.accepted || skip.has(`accept:${currentQuest.id}`)) continue;
+        if (!currentQuest.acceptable || currentQuest.accepted || skip.has(`accept:${currentQuest.id}`)) {
+          continue;
+        }
         if (
           cfg.quests.excludedChains.includes(currentQuest.group) ||
           (!cfg.quests.repeatable && /repeatable/i.test(currentQuest.group))
-        )
+        ) {
           continue;
-        if (gameState.questCapacity && gameState.quests.length >= gameState.questCapacity) return true;
+        }
+        if (gameState.questCapacity && gameState.quests.length >= gameState.questCapacity) {
+          return true;
+        }
         gameState.debug.add('quest', `Accept ${currentQuest.title}`, {
           quest: currentQuest.id,
           chain: currentQuest.group,
@@ -379,17 +429,25 @@ export class QuestModule {
   private isUpgrade(text: string): boolean {
     const gameState = this.host.state;
     const id = gameState.items?.findByName(text.trim());
-    if (id === undefined) return false;
+    if (id === undefined) {
+      return false;
+    }
     const slot = gameState.items?.get(id)?.type;
     const req = gameState.requiredLevel(id);
-    if (!slot || (req && req.level > gameState.character.level)) return false;
+    if (!slot || (req && req.level > gameState.character.level)) {
+      return false;
+    }
     return this.betterThan(id, gameState.inventory.wear.get(slot) ?? undefined);
   }
 
   /** Item a beats b by total attribute + skill points (a rough "better gear" test). */
   private betterThan(value: number | undefined, currentValue: number | undefined): boolean {
-    if (!value) return false;
-    if (!currentValue) return true;
+    if (!value) {
+      return false;
+    }
+    if (!currentValue) {
+      return true;
+    }
     const gameState = this.host.state;
     const pts = (id: number) => {
       const entry = gameState.items?.get(id);
@@ -402,7 +460,9 @@ export class QuestModule {
   }
 
   private once(key: string, msg: string): void {
-    if (this.logged.has(key)) return;
+    if (this.logged.has(key)) {
+      return;
+    }
     this.logged.add(key);
     this.host.state.debug.add('quest', msg.replace(/^Autopilot: /, 'Skip: '), { key });
     this.host.state.info(msg);

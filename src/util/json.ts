@@ -26,13 +26,20 @@ export const entries = (value: unknown): [string, unknown][] =>
 
 /** Saved values over the defaults, recursively, keeping only keys the default has, with the default's type (a null default takes anything). */
 export function mergeDefaults<Value extends object>(defaults: Value, saved: unknown): Value {
-  if (!isObj(saved)) return structuredClone(defaults);
+  if (!isObj(saved)) {
+    return structuredClone(defaults);
+  }
   const merged: JsonObject = Object.fromEntries(entries(structuredClone(defaults)));
   for (const [key, defaultValue] of entries(defaults)) {
     const savedValue = saved[key];
-    if (savedValue === undefined) continue;
-    if (isObj(defaultValue) && isObj(savedValue)) merged[key] = mergeDefaults(defaultValue, savedValue);
-    else if (defaultValue === null || typeof savedValue === typeof defaultValue) merged[key] = savedValue;
+    if (savedValue === undefined) {
+      continue;
+    }
+    if (isObj(defaultValue) && isObj(savedValue)) {
+      merged[key] = mergeDefaults(defaultValue, savedValue);
+    } else if (defaultValue === null || typeof savedValue === typeof defaultValue) {
+      merged[key] = savedValue;
+    }
   }
   return merged as Value;
 }

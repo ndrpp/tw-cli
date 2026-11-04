@@ -18,7 +18,9 @@ function anyLines(name: string, text: string): number[] {
   const src = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true);
   const lines: number[] = [];
   const visit = (node: ts.Node): void => {
-    if (node.kind === ts.SyntaxKind.AnyKeyword) lines.push(src.getLineAndCharacterOfPosition(node.getStart()).line + 1);
+    if (node.kind === ts.SyntaxKind.AnyKeyword) {
+      lines.push(src.getLineAndCharacterOfPosition(node.getStart()).line + 1);
+    }
     ts.forEachChild(node, visit);
   };
   visit(src);

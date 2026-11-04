@@ -41,15 +41,18 @@ export async function ensureGame(opts: EnsureOptions = {}): Promise<OpenGame> {
         log('Reused saved session.');
         return game;
       } catch (err) {
-        if (!(err instanceof AuthError)) throw err;
+        if (!(err instanceof AuthError)) {
+          throw err;
+        }
         log('Saved session expired; logging in again.');
       }
     }
   }
 
   const creds = envCredentials() ?? (opts.credentials ? await opts.credentials() : null);
-  if (!creds)
+  if (!creds) {
     throw new AuthError('No session and no credentials: set TW_LOGIN_NAME / TW_LOGIN_PASSWORD or run `tw login`');
+  }
   const jar = await loginToWorld(world, creds, profile, policy);
   const game = await openGame(world, jar, profile, policy);
   saveSession(world.url, jar, opts.sessionFile);

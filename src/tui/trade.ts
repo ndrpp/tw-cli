@@ -80,11 +80,19 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
   useEffect(() => {
     setSel(0);
     setSide('goods');
-    if (tab === 'trader') return void state.openMobileTrader();
-    if (!town) return;
-    if (tab === 'bank') void state.openBank(town.id);
-    else if (isShop(tab)) void state.openShop(tab, town.id);
-    else if (tab === 'mine') void state.loadMarketMine();
+    if (tab === 'trader') {
+      return void state.openMobileTrader();
+    }
+    if (!town) {
+      return;
+    }
+    if (tab === 'bank') {
+      void state.openBank(town.id);
+    } else if (isShop(tab)) {
+      void state.openShop(tab, town.id);
+    } else if (tab === 'mine') {
+      void state.loadMarketMine();
+    }
   }, [tab, town?.id]);
 
   const bagItems = state.inventory
@@ -122,7 +130,9 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
 
   const submit = (pick: Pending, value: Record<string, string>) => {
     const transform = (entryKey: string) => Number(value[entryKey] ?? '') || 0;
-    if (pick.kind === 'deposit') return void state.depositMoney(transform('amount'));
+    if (pick.kind === 'deposit') {
+      return void state.depositMoney(transform('amount'));
+    }
     if (pick.kind === 'search') {
       const currentValue: MarketFilter = {
         type: catType(value.cat ?? ''),
@@ -134,7 +144,9 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
       };
       return void state.searchMarket(value.query ?? '', 1, currentValue).then(() => setSel(0));
     }
-    if (pick.kind === 'bid') return void state.bidMarket(pick.offer, transform('amount'), value.pay === 'bank account');
+    if (pick.kind === 'bid') {
+      return void state.bidMarket(pick.offer, transform('amount'), value.pay === 'bank account');
+    }
     if (pick.kind === 'buy-order') {
       return void state.placeBuyOrder({
         query: value.item ?? '',
@@ -145,7 +157,9 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
         fromBank: value.pay === 'bank account',
       });
     }
-    if (pick.kind === 'sell-shop') return void state.sellToShop(pick.itemId, Math.max(1, transform('count')));
+    if (pick.kind === 'sell-shop') {
+      return void state.sellToShop(pick.itemId, Math.max(1, transform('count')));
+    }
     if (pick.kind === 'sell-market') {
       return void state.sellOnMarket({
         itemId: pick.itemId,
@@ -165,18 +179,24 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
           setForm(null);
           return setPending(null);
         }
-        if (otherForm !== 'submit') return setForm(otherForm);
+        if (otherForm !== 'submit') {
+          return setForm(otherForm);
+        }
         setForm(null);
         setPending(null);
         return submit(pending, formValues(form));
       }
       if (confirm) {
         setConfirm(null);
-        if (input === 'y') confirm.run();
+        if (input === 'y') {
+          confirm.run();
+        }
         return;
       }
       if (key.escape) {
-        if (side === 'bag') return setSide('goods');
+        if (side === 'bag') {
+          return setSide('goods');
+        }
         return onExit();
       }
       if (key.leftArrow || key.rightArrow) {
@@ -186,12 +206,18 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
         );
       }
       const step = key.pageUp || key.pageDown ? 10 : 1;
-      if (key.upArrow || input === 'k' || key.pageUp) return setSel(Math.max(0, idx - step));
-      if (key.downArrow || input === 'j' || key.pageDown) return setSel(Math.min(rowsCount - 1, idx + step));
+      if (key.upArrow || input === 'k' || key.pageUp) {
+        return setSel(Math.max(0, idx - step));
+      }
+      if (key.downArrow || input === 'j' || key.pageDown) {
+        return setSel(Math.min(rowsCount - 1, idx + step));
+      }
       if (tab === 'trader') {
         const item = traderItems[idx];
         if (key.return && item?.prices[0]) {
-          if (hasEnded(item, Date.now())) return state.error('This mobile-trader offer has ended.');
+          if (hasEnded(item, Date.now())) {
+            return state.error('This mobile-trader offer has ended.');
+          }
           const pick = item.prices[0];
           setConfirm({
             text: `Buy ${state.itemName(item.itemId)} for ${priceLabel(pick)}?`,
@@ -200,7 +226,9 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
         }
         return;
       }
-      if (!town) return;
+      if (!town) {
+        return;
+      }
 
       if (tab === 'bank') {
         if (key.return || input === 'd') {
@@ -225,10 +253,14 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
 
       if (side === 'bag') {
         const it = bagItems[idx];
-        if (!it || !key.return) return;
+        if (!it || !key.return) {
+          return;
+        }
         const entry = state.items?.get(it.itemId);
         if (isShop(tab)) {
-          if (entry && !entry.sellable) return state.error(`${entry.name} cannot be sold.`);
+          if (entry && !entry.sellable) {
+            return state.error(`${entry.name} cannot be sold.`);
+          }
           if (it.count > 1) {
             return ask(
               { kind: 'sell-shop', itemId: it.itemId },
@@ -244,7 +276,9 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
             run: () => void state.sellToShop(it.itemId, 1),
           });
         }
-        if (entry && !entry.auctionable) return state.error(`${entry.name} cannot be sold on the market.`);
+        if (entry && !entry.auctionable) {
+          return state.error(`${entry.name} cannot be sold on the market.`);
+        }
         return ask(
           { kind: 'sell-market', itemId: it.itemId },
           makeForm(
@@ -272,7 +306,9 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
         const itemId = shopItems[idx];
         if (itemId !== undefined && key.return) {
           const price = state.shopPrice(itemId);
-          if (!town.here) return state.error(`You are not in ${town.name}. Walk there first.`);
+          if (!town.here) {
+            return state.error(`You are not in ${town.name}. Walk there first.`);
+          }
           return setConfirm({
             text: `Buy ${state.itemName(itemId)} for $ ${price}?`,
             run: () => void state.buyFromShop(itemId),
@@ -331,10 +367,11 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
             ]),
           );
         }
-        if (input === 't')
+        if (input === 't') {
           return void state
             .searchMarket(state.market.query, 1, { ...filter, buyOrders: !filter.buyOrders })
             .then(() => setSel(0));
+        }
         if (input === 'n') {
           return ask(
             { kind: 'buy-order' },
@@ -383,13 +420,19 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
             ),
           );
         }
-        if (input === '>' && state.market.next)
+        if (input === '>' && state.market.next) {
           return void state.searchMarket(state.market.query, state.market.page + 1).then(() => setSel(0));
-        if (input === '<' && state.market.page > 1)
+        }
+        if (input === '<' && state.market.page > 1) {
           return void state.searchMarket(state.market.query, state.market.page - 1).then(() => setSel(0));
+        }
         const offer = state.market.offers[idx];
-        if (!offer) return;
-        if (input === 'w') return void state.walkToTownAt(offer.town, offer.town.name);
+        if (!offer) {
+          return;
+        }
+        if (input === 'w') {
+          return void state.walkToTownAt(offer.town, offer.town.name);
+        }
         const wanted = offer.direction === 'BUY';
         if (key.return && offer.buyNow !== null) {
           const buyNow = offer.buyNow;
@@ -415,7 +458,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
               hint: offer.buyNow !== null ? `${wanted ? 'instant sale' : 'buy now'}: $ ${offer.buyNow}` : '',
             },
           ];
-          if (!wanted)
+          if (!wanted) {
             fields.push({
               key: 'pay',
               label: 'Pay from',
@@ -423,6 +466,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
               kind: 'choice',
               options: ['cash', 'bank account'],
             });
+          }
           return ask(
             { kind: 'bid', offer: offer },
             makeForm(
@@ -438,15 +482,22 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
       }
 
       // My market: pick up finished bids / offers / buy orders in the market town, withdraw running ones.
-      if (input === 'P')
+      if (input === 'P') {
         return setConfirm({
           text: `Pick up everything finished at the market of ${state.townHere?.name ?? 'this town'}?`,
           run: () => void state.pickUpAllMarket(),
         });
+      }
       const match = mine[idx];
-      if (!match) return;
-      if (input === 'w') return void state.walkToTownAt(match.o.town, match.o.town.name);
-      if (key.return && match.o.finished) return void state.pickUpMarket(match.o);
+      if (!match) {
+        return;
+      }
+      if (input === 'w') {
+        return void state.walkToTownAt(match.o.town, match.o.town.name);
+      }
+      if (key.return && match.o.finished) {
+        return void state.pickUpMarket(match.o);
+      }
       if (input === 'x' && match.mineKind !== 'bid' && !match.o.finished) {
         return setConfirm({
           text: `Withdraw your ${match.mineKind === 'want' ? 'buy order' : 'offer'} for ${itemsLabel(state, match.o)}? Fees are only partly refunded.`,
@@ -597,7 +648,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
       );
     });
     const it = bagItems[idx];
-    if (it)
+    if (it) {
       detail = createElement(ItemDetail, {
         state,
         itemId: it.itemId,
@@ -609,6 +660,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
         height: bodyH - otherForm,
         scroll: 0,
       });
+    }
   } else if (isShop(tab)) {
     const shop = state.shop;
     rows.push(
@@ -677,7 +729,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
           : '/ search (filters) · n place a buy order · Tab sell from your bag',
       ),
     );
-    if (match.offers.length)
+    if (match.offers.length) {
       rows.push(
         createElement(
           Text,
@@ -685,6 +737,7 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
           `${'Item'.padEnd(leftW - 30)}     bid ${filter.buyOrders ? 'instant' : 'buy now'}  ends`,
         ),
       );
+    }
     match.offers.slice(start, end).forEach((marketOffer, index) => {
       const price = marketOffer.buyNow !== null ? money(marketOffer.buyNow) : '';
       const bid = marketOffer.bid !== null ? money(marketOffer.bid) : '';
@@ -704,7 +757,9 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
       );
     });
     const offer = match.offers[idx];
-    if (offer) detail = offerDetail(state, offer, rightW, bodyH - otherForm);
+    if (offer) {
+      detail = offerDetail(state, offer, rightW, bodyH - otherForm);
+    }
   } else {
     const mm = state.marketMine;
     rows.push(
@@ -740,7 +795,9 @@ export function TradeScreen({ state, width, height, onCapture, onExit, active = 
       );
     });
     const matchValue = mine[idx];
-    if (matchValue) detail = offerDetail(state, matchValue.o, rightW, bodyH - otherForm);
+    if (matchValue) {
+      detail = offerDetail(state, matchValue.o, rightW, bodyH - otherForm);
+    }
   }
 
   const help = confirm

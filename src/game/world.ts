@@ -80,8 +80,12 @@ export class WorldMap {
         });
       }
     }
-    for (const [group, coords] of entries(json.job_groups)) width.jobGroups.set(Number(group), toPositions(coords));
-    for (const coords of vals(json.quest_locations)) width.quests.push(...toPositions(coords));
+    for (const [group, coords] of entries(json.job_groups)) {
+      width.jobGroups.set(Number(group), toPositions(coords));
+    }
+    for (const coords of vals(json.quest_locations)) {
+      width.quests.push(...toPositions(coords));
+    }
     const points = (list: unknown) =>
       objs(list).map((jsonValue) => ({
         x: Number(jsonValue.x),
@@ -101,7 +105,9 @@ export class WorldMap {
     }));
     width.currentCounty = Number(json.current_county ?? 0);
     const fair = json.fair;
-    if (isObj(fair) && Number.isFinite(Number(fair.x))) width.fair = { x: Number(fair.x), y: Number(fair.y) };
+    if (isObj(fair) && Number.isFinite(Number(fair.x))) {
+      width.fair = { x: Number(fair.x), y: Number(fair.y) };
+    }
     return width;
   }
 
@@ -119,7 +125,13 @@ export class WorldMap {
   within(x1: number, y1: number, x2: number, y2: number) {
     const inside = (position: Position) => position.x >= x1 && position.x < x2 && position.y >= y1 && position.y < y2;
     const jobs: { groupId: number; at: Position }[] = [];
-    for (const [groupId, locs] of this.jobGroups) for (const at of locs) if (inside(at)) jobs.push({ groupId, at });
+    for (const [groupId, locs] of this.jobGroups) {
+      for (const at of locs) {
+        if (inside(at)) {
+          jobs.push({ groupId, at });
+        }
+      }
+    }
     return {
       towns: this.towns.filter(inside),
       forts: this.forts.filter(inside),

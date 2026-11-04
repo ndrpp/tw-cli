@@ -115,13 +115,17 @@ export class ItemCatalog {
 
   static fromRaw(list: JsonObject[]): ItemCatalog {
     const candidate = new ItemCatalog();
-    for (const json of list) candidate.add(slimItem(json));
+    for (const json of list) {
+      candidate.add(slimItem(json));
+    }
     return candidate;
   }
 
   static fromSlim(list: ItemDef[]): ItemCatalog {
     const candidate = new ItemCatalog();
-    for (const item of list) candidate.add(item);
+    for (const item of list) {
+      candidate.add(item);
+    }
     return candidate;
   }
 
@@ -146,7 +150,11 @@ export class ItemCatalog {
   /** Plain item id (`id · 1000`) of the item with this exact name (case-insensitive), if any. */
   findByName(name: string): number | undefined {
     const otherName = name.trim().toLowerCase();
-    for (const item of this.items.values()) if (item.name.toLowerCase() === otherName) return item.id * 1000;
+    for (const item of this.items.values()) {
+      if (item.name.toLowerCase() === otherName) {
+        return item.id * 1000;
+      }
+    }
     return undefined;
   }
 
@@ -167,23 +175,30 @@ export function statsOf(item: ItemDef, itemId: number, ctx: StatContext = {}): I
 
 /** "+ 2 Strength, + 5 Construction, …" — computed like the web when ctx.charLevel is given. */
 export function bonusText(item: ItemDef | undefined, itemId?: number, ctx?: StatContext): string {
-  if (!item) return '';
-  if (ctx)
+  if (!item) {
+    return '';
+  }
+  if (ctx) {
     return itemStats(item, itemId ?? item.id * 1000, ctx)
       .lines.map((line) => line.text.trim())
       .join(', ');
+  }
   const parts = [
     ...Object.entries(item.attributes).map(([entryKey, value]) => `+${value} ${NAMES[entryKey] ?? entryKey}`),
     ...Object.entries(item.skills).map(([entryKey, value]) => `+${value} ${NAMES[entryKey] ?? entryKey}`),
     ...item.extra,
   ];
-  if (item.speed) parts.push(`speed ×${item.speed}`);
+  if (item.speed) {
+    parts.push(`speed ×${item.speed}`);
+  }
   return parts.join(', ');
 }
 
 /** Bonus a single skill gets from this item (fixed values only; attribute bonus counts for its skills). */
 export function skillBonusOf(item: ItemDef | undefined, skill: string, attributeOf: Record<string, string>): number {
-  if (!item) return 0;
+  if (!item) {
+    return 0;
+  }
   return (item.skills[skill] ?? 0) + (item.attributes[attributeOf[skill] ?? ''] ?? 0);
 }
 
@@ -241,7 +256,9 @@ async function loadStatic<Value>(
       },
       { ...client.policy, timeoutMs: 120_000 },
     );
-    if (!res.ok) throw new Error(`${label}: HTTP ${res.status}`);
+    if (!res.ok) {
+      throw new Error(`${label}: HTTP ${res.status}`);
+    }
     raw = await res.json();
   }
   const out = slim(vals(raw));
@@ -270,7 +287,9 @@ export async function loadItemCatalog(
 export class ItemSetCatalog {
   sets = new Map<string, ItemSetDef>();
   constructor(list: ItemSetDef[] = []) {
-    for (const source of list) this.sets.set(source.key, source);
+    for (const source of list) {
+      this.sets.set(source.key, source);
+    }
   }
   get(key: string | null | undefined): ItemSetDef | undefined {
     return key ? this.sets.get(key) : undefined;

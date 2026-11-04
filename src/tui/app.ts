@@ -120,7 +120,9 @@ function Header({ state }: { state: GameState }) {
 /** XP within the level: bar, have/need and percent (the web's XP bar, Character.getExperience4Level). */
 function xpText(character: GameState['character']): string {
   const progress = character.progress;
-  if (progress.maxed) return `${character.experience} (max level)   `;
+  if (progress.maxed) {
+    return `${character.experience} (max level)   `;
+  }
   return `${bar(progress.have, progress.need, 10)} ${progress.have}/${progress.need} ${Math.floor(progress.ratio * 100)}%   `;
 }
 
@@ -136,23 +138,37 @@ function helpFor(context: {
   hasMapHighlight: boolean;
   onScreen: boolean;
 }): string {
-  if (context.leader)
+  if (context.leader) {
     return `go to: a letter above · ${GOTO.filter((goTo) => !goTo.mode)
       .map((goTo) => `${goTo.key} ${goTo.label}`)
       .join(' · ')} · Esc cancel`;
-  if (context.filtering) return 'type to filter · Enter keep · Esc clear';
-  if (context.searching) return 'type a job or town name · Enter jump to nearest · Esc cancel';
-  if (context.mode === 'map')
+  }
+  if (context.filtering) {
+    return 'type to filter · Enter keep · Esc clear';
+  }
+  if (context.searching) {
+    return 'type a job or town name · Enter jump to nearest · Esc cancel';
+  }
+  if (context.mode === 'map') {
     return context.mapPanel
       ? '↑↓ select · 1/2/3 start job · w walk · o quests · s hotel · Esc back · ? help'
       : `arrows pan · +/- zoom · . me · / find · v layers · Enter select${context.hasMapHighlight ? ' · x clear !' : ''}`;
-  if (context.mode === 'char')
+  }
+  if (context.mode === 'char') {
     return '← → tab · Tab pane · l/h detail · Enter wear/use/take off · U use · +/- skills · Esc back · ? help';
-  if (context.mode === 'quests')
+  }
+  if (context.mode === 'quests') {
     return 'Tab log/givers · l/h detail · Enter finish/accept · x cancel · w walk · Esc back · ? help';
-  if (context.mode === 'town') return '↑↓ building · Enter construction · u refresh · Esc back · ? help';
-  if (context.mode === 'home') return 'Enter chat · ←/→ room · c cancel current · +/- minimap · g go to · ? help';
-  if (context.onScreen) return 'g go to · Esc back · ? help';
+  }
+  if (context.mode === 'town') {
+    return '↑↓ building · Enter construction · u refresh · Esc back · ? help';
+  }
+  if (context.mode === 'home') {
+    return 'Enter chat · ←/→ room · c cancel current · +/- minimap · g go to · ? help';
+  }
+  if (context.onScreen) {
+    return 'g go to · Esc back · ? help';
+  }
   return 'Tab pane · / filter · S sort · a all · 1/2/3 start · c cancel · Esc back';
 }
 
@@ -243,17 +259,20 @@ function emptyJobsMessage(filter: string, showAll: boolean): string {
 }
 
 function JobDetail({ option, state }: { option: JobOption | undefined; state: GameState }) {
-  if (!option)
+  if (!option) {
     return createElement(
       Box,
       { borderStyle: 'round', borderColor: 'gray', paddingX: 1 },
       createElement(Text, { dimColor: true }, 'No job selected'),
     );
+  }
   const { job, at, way } = option;
   const danger = job.danger === null ? '—' : `${job.danger}%`;
   const durRows = DURATION_KEYS.map((entryKey, index) => {
     const jobInfo = job.values[entryKey];
-    if (!jobInfo) return null;
+    if (!jobInfo) {
+      return null;
+    }
     return createElement(
       Text,
       { key: entryKey, wrap: 'truncate' },
@@ -373,9 +392,13 @@ export function App({
       // Back from sleep: the Root's WakeDetector rebuilds everything within ~2 s; don't act on the
       // stale session/queue meanwhile (an auto-route step could queue against an old queue).
       const now = Date.now();
-      if (now - lastTick > 30_000) pausedUntil = now + 5_000;
+      if (now - lastTick > 30_000) {
+        pausedUntil = now + 5_000;
+      }
       lastTick = now;
-      if (now < pausedUntil) return;
+      if (now < pausedUntil) {
+        return;
+      }
       const finished = state.tick();
       if (Date.now() - Math.max(lastSync, state.lastSync) > SYNC_MS) {
         lastSync = lastPoll = Date.now();
@@ -395,7 +418,9 @@ export function App({
   // Map: once the cursor rests for a second, load tile details around it (as the browser does
   // for the visible area) when zoomed in far enough for them to matter.
   useEffect(() => {
-    if (mode !== 'map' || view.zoom > 256) return;
+    if (mode !== 'map' || view.zoom > 256) {
+      return;
+    }
     const target = setTimeout(() => void state.loadTilesAround(view), 1000);
     return () => clearTimeout(target);
   }, [state, mode, view.x, view.y, view.zoom]);
@@ -418,7 +443,9 @@ export function App({
   // job/job detail when the selection changes, when the queue changes, and once a minute.
   useEffect(() => {
     const selected = options[jobIdx];
-    if (mode !== 'main' || !selected?.at) return;
+    if (mode !== 'main' || !selected?.at) {
+      return;
+    }
     const { job, at } = selected;
     const timer = setTimeout(() => void state.loadJobDetail(job, at), 300);
     const poll = setInterval(() => void state.loadJobDetail(job, at), JOB_DETAIL_POLL_MS);
@@ -444,10 +471,15 @@ export function App({
   const go = (match: Mode) => {
     capture.current = false;
     setMapPanel(false);
-    if (match === mode) return;
+    if (match === mode) {
+      return;
+    }
     const index = history.current.indexOf(match);
-    if (index >= 0) history.current.length = index;
-    else history.current.push(mode);
+    if (index >= 0) {
+      history.current.length = index;
+    } else {
+      history.current.push(mode);
+    }
     setMode(match);
   };
   const back = () => {
@@ -462,13 +494,16 @@ export function App({
   };
 
   const openHotel = (townId: number | undefined) => {
-    if (!townId)
+    if (!townId) {
       return state.error('No town to sleep in (you have no home town; select a town on the map and press s).');
+    }
     state.hotel = null;
     setHotelSel(0);
     setOverlay('hotel');
     void state.openHotel(townId).then((hotel) => {
-      if (!hotel) return setOverlay(null);
+      if (!hotel) {
+        return setOverlay(null);
+      }
       const roomInfo = defaultRoom(hotel);
       setHotelSel(Math.max(0, roomInfo ? hotel.rooms.indexOf(roomInfo) : 0));
     });
@@ -478,61 +513,113 @@ export function App({
   useInput((input, key) => {
     state.touch();
     if (state.startup && !state.startup.done) {
-      if (key.escape) state.skipStartup();
-      if (input === 'q') exit();
+      if (key.escape) {
+        state.skipStartup();
+      }
+      if (input === 'q') {
+        exit();
+      }
       return;
     }
     // Text entry modes first, so typed characters are not shortcuts.
     if (overlay === 'hotel') {
       const rooms = state.hotel?.rooms ?? [];
-      if (key.escape) return setOverlay(null);
-      if (key.upArrow || input === 'k') return setHotelSel((index) => Math.max(0, index - 1));
-      if (key.downArrow || input === 'j') return setHotelSel((index) => Math.min(rooms.length - 1, index + 1));
+      if (key.escape) {
+        return setOverlay(null);
+      }
+      if (key.upArrow || input === 'k') {
+        return setHotelSel((index) => Math.max(0, index - 1));
+      }
+      if (key.downArrow || input === 'j') {
+        return setHotelSel((index) => Math.min(rooms.length - 1, index + 1));
+      }
       if (key.return && state.hotel) {
         const room = rooms[hotelSel];
-        if (!room) return;
-        if (!room.available) return state.error(`${room.name} is not available in this hotel.`);
+        if (!room) {
+          return;
+        }
+        if (!room.available) {
+          return state.error(`${room.name} is not available in this hotel.`);
+        }
         setOverlay(null);
         return void state.sleep(state.hotel, room);
       }
       return;
     }
     if (overlay === 'layers') {
-      if (key.escape || input === 'v') return setOverlay(null);
-      if (key.upArrow || input === 'k') return setLayerSel((index) => Math.max(0, index - 1));
-      if (key.downArrow || input === 'j') return setLayerSel((index) => Math.min(MAP_LAYERS.length - 1, index + 1));
+      if (key.escape || input === 'v') {
+        return setOverlay(null);
+      }
+      if (key.upArrow || input === 'k') {
+        return setLayerSel((index) => Math.max(0, index - 1));
+      }
+      if (key.downArrow || input === 'j') {
+        return setLayerSel((index) => Math.min(MAP_LAYERS.length - 1, index + 1));
+      }
       const line = MAP_LAYERS[layerSel];
-      if (!line) return;
-      if (input === ' ' || key.return) return state.setMapLayer(line.key, state.mapLayers[line.key] === false);
-      if (input === 'a' || input === 'n') for (const xCoord of MAP_LAYERS) state.setMapLayer(xCoord.key, input === 'a');
+      if (!line) {
+        return;
+      }
+      if (input === ' ' || key.return) {
+        return state.setMapLayer(line.key, state.mapLayers[line.key] === false);
+      }
+      if (input === 'a' || input === 'n') {
+        for (const xCoord of MAP_LAYERS) {
+          state.setMapLayer(xCoord.key, input === 'a');
+        }
+      }
       return;
     }
-    if (onScreen && capture.current && overlay !== 'help') return;
+    if (onScreen && capture.current && overlay !== 'help') {
+      return;
+    }
     if (overlay === 'poi') {
-      if (key.escape) return setOverlay(null);
+      if (key.escape) {
+        return setOverlay(null);
+      }
       if (key.return) {
         const pick = pois[poiIdx];
         setOverlay(null);
-        if (pick) jumpTo(pick);
+        if (pick) {
+          jumpTo(pick);
+        }
         return;
       }
-      if (key.upArrow) return setPoiSel(Math.max(0, poiIdx - 1));
-      if (key.downArrow) return setPoiSel(Math.min(pois.length - 1, poiIdx + 1));
-      if (key.pageUp) return setPoiSel(Math.max(0, poiIdx - 10));
-      if (key.pageDown) return setPoiSel(Math.min(pois.length - 1, poiIdx + 10));
-      if (key.backspace || key.delete) return setPoiFilter((text) => text.slice(0, -1));
+      if (key.upArrow) {
+        return setPoiSel(Math.max(0, poiIdx - 1));
+      }
+      if (key.downArrow) {
+        return setPoiSel(Math.min(pois.length - 1, poiIdx + 1));
+      }
+      if (key.pageUp) {
+        return setPoiSel(Math.max(0, poiIdx - 10));
+      }
+      if (key.pageDown) {
+        return setPoiSel(Math.min(pois.length - 1, poiIdx + 10));
+      }
+      if (key.backspace || key.delete) {
+        return setPoiFilter((text) => text.slice(0, -1));
+      }
       if (input && !key.ctrl && !key.meta) {
         setPoiFilter((text) => text + input);
         setPoiSel(0);
       }
       return;
     }
-    if (overlay === 'help') return setOverlay(null);
+    if (overlay === 'help') {
+      return setOverlay(null);
+    }
     if (filtering) {
-      if (key.return || key.escape) setFiltering(false);
-      if (key.escape) setFilter('');
-      else if (key.backspace || key.delete) setFilter((text) => text.slice(0, -1));
-      else if (input && !key.ctrl && !key.meta && !key.return) setFilter((text) => text + input);
+      if (key.return || key.escape) {
+        setFiltering(false);
+      }
+      if (key.escape) {
+        setFilter('');
+      } else if (key.backspace || key.delete) {
+        setFilter((text) => text.slice(0, -1));
+      } else if (input && !key.ctrl && !key.meta && !key.return) {
+        setFilter((text) => text + input);
+      }
       setJobSel(0);
       return;
     }
@@ -546,13 +633,20 @@ export function App({
         if (hit) {
           jumpTo(hit.at);
           state.info(`Found ${hit.label} at ${hit.at.x},${hit.at.y}`);
-        } else state.error(`Nothing on the map matches "${search}"`);
-      } else if (key.backspace || key.delete) setSearch((text) => text.slice(0, -1));
-      else if (input && !key.ctrl && !key.meta) setSearch((text) => text + input);
+        } else {
+          state.error(`Nothing on the map matches "${search}"`);
+        }
+      } else if (key.backspace || key.delete) {
+        setSearch((text) => text.slice(0, -1));
+      } else if (input && !key.ctrl && !key.meta) {
+        setSearch((text) => text + input);
+      }
       return;
     }
     if (confirmCancel) {
-      if (input === 'y') void state.cancel(queueIdx);
+      if (input === 'y') {
+        void state.cancel(queueIdx);
+      }
       setConfirmCancel(false);
       return;
     }
@@ -560,89 +654,155 @@ export function App({
     if (leader) {
       setLeader(false);
       const found = GOTO.find((xCoord) => xCoord.key === input);
-      if (found?.mode === 'quests') setQuestsOnGivers(false);
-      if (found?.mode) return go(found.mode);
-      if (found?.key === 's') return openHotel(state.character.homeTown?.id);
+      if (found?.mode === 'quests') {
+        setQuestsOnGivers(false);
+      }
+      if (found?.mode) {
+        return go(found.mode);
+      }
+      if (found?.key === 's') {
+        return openHotel(state.character.homeTown?.id);
+      }
       if (found?.key === 'p') {
         setPoiFilter('');
         setPoiSel(0);
         return setOverlay('poi');
       }
-      if (found?.key === 'L') return state.live?.active ? state.stopLive() : state.startLive();
-      if (found?.key === 'R') return void state.reload();
-      if (found?.key === 'A' && onAccount) return onAccount();
+      if (found?.key === 'L') {
+        return state.live?.active ? state.stopLive() : state.startLive();
+      }
+      if (found?.key === 'R') {
+        return void state.reload();
+      }
+      if (found?.key === 'A' && onAccount) {
+        return onAccount();
+      }
       return; // Esc or an unknown key cancels
     }
 
     // Global shortcuts: everything else is under g, so screens keep the letters.
-    if (input === '?') return setOverlay('help');
-    if (input === 'q') return exit();
-    if (input === 'g') return setLeader(true);
-    if (input === 'm') return go('map');
+    if (input === '?') {
+      return setOverlay('help');
+    }
+    if (input === 'q') {
+      return exit();
+    }
+    if (input === 'g') {
+      return setLeader(true);
+    }
+    if (input === 'm') {
+      return go('map');
+    }
     if (input === 'u') {
-      if (mode === 'char')
+      if (mode === 'char') {
         return void state
           .refreshInventory()
           .then(() => state.refreshSkills())
           .then(() => state.loadEquipSets());
-      if (mode === 'quests') return void state.loadQuests();
-      if (mode === 'mail')
+      }
+      if (mode === 'quests') {
+        return void state.loadQuests();
+      }
+      if (mode === 'mail') {
         return void state
           .loadReports(state.reports?.page ?? 1)
           .then(() => state.loadTelegrams(state.telegrams?.page ?? 1));
-      if (mode === 'duels') return void state.loadDuels();
-      if (mode === 'trade') return void state.loadMarketMine().then(() => state.openMobileTrader());
-      if (mode === 'town') return void state.loadTownHall();
+      }
+      if (mode === 'duels') {
+        return void state.loadDuels();
+      }
+      if (mode === 'trade') {
+        return void state.loadMarketMine().then(() => state.openMobileTrader());
+      }
+      if (mode === 'town') {
+        return void state.loadTownHall();
+      }
       return void state.refreshQueue();
     }
-    if (onScreen) return; // the screen handles the rest
+    if (onScreen) {
+      return; // the screen handles the rest
+    }
     const duration = ({ '1': 'short', '2': 'middle', '3': 'long' } as Record<string, DurationKey>)[input];
 
     if (mode === 'map') {
       if (mapPanel) {
-        if (key.escape) return setMapPanel(false);
-        if (key.upArrow || input === 'k') return setMapSel(Math.max(0, mapIdx - 1));
-        if (key.downArrow || input === 'j') return setMapSel(Math.min(entries.length - 1, mapIdx + 1));
+        if (key.escape) {
+          return setMapPanel(false);
+        }
+        if (key.upArrow || input === 'k') {
+          return setMapSel(Math.max(0, mapIdx - 1));
+        }
+        if (key.downArrow || input === 'j') {
+          return setMapSel(Math.min(entries.length - 1, mapIdx + 1));
+        }
         const entry = entries[mapIdx];
-        if (duration && entry?.kind === 'job') return void state.startJob(entry.option, duration);
-        if (input === 'w' && entry?.kind === 'town') return void state.walkToTown(entry.town);
-        if (input === 'w' && entry?.kind === 'fort') return void state.walkToFort(entry.fort);
-        if (input === 'w' && entry?.kind === 'quest')
+        if (duration && entry?.kind === 'job') {
+          return void state.startJob(entry.option, duration);
+        }
+        if (input === 'w' && entry?.kind === 'town') {
+          return void state.walkToTown(entry.town);
+        }
+        if (input === 'w' && entry?.kind === 'fort') {
+          return void state.walkToFort(entry.fort);
+        }
+        if (input === 'w' && entry?.kind === 'quest') {
           return void state.walkToQuestGiver(entry.key, entry.name, entry.at);
-        if (input === 's')
+        }
+        if (input === 's') {
           return openHotel(entry?.kind === 'town' && entry.town.name ? entry.town.id : state.character.homeTown?.id);
+        }
         if (input === 'o' && entry?.kind === 'quest') {
           return void state.openEmployer(entry.key, entry.at).then((ok) => {
-            if (!ok) return;
+            if (!ok) {
+              return;
+            }
             setQuestsOnGivers(true);
             go('quests');
           });
         }
         return;
       }
-      if (key.escape) return back();
+      if (key.escape) {
+        return back();
+      }
       const big = key.shift || key.pageUp || key.pageDown ? 10 : 1;
       const pan = (dc: number, dr: number) =>
         setView((value) =>
           clampView({ ...value, x: value.x + dc * big * value.zoom, y: value.y + dr * big * value.zoom * 2 }),
         );
-      if (key.leftArrow || input === 'h' || input === 'H') return pan(-1, 0);
-      if (key.rightArrow || input === 'l' || input === 'L') return pan(1, 0);
-      if (key.upArrow || key.pageUp || input === 'k' || input === 'K') return pan(0, -1);
-      if (key.downArrow || key.pageDown || input === 'j' || input === 'J') return pan(0, 1);
-      if (input === '+' || input === '=')
+      if (key.leftArrow || input === 'h' || input === 'H') {
+        return pan(-1, 0);
+      }
+      if (key.rightArrow || input === 'l' || input === 'L') {
+        return pan(1, 0);
+      }
+      if (key.upArrow || key.pageUp || input === 'k' || input === 'K') {
+        return pan(0, -1);
+      }
+      if (key.downArrow || key.pageDown || input === 'j' || input === 'J') {
+        return pan(0, 1);
+      }
+      if (input === '+' || input === '=') {
         return setView((value) => ({
           ...value,
           zoom: ZOOMS[Math.max(0, ZOOMS.indexOf(value.zoom) - 1)] ?? value.zoom,
         }));
-      if (input === '-' || input === '_')
+      }
+      if (input === '-' || input === '_') {
         return setView((value) => ({
           ...value,
           zoom: ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(value.zoom) + 1)] ?? value.zoom,
         }));
-      if (input === '.' || input === 'c') return setView((value) => ({ ...value, ...state.character.position }));
-      if (input === 'e') return setView((value) => ({ ...value, ...state.queueEndPosition }));
-      if (input === 'v') return setOverlay('layers');
+      }
+      if (input === '.' || input === 'c') {
+        return setView((value) => ({ ...value, ...state.character.position }));
+      }
+      if (input === 'e') {
+        return setView((value) => ({ ...value, ...state.queueEndPosition }));
+      }
+      if (input === 'v') {
+        return setOverlay('layers');
+      }
       if (input === '/') {
         setSearch('');
         return setSearching(true);
@@ -658,18 +818,35 @@ export function App({
       return;
     }
 
-    if (key.escape) return back();
-    if (key.tab) return setFocus((value) => (value === 'jobs' ? 'queue' : 'jobs'));
+    if (key.escape) {
+      return back();
+    }
+    if (key.tab) {
+      return setFocus((value) => (value === 'jobs' ? 'queue' : 'jobs'));
+    }
     const move = (value: number) => {
-      if (focus === 'jobs') setJobSel(Math.max(0, Math.min(options.length - 1, jobIdx + value)));
-      else setQueueSel(Math.max(0, Math.min(state.queue.length - 1, queueIdx + value)));
+      if (focus === 'jobs') {
+        setJobSel(Math.max(0, Math.min(options.length - 1, jobIdx + value)));
+      } else {
+        setQueueSel(Math.max(0, Math.min(state.queue.length - 1, queueIdx + value)));
+      }
     };
-    if (key.upArrow || input === 'k') return move(-1);
-    if (key.downArrow || input === 'j') return move(1);
-    if (key.pageUp) return move(-10);
-    if (key.pageDown) return move(10);
+    if (key.upArrow || input === 'k') {
+      return move(-1);
+    }
+    if (key.downArrow || input === 'j') {
+      return move(1);
+    }
+    if (key.pageUp) {
+      return move(-10);
+    }
+    if (key.pageDown) {
+      return move(10);
+    }
     if (focus === 'jobs') {
-      if (input === '/') return setFiltering(true);
+      if (input === '/') {
+        return setFiltering(true);
+      }
       if (input === 'S' || input === 'O') {
         setJobSel(0);
         return setJobSort((cur) => JOB_SORTS[(JOB_SORTS.indexOf(cur) + 1) % JOB_SORTS.length] ?? cur);
@@ -679,7 +856,9 @@ export function App({
         return setShowAllJobs((flag) => !flag);
       }
       const option = options[jobIdx];
-      if (duration && option) return void state.startJob(option, duration);
+      if (duration && option) {
+        return void state.startJob(option, duration);
+      }
     } else if ((input === 'c' || key.delete) && state.queue[queueIdx]) {
       setConfirmCancel(true);
     }
@@ -704,8 +883,9 @@ export function App({
   });
 
   let body: React.ReactElement | null;
-  if (overlay === 'help') body = createElement(HelpOverlay, { mode, width, height: bodyH });
-  else if (overlay === 'layers')
+  if (overlay === 'help') {
+    body = createElement(HelpOverlay, { mode, width, height: bodyH });
+  } else if (overlay === 'layers') {
     body = createElement(
       Box,
       { height: bodyH },
@@ -722,12 +902,13 @@ export function App({
       }),
       createElement(LayersOverlay, { state, selected: layerSel, width, height: bodyH }),
     );
-  else if (overlay === 'poi')
+  } else if (overlay === 'poi') {
     body = createElement(PoiOverlay, { state, pois, selected: poiIdx, filter: poiFilter, width, height: bodyH });
-  else if (overlay === 'hotel')
+  } else if (overlay === 'hotel') {
     body = createElement(HotelOverlay, { state, hotel: state.hotel, selected: hotelSel, width, height: bodyH });
-  else if (onScreen) body = null;
-  else if (mode === 'map') {
+  } else if (onScreen) {
+    body = null;
+  } else if (mode === 'map') {
     body = createElement(MapScreen, {
       state,
       view,
@@ -805,7 +986,9 @@ export function App({
     screen = createElement(Box, { display: overlay ? 'none' : 'flex' }, el);
   }
 
-  if (state.startup && !state.startup.done) return createElement(LoadingScreen, { state, width, height });
+  if (state.startup && !state.startup.done) {
+    return createElement(LoadingScreen, { state, width, height });
+  }
 
   return createElement(
     Box,

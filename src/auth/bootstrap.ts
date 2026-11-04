@@ -7,23 +7,34 @@ import { isObj, type JsonObject } from '../util/json.ts';
 /** The parsed argument, or null when the call is missing or its argument is not JSON. */
 export function extractInitArg(html: string, call: string): unknown {
   const at = html.indexOf(`${call}(`);
-  if (at < 0) return null;
+  if (at < 0) {
+    return null;
+  }
   let index = at + call.length + 1;
-  while (index < html.length && /\s/.test(html[index] ?? '')) index++;
-  if (html[index] !== '{' && html[index] !== '[') return null;
+  while (index < html.length && /\s/.test(html[index] ?? '')) {
+    index++;
+  }
+  if (html[index] !== '{' && html[index] !== '[') {
+    return null;
+  }
   const start = index;
   let depth = 0;
   let inStr: string | null = null;
   for (; index < html.length; index++) {
     const ch = html[index] ?? '';
     if (inStr) {
-      if (ch === '\\') index++;
-      else if (ch === inStr) inStr = null;
+      if (ch === '\\') {
+        index++;
+      } else if (ch === inStr) {
+        inStr = null;
+      }
       continue;
     }
-    if (ch === '"' || ch === "'") inStr = ch;
-    else if (ch === '{' || ch === '[') depth++;
-    else if (ch === '}' || ch === ']') {
+    if (ch === '"' || ch === "'") {
+      inStr = ch;
+    } else if (ch === '{' || ch === '[') {
+      depth++;
+    } else if (ch === '}' || ch === ']') {
       depth--;
       if (depth === 0) {
         try {

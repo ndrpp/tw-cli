@@ -258,7 +258,9 @@ test('autopilot screen: toggles, values and ranking change the saved config; que
     await settle();
     assert.match(plain(), /● running/);
     // Down to "below" (HP sleep threshold) and raise it by 5 %.
-    for (let index = 0; index < 8; index++) await keys('j');
+    for (let index = 0; index < 8; index++) {
+      await keys('j');
+    }
     await keys('+');
     assert.equal(state.autopilot.config.hp.sleepBelow, 0.55);
     await keys('X');

@@ -97,7 +97,9 @@ export class JobCatalog {
     const out: { job: JobDef; chance: number }[] = [];
     for (const job of this.byId.values()) {
       for (const [id, chance] of Object.entries(job.yields ?? {})) {
-        if (baseId(Number(id)) === base) out.push({ job, chance });
+        if (baseId(Number(id)) === base) {
+          out.push({ job, chance });
+        }
       }
     }
     return out.sort((firstValue, second) => second.chance - firstValue.chance);
@@ -106,7 +108,9 @@ export class JobCatalog {
 
 /** Danger is only part of the job/job detail reply; work/index may leave it out. */
 export function parseDanger(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
+  if (value === null || value === undefined) {
+    return null;
+  }
   const parsed = parseInt(String(value), 10);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -128,16 +132,22 @@ export function parseJobDetail(raw: JsonObject): JobDetail {
 /** work/index → per-character job values merged onto the static definitions. */
 export async function fetchJobInfos(client: GameClient, catalog: JobCatalog): Promise<JobInfo[]> {
   const json = await client.remoteCallMode('work', 'index');
-  if (json.error) throw new Error(String(json.msg ?? 'work/index failed'));
+  if (json.error) {
+    throw new Error(String(json.msg ?? 'work/index failed'));
+  }
   const out: JobInfo[] = [];
   for (const [key, currentValue] of entries(json.jobs)) {
     const be = obj(currentValue);
     const def = catalog.get(Number(key));
-    if (!def) continue;
+    if (!def) {
+      continue;
+    }
     const values: JobInfo['values'] = {};
     DURATION_KEYS.forEach((entryKey, index) => {
       const raw = arr(be.durations)[index];
-      if (!raw) return;
+      if (!raw) {
+        return;
+      }
       const jsonValue = obj(raw);
       values[entryKey] = {
         duration: Number(jsonValue.duration),
@@ -172,9 +182,13 @@ export type JobLocations = Map<number, Position[]>;
 /** map/get_minimap → job group id → list of map coordinates. */
 export async function fetchJobLocations(client: GameClient): Promise<JobLocations> {
   const json = await client.get('map', 'get_minimap');
-  if (json.error) throw new Error(String(json.msg ?? 'map/get_minimap failed'));
+  if (json.error) {
+    throw new Error(String(json.msg ?? 'map/get_minimap failed'));
+  }
   const map: JobLocations = new Map();
-  for (const [group, coords] of entries(json.job_groups)) map.set(Number(group), toPositions(coords));
+  for (const [group, coords] of entries(json.job_groups)) {
+    map.set(Number(group), toPositions(coords));
+  }
   return map;
 }
 
@@ -192,9 +206,13 @@ export function wayTime(from: Position, to: Position, travelSpeed: number, charS
 }
 
 export function nearestLocation(locations: Position[] | undefined, from: Position): Position | null {
-  if (!locations?.length) return null;
+  if (!locations?.length) {
+    return null;
+  }
   const first = locations[0];
-  if (!first) return null;
+  if (!first) {
+    return null;
+  }
   let best = first;
   let bestD = distance(best, from);
   for (const position of locations) {
@@ -210,6 +228,8 @@ export function nearestLocation(locations: Position[] | undefined, from: Positio
 /** job/job {jobId,x,y}: details for one job at one place (raw server object). */
 export async function fetchJobDetail(client: GameClient, jobId: number, at: Position): Promise<JsonObject> {
   const json = await client.remoteCallMode('job', 'job', { jobId, x: at.x, y: at.y });
-  if (json.error) throw new Error(String(json.msg ?? 'job/job failed'));
+  if (json.error) {
+    throw new Error(String(json.msg ?? 'job/job failed'));
+  }
   return json;
 }

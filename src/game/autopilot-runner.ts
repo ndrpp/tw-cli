@@ -113,11 +113,15 @@ export class AutopilotRunner {
     this.state.error(
       `Autopilot: ${msg}${failure.count >= MAX_FAILURES ? ' (skipped from now on; plan redone without it)' : ` (retry in ${backoffSeconds(failure.count) / 60} min)`}`,
     );
-    if (/session|logged out|log in|login/i.test(msg)) this.pause('the session expired; reconnect with r or A');
+    if (/session|logged out|log in|login/i.test(msg)) {
+      this.pause('the session expired; reconnect with r or A');
+    }
   }
 
   pause(why: string): void {
-    if (!this.config.running) return;
+    if (!this.config.running) {
+      return;
+    }
     this.state.updateAutopilot((autopilotFile) => (autopilotFile.config.running = false));
     this.state.error(`Autopilot paused: ${why}.`);
   }
@@ -132,7 +136,9 @@ export class AutopilotRunner {
   }
 
   private spend(amount: number): void {
-    if (amount <= 0) return;
+    if (amount <= 0) {
+      return;
+    }
     const day = this.today();
     this.state.updateAutopilot(
       (autopilotFile) =>
@@ -163,7 +169,9 @@ export class AutopilotRunner {
         void fetchHotel(gameState.client, id)
           .then((hotel) => {
             const town = gameState.world.towns.find((townInfo) => townInfo.id === id);
-            if (!town) return;
+            if (!town) {
+              return;
+            }
             this.hotels.set(id, {
               at: Date.now(),
               option: {
@@ -186,7 +194,9 @@ export class AutopilotRunner {
           .catch(() => {});
       }
       const entryValue = this.hotels.get(id)?.option;
-      if (entryValue) out.push(entryValue);
+      if (entryValue) {
+        out.push(entryValue);
+      }
     }
     return out;
   }
@@ -194,14 +204,17 @@ export class AutopilotRunner {
   /** Bag items with an energy / health / motivation effect, minus the reserve. */
   private consumables(): Consumable[] {
     const gameState = this.state;
-    if (!gameState.items) return [];
+    if (!gameState.items) {
+      return [];
+    }
     const out: Consumable[] = [];
     for (const it of gameState.inventory.bag.values()) {
       const itemInfo = gameState.items.get(it.itemId);
       const effect = itemInfo ? parseConsumable(itemInfo.usebonus, itemInfo.usetype) : null;
       const count = it.count - this.config.consumables.reserve;
-      if (itemInfo && effect && count > 0)
+      if (itemInfo && effect && count > 0) {
         out.push({ itemId: it.itemId, name: itemInfo.name, count, value: itemInfo.price, effect });
+      }
     }
     return out;
   }
@@ -252,7 +265,9 @@ export class AutopilotRunner {
   /** Jobs with drop rates blended with what job reports showed (calibration.ts). */
   private calibratedJobs(): GameState['jobs'] {
     const cal = this.state.calibration;
-    if (!Object.keys(cal.data.drops).length) return this.state.jobs;
+    if (!Object.keys(cal.data.drops).length) {
+      return this.state.jobs;
+    }
     return this.state.jobs.map((job) => ({
       ...job,
       values: Object.fromEntries(
@@ -489,11 +504,12 @@ export class AutopilotRunner {
   /** Replans now (debounced by the caller); logs what changed. */
   replan(reason = 'inputs changed'): Plan {
     const old = this.state.clock.now() - 6 * 3600;
-    if (this.state.autopilot.rules.inserts.some((xCoord) => xCoord.at < old))
+    if (this.state.autopilot.rules.inserts.some((xCoord) => xCoord.at < old)) {
       this.state.updateAutopilot(
         (autopilotFile) =>
           (autopilotFile.rules.inserts = autopilotFile.rules.inserts.filter((xCoord) => xCoord.at >= old)),
       );
+    }
     const hotels = this.hotelOptions();
     const print = fingerprint(this.inputs(hotels));
     const prev = this.plan;
@@ -525,8 +541,12 @@ export class AutopilotRunner {
   /** Called every second by the TUI ticker. */
   async step(): Promise<void> {
     const gameState = this.state;
-    if (gameState.startup && !gameState.startup.done) return;
-    if (this.acting || gameState.busy) return;
+    if (gameState.startup && !gameState.startup.done) {
+      return;
+    }
+    if (this.acting || gameState.busy) {
+      return;
+    }
     const now = Date.now();
     if (now - this.lastCheck >= CHECK_MS) {
       this.lastCheck = now;
@@ -561,10 +581,18 @@ export class AutopilotRunner {
     dataValue.once('gate', 'autopilot', 'Acting: running');
     this.acting = true;
     try {
-      if (await this.wakeUp()) return;
-      if (await this.maybeCancelForBetter()) return;
-      if (this.config.modules.quests && (await this.quests.step())) return;
-      if (this.config.modules.npcDuels && this.config.duels.forXp && (await this.duelForXp())) return;
+      if (await this.wakeUp()) {
+        return;
+      }
+      if (await this.maybeCancelForBetter()) {
+        return;
+      }
+      if (this.config.modules.quests && (await this.quests.step())) {
+        return;
+      }
+      if (this.config.modules.npcDuels && this.config.duels.forXp && (await this.duelForXp())) {
+        return;
+      }
       await this.carryOut();
     } finally {
       this.acting = false;
@@ -582,8 +610,9 @@ export class AutopilotRunner {
       gameState.queue.length ||
       character.health < 0.7 * character.maxHealth ||
       Date.now() - this.duelsAt < 5 * 60_000
-    )
+    ) {
       return false;
+    }
     this.duelsAt = Date.now();
     gameState.debug.add('autopilot', 'NPC duels: checking', {
       health: character.health,
@@ -629,12 +658,16 @@ export class AutopilotRunner {
         outlook: duelOutlook(gameState.autopilot.duels, npcN.level, now),
       })),
     });
-    if (!best) return false;
+    if (!best) {
+      return false;
+    }
     gameState.info(
       `Autopilot: NPC duel ${best.npc.name} (level ${best.npc.level}): ~${Math.round(best.outlook.xp)} XP for ~${Math.round(best.outlook.energy)} energy beats the best job.`,
     );
     await gameState.fightNpc(best.npc.id);
-    if (gameState.lastNpcDuel?.died) this.pause('lost an NPC duel (passed out)');
+    if (gameState.lastNpcDuel?.died) {
+      this.pause('lost an NPC duel (passed out)');
+    }
     this.replanNext('NPC duel');
     return true;
   }
@@ -643,9 +676,13 @@ export class AutopilotRunner {
   private async wakeUp(): Promise<boolean> {
     const gameState = this.state;
     const head = gameState.queue[0];
-    if (head?.type !== 'sleep') return false;
+    if (head?.type !== 'sleep') {
+      return false;
+    }
     const wake = this.wakes.get(head.queueId);
-    if (!wake) return false;
+    if (!wake) {
+      return false;
+    }
     const character = gameState.character;
     if (character.energy < wake.energy || character.health < wake.health) {
       gameState.debug.once(
@@ -669,7 +706,9 @@ export class AutopilotRunner {
         'cancel sleep (wake-up)',
       );
       gameState.queue = res.queue;
-      if (res.energy !== undefined) character.setEnergy(res.energy);
+      if (res.energy !== undefined) {
+        character.setEnergy(res.energy);
+      }
       this.wakes.delete(head.queueId);
       this.measureRoom(head, res.energy);
       gameState.info(
@@ -692,7 +731,9 @@ export class AutopilotRunner {
     const character = gameState.character;
     const entry = this.sleeps.get(task.queueId);
     this.sleeps.delete(task.queueId);
-    if (!entry || after === undefined || entry.rate <= 0) return;
+    if (!entry || after === undefined || entry.rate <= 0) {
+      return;
+    }
     const now = gameState.clock.now();
     const begin = Math.max(entry.at, task.start);
     const hours = (now - begin) / 3600;
@@ -700,12 +741,13 @@ export class AutopilotRunner {
       character.maxEnergy,
       entry.energy + (character.maxEnergy * character.energyRegen * Math.max(0, begin - entry.at)) / 3600,
     );
-    if (hours < MIN_MEASURED_HOURS || after >= character.maxEnergy - 1)
+    if (hours < MIN_MEASURED_HOURS || after >= character.maxEnergy - 1) {
       return void gameState.debug.add('autopilot', 'Room rate: not measured (short or capped sleep)', {
         hours,
         startEnergy,
         after,
       });
+    }
     const rate = (after - startEnergy) / (character.maxEnergy * hours);
     gameState.calibration.addRoom(rate / entry.rate);
     gameState.debug.add(
@@ -724,11 +766,16 @@ export class AutopilotRunner {
   private async maybeCancelForBetter(): Promise<boolean> {
     const gameState = this.state;
     const config = this.config;
-    if (gameState.queue.length === 0 || Date.now() - this.lastCancel < config.cancel.cooldown * 1000 || !this.plan)
+    if (gameState.queue.length === 0 || Date.now() - this.lastCancel < config.cancel.cooldown * 1000 || !this.plan) {
       return false;
+    }
     // Construction is a manual town task the autopilot never plans; leave it alone.
-    if (gameState.queue.some((task) => task.type === 'build')) return false;
-    if (Date.now() - this.lastCancelCheck < CANCEL_CHECK_MS) return false;
+    if (gameState.queue.some((task) => task.type === 'build')) {
+      return false;
+    }
+    if (Date.now() - this.lastCancelCheck < CANCEL_CHECK_MS) {
+      return false;
+    }
     this.lastCancelCheck = Date.now();
     const refund = (from: number) =>
       gameState.queue
@@ -791,7 +838,9 @@ export class AutopilotRunner {
         `cancel ${titles}`,
       );
       gameState.queue = res.queue;
-      if (res.energy !== undefined) gameState.character.setEnergy(res.energy);
+      if (res.energy !== undefined) {
+        gameState.character.setEnergy(res.energy);
+      }
       this.lastCancel = Date.now();
       gameState.info(`Autopilot: cancelled ${titles}: ${reason}.`);
       this.replan(pick.why === 'better' ? 'cancelled for a better plan' : 'cancelled for less walking');
@@ -805,11 +854,15 @@ export class AutopilotRunner {
   /** Energy a queued job cost: the value for its duration (a short job refunds 1, not the long job's 12). */
   private jobEnergy(task: GameState['queue'][number]): number {
     const found = this.state.jobs.find((jobInfo) => jobInfo.id === task.jobId);
-    if (!found) return 0;
+    if (!found) {
+      return 0;
+    }
     const secs = task.end - (task.way?.end ?? task.start);
     const vs = Object.values(found.values).filter((jobInfo) => !!jobInfo);
     const first = vs[0];
-    if (!first) return 0;
+    if (!first) {
+      return 0;
+    }
     return (
       vs.reduce(
         (accumulator, current) =>
@@ -824,10 +877,11 @@ export class AutopilotRunner {
     const gameState = this.state;
     const tasks = this.plan?.tasks ?? [];
     const first = tasks[0];
-    if (!first)
+    if (!first) {
       return void gameState.debug.once('carry', 'autopilot', 'Carry out: nothing planned', { why: this.plan?.why });
+    }
     if (first.action) {
-      if (gameState.queue.length)
+      if (gameState.queue.length) {
         return void gameState.debug.once(
           'carry',
           'autopilot',
@@ -837,17 +891,19 @@ export class AutopilotRunner {
             queue: gameState.queue.length,
           },
         );
+      }
       gameState.debug.add('autopilot', `Carry out: ${first.step.title}`, { task: first, why: first.why });
       await this.act(first);
       return;
     }
     const free = gameState.taskLimit - gameState.queue.length;
-    if (free <= 0)
+    if (free <= 0) {
       return void gameState.debug.once(
         'carry',
         'autopilot',
         `Carry out: queue full (${gameState.queue.length}/${gameState.taskLimit})`,
       );
+    }
     const batch: PlannedTask[] = [];
     let stop = 'end of plan';
     for (const task of tasks) {
@@ -876,7 +932,7 @@ export class AutopilotRunner {
         break;
       } // later tasks depend on its wake-up
     }
-    if (!batch.length)
+    if (!batch.length) {
       return void gameState.debug.once(
         'carry',
         'autopilot',
@@ -887,6 +943,7 @@ export class AutopilotRunner {
           next: tasks[0],
         },
       );
+    }
     gameState.debug.add('autopilot', `Carry out: queue ${batch.map((task) => task.step.title).join(', ')}`, {
       stop,
       energy: gameState.character.energy,
@@ -910,15 +967,22 @@ export class AutopilotRunner {
       gameState.queue.push(...res.added);
       res.added.forEach((task, index) => {
         const taskInfo = batch[index];
-        if (!taskInfo) return;
-        if (taskInfo.key.startsWith('insert:')) this.dropInsert(taskInfo.key);
+        if (!taskInfo) {
+          return;
+        }
+        if (taskInfo.key.startsWith('insert:')) {
+          this.dropInsert(taskInfo.key);
+        }
         const depositAction = tasks[tasks.indexOf(taskInfo) + 1]?.action;
-        if (taskInfo.step.kind === 'walk' && depositAction?.type === 'deposit')
+        if (taskInfo.step.kind === 'walk' && depositAction?.type === 'deposit') {
           gameState.updateAutopilot(
             (autopilotFile) => (autopilotFile.bankWalk = { queueId: task.queueId, townId: depositAction.townId }),
           );
+        }
         if (taskInfo.step.kind === 'sleep') {
-          if (taskInfo.wake) this.wakes.set(task.queueId, taskInfo.wake);
+          if (taskInfo.wake) {
+            this.wakes.set(task.queueId, taskInfo.wake);
+          }
           gameState.sleepRates.set(task.queueId, {
             energyRate: taskInfo.step.energyRate,
             healthRate: taskInfo.step.healthRate,
@@ -931,8 +995,9 @@ export class AutopilotRunner {
           this.spend(taskInfo.step.cost ?? 0);
         }
       });
-      if (res.added.length)
+      if (res.added.length) {
         gameState.info(`Autopilot: queued ${res.added.map((task) => task.title).join(', ')}. ${batch[0]?.why ?? ''}`);
+      }
       const failed = batch.slice(res.added.length)[0];
       // "You need at least N more energy points": our energy estimate ran ahead of the server's. Correct it and
       // replan (towards a sleep or an item) instead of backing the job off as if it had failed.
@@ -942,12 +1007,15 @@ export class AutopilotRunner {
         gameState.info(
           `Autopilot: ${failed.step.title} needs ${short} more energy than the server has; energy corrected to ${gameState.character.energy}.`,
         );
-      } else if (failed)
+      } else if (failed) {
         this.fail(failed.key, `${failed.step.title} refused${res.errors.length ? `: ${res.errors.join('; ')}` : ''}`);
+      }
       this.replan('queued');
     } catch (err) {
       const head = batch[0];
-      if (head) this.fail(head.key, `${head.step.title}: ${errorMessage(err)}`);
+      if (head) {
+        this.fail(head.key, `${head.step.title}: ${errorMessage(err)}`);
+      }
     }
   }
 
@@ -965,15 +1033,22 @@ export class AutopilotRunner {
       this.scanning ||
       Date.now() - this.scanAt < BUY_SCAN_GAP_MS ||
       !gameState.items
-    )
+    ) {
       return;
+    }
     // Items of quests that buying could unblock (a "Go to …" quest is not worth a read).
     const wanted = new Map<number, string>();
     for (const quest of gameState.autopilotQuests(true)) {
       const purchase = gameState.questPurchase(quest);
-      if (!purchase.blocker) for (const need of purchase.needs) wanted.set(baseId(need.itemId), need.name);
+      if (!purchase.blocker) {
+        for (const need of purchase.needs) {
+          wanted.set(baseId(need.itemId), need.name);
+        }
+      }
     }
-    if (!wanted.size) return;
+    if (!wanted.size) {
+      return;
+    }
     const cat = gameState.buyCatalog;
     let job: { what: string; run: () => Promise<void> } | null = null;
     if (cat.mobileStale()) {
@@ -988,26 +1063,28 @@ export class AutopilotRunner {
         .sort((firstValue, second) => far(firstValue) - far(second))
         .slice(0, SHOP_TOWNS)
         .find((townInfo) => Date.now() - (cat.shops.get(townInfo.id)?.at ?? 0) > SHOP_TTL_MS);
-      if (town)
+      if (town) {
         job = {
           what: `shops in ${town.name}`,
           run: async () => {
             const shops: Shop[] = [];
             // Read from anywhere (the trade screen does it for the home town; other towns unverified).
-            for (const def of SHOPS)
+            for (const def of SHOPS) {
               shops.push(
                 ...(await fetchShop(gameState.client, def.key, town.id).then(
                   (shop) => [shop],
                   () => [],
                 )),
               );
+            }
             cat.setShops(town.id, shops);
           },
         };
+      }
     }
     if (!job && config.quests.market) {
       const item = [...wanted].find(([id]) => Date.now() - (cat.market.get(id)?.at ?? 0) > MARKET_TTL_MS);
-      if (item)
+      if (item) {
         job = {
           what: `market: ${item[1]}`,
           run: () =>
@@ -1019,8 +1096,11 @@ export class AutopilotRunner {
               },
             ),
         };
+      }
     }
-    if (!job) return;
+    if (!job) {
+      return;
+    }
     const transform = job;
     this.scanning = true;
     const startedAt = Date.now();
@@ -1036,7 +1116,9 @@ export class AutopilotRunner {
             error: errorMessage(err),
           });
           // Do not retry at once: mark it read (empty) until the TTL passes.
-          if (transform.what === 'mobile trader') cat.setMobile({ items: [], changesAt: null });
+          if (transform.what === 'mobile trader') {
+            cat.setMobile({ items: [], changesAt: null });
+          }
         },
       )
       .finally(() => {
@@ -1050,9 +1132,12 @@ export class AutopilotRunner {
   private bankWalk(): AutopilotFile['bankWalk'] {
     const gameState = this.state;
     const width = gameState.autopilot.bankWalk;
-    if (!width) return null;
-    if (gameState.queue.some((task) => task.queueId === width.queueId) || gameState.townHere?.id === width.townId)
+    if (!width) {
+      return null;
+    }
+    if (gameState.queue.some((task) => task.queueId === width.queueId) || gameState.townHere?.id === width.townId) {
       return width;
+    }
     gameState.debug.add('autopilot', 'Bank walk gone without a deposit: forgotten', {
       bankWalk: width,
       position: gameState.character.position,
@@ -1082,12 +1167,18 @@ export class AutopilotRunner {
           `use ${gameState.itemName(itemId)}`,
         );
         gameState.inventory.applyChanges(result.changes);
-        if (result.energy !== undefined) gameState.character.setEnergy(result.energy);
-        if (result.health !== undefined) gameState.character.setHealth(result.health);
+        if (result.energy !== undefined) {
+          gameState.character.setEnergy(result.energy);
+        }
+        if (result.health !== undefined) {
+          gameState.character.setHealth(result.health);
+        }
         gameState.info(
           `Autopilot: used ${gameState.itemName(itemId)}${result.effects.length ? `: ${result.effects.join(' ')}` : ''} (${task.why ?? ''}).`,
         );
-        if (/motivation/i.test(task.step.title)) void gameState.loadJobs(true); // motivation is in the job values
+        if (/motivation/i.test(task.step.title)) {
+          void gameState.loadJobs(true); // motivation is in the job values
+        }
         this.replan('item used');
       } catch (err) {
         this.fail(task.key, `${task.step.title}: ${errorMessage(err)}`);
@@ -1095,20 +1186,30 @@ export class AutopilotRunner {
       return;
     }
     if (task.action?.type === 'buy') {
-      if (gameState.townHere?.id !== task.action.townId)
+      if (gameState.townHere?.id !== task.action.townId) {
         return this.fail(task.key, `${task.step.title}: not in that town yet`);
+      }
       // Usually done already: the quest step buys in the town you stand in before the plan gets here.
-      if (!(await this.quests.buyHere()))
+      if (!(await this.quests.buyHere())) {
         gameState.debug.add('autopilot', `${task.step.title}: nothing left to buy here`, { task: task });
+      }
       this.replan('bought quest items');
       return;
     }
-    if (task.action?.type !== 'deposit') return;
+    if (task.action?.type !== 'deposit') {
+      return;
+    }
     const townId = task.action.townId;
-    if (gameState.townHere?.id !== townId) return this.fail(task.key, `${task.step.title}: not in that town yet`);
+    if (gameState.townHere?.id !== townId) {
+      return this.fail(task.key, `${task.step.title}: not in that town yet`);
+    }
     const cash = gameState.character.cash;
-    if (gameState.autopilot.bankWalk) gameState.updateAutopilot((autopilotFile) => (autopilotFile.bankWalk = null));
-    if (cash <= 0) return void this.replan('nothing to deposit');
+    if (gameState.autopilot.bankWalk) {
+      gameState.updateAutopilot((autopilotFile) => (autopilotFile.bankWalk = null));
+    }
+    if (cash <= 0) {
+      return void this.replan('nothing to deposit');
+    }
     try {
       const resultValue = await gameState.autopilotCall(
         () => deposit(gameState.client, townId, cash),

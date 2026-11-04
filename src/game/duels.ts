@@ -76,13 +76,17 @@ export class DuelApi {
 
   async data(): Promise<DuelData> {
     const json = await this.client.remoteCall('duel', 'get_data', {});
-    if (json.error) throw new Error(errText(json, 'Duels'));
+    if (json.error) {
+      throw new Error(errText(json, 'Duels'));
+    }
     return parseDuelData(json);
   }
 
   async fightNpc(npcId: number): Promise<NpcDuelResult> {
     const json = await this.client.remoteCall('duel', 'duel_npc', { duelnpc_id: npcId });
-    if (json.error) throw new Error(errText(json, 'NPC duel'));
+    if (json.error) {
+      throw new Error(errText(json, 'NPC duel'));
+    }
     const jsonValue = obj(json.data);
     const hit = (pick: unknown) => (obj(pick).damage ? Number(obj(pick).damage) : null);
     return {
@@ -107,7 +111,9 @@ export class DuelApi {
       sort: 'range',
       next: false,
     });
-    if (json.error) throw new Error(errText(json, 'Duel opponents'));
+    if (json.error) {
+      throw new Error(errText(json, 'Duel opponents'));
+    }
     const ol = obj(json.oplist);
     return {
       opponents: objs(ol.pclist).map((jsonValue) => ({

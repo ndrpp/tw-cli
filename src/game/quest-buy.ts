@@ -69,8 +69,9 @@ export function chooseBuys(
       if (
         source.kind === 'market' ||
         (source.kind === 'mobile' && source.item.limitedCount !== null && source.item.limitedCount < need.count)
-      )
+      ) {
         continue;
+      }
       options.push({
         picks: [{ ...need, cost: source.price * need.count, source: source }],
         cost: source.price * need.count,
@@ -81,16 +82,20 @@ export function chooseBuys(
     const offers = limits.market ? all.filter((source) => source.kind === 'market') : [];
     // The cheapest lot overall and the cheapest in each single town (one pickup walk can beat a cheaper lot).
     const byTown = new Map<number, BuySource[]>();
-    for (const optionsValue of offers)
-      if (optionsValue.kind === 'market')
+    for (const optionsValue of offers) {
+      if (optionsValue.kind === 'market') {
         byTown.set(optionsValue.townId, [...(byTown.get(optionsValue.townId) ?? []), optionsValue]);
+      }
+    }
     const lots = [
       cheapestLot(offers, need.count),
       ...[...byTown.values()].map((list) => cheapestLot(list, need.count)),
     ];
     const lot = lots[0];
     for (const lotOffers of lots) {
-      if (!lotOffers) continue;
+      if (!lotOffers) {
+        continue;
+      }
       // One walk per town the goods wait in.
       const towns = new Map(
         lotOffers.flatMap((offer) => (offer.kind === 'market' ? [[offer.townId, walk(offer)] as const] : [])),
@@ -116,8 +121,11 @@ export function chooseBuys(
       .filter(fits)
       .sort((first, second) => score(first) - score(second) || first.walk - second.walk)[0];
     if (best) {
-      if (best.market) market += best.cost;
-      else direct += best.cost;
+      if (best.market) {
+        market += best.cost;
+      } else {
+        direct += best.cost;
+      }
       picks.push(...best.picks);
       continue;
     }
@@ -142,7 +150,9 @@ export function chooseBuys(
 
 /** The cheapest set of offers with at least `count` items between them (0/1 knapsack over the count), or null. */
 function cheapestLot(offers: BuySource[], count: number): BuySource[] | null {
-  if (count <= 0 || !offers.length) return null;
+  if (count <= 0 || !offers.length) {
+    return null;
+  }
   // best[u]: cheapest cost for at least u items (u capped at count), with the offers taken.
   let best: { cost: number; take: number[] }[] = Array.from({ length: count + 1 }, (_, value) => ({
     cost: value === 0 ? 0 : Infinity,
@@ -152,18 +162,25 @@ function cheapestLot(offers: BuySource[], count: number): BuySource[] | null {
     const next = best.map((second) => ({ ...second }));
     for (let value = 0; value <= count; value++) {
       const from = best[value];
-      if (!from || !Number.isFinite(from.cost)) continue;
+      if (!from || !Number.isFinite(from.cost)) {
+        continue;
+      }
       const to = Math.min(count, value + unitCount(optionsValue));
       const target = next[to];
-      if (!target) continue;
+      if (!target) {
+        continue;
+      }
       const cost = from.cost + optionsValue.price;
-      if (cost < target.cost || (cost === target.cost && from.take.length + 1 < target.take.length))
+      if (cost < target.cost || (cost === target.cost && from.take.length + 1 < target.take.length)) {
         next[to] = { cost, take: [...from.take, index] };
+      }
     }
     best = next;
   });
   const end = best[count];
-  if (!end || !Number.isFinite(end.cost)) return null;
+  if (!end || !Number.isFinite(end.cost)) {
+    return null;
+  }
   return end.take.flatMap((index) => {
     const offer = offers[index];
     return offer ? [offer] : [];
@@ -173,8 +190,12 @@ function cheapestLot(offers: BuySource[], count: number): BuySource[] | null {
 const unitCount = (source: BuySource) => (source.kind === 'market' ? Math.max(1, source.offer.count) : 1);
 
 export function where(source: BuySource): string {
-  if (source.kind === 'mobile') return 'mobile trader';
-  if (source.kind === 'market') return `market in ${source.townName}`;
+  if (source.kind === 'mobile') {
+    return 'mobile trader';
+  }
+  if (source.kind === 'market') {
+    return `market in ${source.townName}`;
+  }
   return `${source.shop === 'general' ? 'general store' : source.shop} in ${source.townName}`;
 }
 
@@ -215,13 +236,16 @@ export class BuyCatalog {
 
   /** An offer was bought (or is gone): forget it. */
   dropOffer(offerId: number): void {
-    for (const match of this.market.values())
+    for (const match of this.market.values()) {
       match.offers = match.offers.filter((offerInfo) => offerInfo.id !== offerId);
+    }
     this.version++;
   }
 
   mobileStale(now = Date.now()): boolean {
-    if (!this.mobile) return true;
+    if (!this.mobile) {
+      return true;
+    }
     const rotates = this.mobile.trader.changesAt;
     return now - this.mobile.at > MOBILE_TTL_MS || (!!rotates && now / 1000 > rotates);
   }
@@ -237,10 +261,12 @@ export class BuyCatalog {
     const out: BuySource[] = [];
     for (const [townId, candidate] of this.shops) {
       const targetValue = town(townId);
-      if (!targetValue) continue;
+      if (!targetValue) {
+        continue;
+      }
       for (const shop of candidate.shops) {
         const id = shop.items.find((index) => baseId(index) === base);
-        if (id !== undefined)
+        if (id !== undefined) {
           out.push({
             kind: 'shop',
             shop: shop.key,
@@ -249,16 +275,18 @@ export class BuyCatalog {
             at: targetValue.at,
             price: Math.round(price(id) * (shop.charge || 1)),
           });
+        }
       }
     }
     for (const index of this.mobile?.trader.items ?? []) {
       const dollar = index.prices.find((pick) => pick.currency === 'dollar');
-      if (baseId(index.itemId) === base && dollar && index.limitedCount !== 0)
+      if (baseId(index.itemId) === base && dollar && index.limitedCount !== 0) {
         out.push({ kind: 'mobile', item: index, price: dollar.amount });
+      }
     }
     for (const offerInfo of this.market.get(base)?.offers ?? []) {
       const townId = townAt(offerInfo.town);
-      if (townId !== undefined && offerInfo.buyNow !== null && offerInfo.buyNow > 0)
+      if (townId !== undefined && offerInfo.buyNow !== null && offerInfo.buyNow > 0) {
         out.push({
           kind: 'market',
           offer: offerInfo,
@@ -267,6 +295,7 @@ export class BuyCatalog {
           at: { x: offerInfo.town.x, y: offerInfo.town.y },
           price: offerInfo.buyNow,
         });
+      }
     }
     return out;
   }

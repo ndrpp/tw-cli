@@ -167,7 +167,9 @@ test('items: base id / upgrade level, names and bonus text', () => {
   assert.equal(candidate.name(110001), 'Rusty rifle ☆1');
   assert.equal(candidate.get(54997000)?.type, 'right_arm');
   const withSkills = ITEMS.find((index: any) => !Array.isArray(index.bonus.skills));
-  if (withSkills) assert.match(bonusText(candidate.get(withSkills.item_id)), /^\+\d/);
+  if (withSkills) {
+    assert.match(bonusText(candidate.get(withSkills.item_id)), /^\+\d/);
+  }
 });
 
 test('item stats: computed like the web popup (upgrade level, per-level rounding, sets)', async () => {
@@ -370,7 +372,9 @@ test('skills: planning respects free points; attribute points raise their skills
   const plan = emptyPlan();
   assert.ok(adjustPlan(plan, source, 'strength', 1));
   assert.equal(adjustPlan(plan, source, 'charisma', 1), false, 'only one free attribute point');
-  for (let index = 0; index < 3; index++) assert.ok(adjustPlan(plan, source, 'build', 1));
+  for (let index = 0; index < 3; index++) {
+    assert.ok(adjustPlan(plan, source, 'build', 1));
+  }
   assert.equal(adjustPlan(plan, source, 'trade', 1), false);
   assert.equal(plannedDelta(plan, 'build'), 4); // 3 skill + 1 from strength
   assert.equal(plannedDelta(plan, 'punch'), 1);

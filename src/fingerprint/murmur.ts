@@ -54,17 +54,24 @@ function mul(first: U64, second: U64): U64 {
 
 function rotl(entry: U64, time: number): U64 {
   time %= 64;
-  if (time === 32) return [entry[1], entry[0]];
-  if (time < 32)
+  if (time === 32) {
+    return [entry[1], entry[0]];
+  }
+  if (time < 32) {
     return [(entry[0] << time) | (entry[1] >>> (32 - time)), (entry[1] << time) | (entry[0] >>> (32 - time))];
+  }
   time -= 32;
   return [(entry[1] << time) | (entry[0] >>> (32 - time)), (entry[0] << time) | (entry[1] >>> (32 - time))];
 }
 
 function shl(entry: U64, time: number): U64 {
   time %= 64;
-  if (time === 0) return entry;
-  if (time < 32) return [(entry[0] << time) | (entry[1] >>> (32 - time)), entry[1] << time];
+  if (time === 0) {
+    return entry;
+  }
+  if (time < 32) {
+    return [(entry[0] << time) | (entry[1] >>> (32 - time)), entry[1] << time];
+  }
   return [entry[1] << (time - 32), 0];
 }
 
@@ -132,12 +139,24 @@ export function x64hash128(key: string, seed = 0): string {
   keyWord1 = [0, 0];
   keyWord2 = [0, 0];
   // Tail: same fallthrough as the original switch(n){case 15..case 1}.
-  if (rem >= 15) keyWord2 = xor(keyWord2, shl([0, transform(index + 14)], 48));
-  if (rem >= 14) keyWord2 = xor(keyWord2, shl([0, transform(index + 13)], 40));
-  if (rem >= 13) keyWord2 = xor(keyWord2, shl([0, transform(index + 12)], 32));
-  if (rem >= 12) keyWord2 = xor(keyWord2, shl([0, transform(index + 11)], 24));
-  if (rem >= 11) keyWord2 = xor(keyWord2, shl([0, transform(index + 10)], 16));
-  if (rem >= 10) keyWord2 = xor(keyWord2, shl([0, transform(index + 9)], 8));
+  if (rem >= 15) {
+    keyWord2 = xor(keyWord2, shl([0, transform(index + 14)], 48));
+  }
+  if (rem >= 14) {
+    keyWord2 = xor(keyWord2, shl([0, transform(index + 13)], 40));
+  }
+  if (rem >= 13) {
+    keyWord2 = xor(keyWord2, shl([0, transform(index + 12)], 32));
+  }
+  if (rem >= 12) {
+    keyWord2 = xor(keyWord2, shl([0, transform(index + 11)], 24));
+  }
+  if (rem >= 11) {
+    keyWord2 = xor(keyWord2, shl([0, transform(index + 10)], 16));
+  }
+  if (rem >= 10) {
+    keyWord2 = xor(keyWord2, shl([0, transform(index + 9)], 8));
+  }
   if (rem >= 9) {
     keyWord2 = xor(keyWord2, [0, transform(index + 8)]);
     keyWord2 = mul(keyWord2, constant2);
@@ -145,13 +164,27 @@ export function x64hash128(key: string, seed = 0): string {
     keyWord2 = mul(keyWord2, constant1);
     hash2 = xor(hash2, keyWord2);
   }
-  if (rem >= 8) keyWord1 = xor(keyWord1, shl([0, transform(index + 7)], 56));
-  if (rem >= 7) keyWord1 = xor(keyWord1, shl([0, transform(index + 6)], 48));
-  if (rem >= 6) keyWord1 = xor(keyWord1, shl([0, transform(index + 5)], 40));
-  if (rem >= 5) keyWord1 = xor(keyWord1, shl([0, transform(index + 4)], 32));
-  if (rem >= 4) keyWord1 = xor(keyWord1, shl([0, transform(index + 3)], 24));
-  if (rem >= 3) keyWord1 = xor(keyWord1, shl([0, transform(index + 2)], 16));
-  if (rem >= 2) keyWord1 = xor(keyWord1, shl([0, transform(index + 1)], 8));
+  if (rem >= 8) {
+    keyWord1 = xor(keyWord1, shl([0, transform(index + 7)], 56));
+  }
+  if (rem >= 7) {
+    keyWord1 = xor(keyWord1, shl([0, transform(index + 6)], 48));
+  }
+  if (rem >= 6) {
+    keyWord1 = xor(keyWord1, shl([0, transform(index + 5)], 40));
+  }
+  if (rem >= 5) {
+    keyWord1 = xor(keyWord1, shl([0, transform(index + 4)], 32));
+  }
+  if (rem >= 4) {
+    keyWord1 = xor(keyWord1, shl([0, transform(index + 3)], 24));
+  }
+  if (rem >= 3) {
+    keyWord1 = xor(keyWord1, shl([0, transform(index + 2)], 16));
+  }
+  if (rem >= 2) {
+    keyWord1 = xor(keyWord1, shl([0, transform(index + 1)], 8));
+  }
   if (rem >= 1) {
     keyWord1 = xor(keyWord1, [0, transform(index)]);
     keyWord1 = mul(keyWord1, constant1);

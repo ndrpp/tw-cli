@@ -29,13 +29,17 @@ function ask(question: string, echo = true): Promise<string> {
       // Interface._writeToOutput is internal (not in the typings): echo the prompt, not the typed password.
       Object.assign(readline, {
         _writeToOutput: (written: string) => {
-          if (written.startsWith(question)) process.stdout.write(question);
+          if (written.startsWith(question)) {
+            process.stdout.write(question);
+          }
         },
       });
     }
     readline.question(question, (answer) => {
       readline.close();
-      if (!echo) process.stdout.write('\n');
+      if (!echo) {
+        process.stdout.write('\n');
+      }
       resolve(answer);
     });
   });
@@ -88,7 +92,9 @@ async function main(argv: string[]): Promise<number> {
     case 'jobs': {
       const state = await openState();
       await state.loadJobs();
-      for (const entry of state.log.filter((logEntry) => logEntry.level === 'error')) console.error(entry.msg);
+      for (const entry of state.log.filter((logEntry) => logEntry.level === 'error')) {
+        console.error(entry.msg);
+      }
       for (const option of state.jobOptions(subcommand ?? '')) {
         console.log(
           `${String(option.job.id).padStart(4)}  ${option.job.name.padEnd(36)} ${String(option.job.laborPoints).padStart(5)} LP  ${option.at ? `${option.at.x},${option.at.y}`.padEnd(12) : '—'.padEnd(12)} ${option.way === null ? '' : formatDuration(option.way)}`,
@@ -99,7 +105,9 @@ async function main(argv: string[]): Promise<number> {
     case 'queue': {
       const state = await openState();
       const now = state.clock.now();
-      if (!state.queue.length) console.log('Task queue is empty.');
+      if (!state.queue.length) {
+        console.log('Task queue is empty.');
+      }
       state.queue.forEach((task, index) => {
         const walk = task.way ? `  walk ${formatDuration(task.way.end - Math.max(now, task.way.start))}` : '';
         console.log(
@@ -107,10 +115,11 @@ async function main(argv: string[]): Promise<number> {
         );
       });
       const summary = queueSummary(state.queue, now);
-      if (summary)
+      if (summary) {
         console.log(
           `All done ${formatClock(summary.doneAt, now)} (in ${formatDuration(summary.left)})${summary.walk > 0 ? `, ${formatDuration(summary.walk)} of it walking` : ''}`,
         );
+      }
       return 0;
     }
     case 'fp': {
@@ -127,7 +136,9 @@ async function main(argv: string[]): Promise<number> {
       if (subcommand === 'set' && argument) {
         const profile = writeProfileFields(PROFILE_FILE, { fp: argument.trim().toLowerCase() });
         console.log(`Saved fingerprint ${profile.fp} (hash-only) to ${PROFILE_FILE}`);
-        if (!profile.userAgent) console.log('Next: tw fp ua "<navigator.userAgent from the same browser>"');
+        if (!profile.userAgent) {
+          console.log('Next: tw fp ua "<navigator.userAgent from the same browser>"');
+        }
         return 0;
       }
       if (subcommand === 'ua' && argument) {
@@ -144,7 +155,9 @@ async function main(argv: string[]): Promise<number> {
       }
       if (subcommand === 'show') {
         const profile = readProfileRaw(PROFILE_FILE);
-        if (!profile) throw new Error(`No fingerprint profile at ${PROFILE_FILE}`);
+        if (!profile) {
+          throw new Error(`No fingerprint profile at ${PROFILE_FILE}`);
+        }
         const componentNames = profile.components?.length
           ? profile.components.map((component) => component.key).join(',')
           : '(none: hash-only, not re-verifiable)';

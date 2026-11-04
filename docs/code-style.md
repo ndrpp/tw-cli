@@ -1021,8 +1021,9 @@ discussed again.**
 - **Zero warnings.** A warning everyone ignores is noise that hides the one that matters. Either fix it or turn the
   rule off on purpose.
 - Until a tool decides, **match the surrounding code** and don't reformat lines you didn't change.
-- In this repo the tools are **Biome** (`biome.json`): `npm run lint` checks, `npm run format` fixes. CI runs the
-  check; warnings count as failures, so fix them or turn the rule off with a comment/reason in the config.
+- In this repo the tools are **Biome** (`biome.json`): `npm run lint` checks, `npm run format` fixes, and
+  `npm run format:unsafe` applies unsafe fixes too (such as `useBlockStatements`, which always requires braces).
+  CI runs the check; warnings count as failures, so fix them or turn the rule off with a comment/reason in the config.
 
 ### Code review is for intent
 

@@ -206,18 +206,29 @@ export function AutopilotScreen({ state, width, height, onCapture, onExit, activ
   const index = selectable(ROWS[selected]) ? selected : 1;
   const current = ROWS[index] ?? ROWS[0];
   const move = (direction: 1 | -1) => {
-    for (let innerIndex = index + direction; innerIndex >= 0 && innerIndex < ROWS.length; innerIndex += direction)
-      if (selectable(ROWS[innerIndex])) return setSelected(innerIndex);
+    for (let innerIndex = index + direction; innerIndex >= 0 && innerIndex < ROWS.length; innerIndex += direction) {
+      if (selectable(ROWS[innerIndex])) {
+        return setSelected(innerIndex);
+      }
+    }
   };
   const edit = (fn: (configValue: AutopilotConfig) => void) =>
     state.updateAutopilot((autopilotFile) => fn(autopilotFile.config));
 
   useInput(
     (input, key) => {
-      if (input === 'Q') return setExpanded(true);
-      if (key.escape) return onExit();
-      if (key.upArrow || input === 'k') return move(-1);
-      if (key.downArrow || input === 'j') return move(1);
+      if (input === 'Q') {
+        return setExpanded(true);
+      }
+      if (key.escape) {
+        return onExit();
+      }
+      if (key.upArrow || input === 'k') {
+        return move(-1);
+      }
+      if (key.downArrow || input === 'j') {
+        return move(1);
+      }
       if (input === 'R') {
         edit((configValue) => (configValue.running = !configValue.running));
         return state.info(config.running ? 'Autopilot running.' : 'Autopilot paused.');
@@ -232,20 +243,26 @@ export function AutopilotScreen({ state, width, height, onCapture, onExit, activ
       }
       if (current.kind === 'goal' && (input === 'J' || input === 'K')) {
         const to = current.rank + (input === 'J' ? 1 : -1);
-        if (to < 0 || to >= config.priority.length) return;
+        if (to < 0 || to >= config.priority.length) {
+          return;
+        }
         edit((configValue) => {
           const from = configValue.priority[current.rank];
           const toValue = configValue.priority[to];
-          if (from === undefined || toValue === undefined) return;
+          if (from === undefined || toValue === undefined) {
+            return;
+          }
           configValue.priority[current.rank] = toValue;
           configValue.priority[to] = from;
         });
         return setSelected(index + (to - current.rank));
       }
-      if (current.kind === 'scope' && (input === ' ' || key.return))
+      if (current.kind === 'scope' && (input === ' ' || key.return)) {
         return state.updateAutopilot((autopilotFile) => (autopilotFile.rules.onlyQuests = []));
-      if (current.kind === 'toggle' && (input === ' ' || key.return))
+      }
+      if (current.kind === 'toggle' && (input === ' ' || key.return)) {
         return edit((configValue) => current.set(configValue, !current.get(configValue)));
+      }
       if (current.kind === 'number' && (key.leftArrow || key.rightArrow || input === '+' || input === '-')) {
         const value = key.rightArrow || input === '+' ? current.step : -current.step;
         return edit((configValue) =>
@@ -259,8 +276,9 @@ export function AutopilotScreen({ state, width, height, onCapture, onExit, activ
     { isActive: active && !expanded },
   );
 
-  if (expanded)
+  if (expanded) {
     return createElement(QueueView, { state, width, height, active, onCapture, onClose: () => setExpanded(false) });
+  }
 
   const leftW = Math.max(34, Math.floor(width * 0.45));
   const rightW = width - leftW;
@@ -279,8 +297,9 @@ export function AutopilotScreen({ state, width, height, onCapture, onExit, activ
     ...ROWS.slice(start, end).map((result, innerIndex) => {
       const countValue = start + innerIndex;
       const inv = countValue === index;
-      if (result.kind === 'head')
+      if (result.kind === 'head') {
         return createElement(Text, { key: countValue, bold: true, color: 'yellow', wrap: 'truncate' }, result.text);
+      }
       if (result.kind === 'scope') {
         const count = state.autopilot.rules.onlyQuests.length;
         return createElement(
@@ -297,12 +316,13 @@ export function AutopilotScreen({ state, width, height, onCapture, onExit, activ
           ` ${result.rank + 1} ${priority ? GOAL_LABEL[priority] : ''}`,
         );
       }
-      if (result.kind === 'number')
+      if (result.kind === 'number') {
         return createElement(
           Text,
           { key: countValue, inverse: inv, wrap: 'truncate' },
           `     ${result.label}: ${result.format(result.get(config))}`,
         );
+      }
       const soon =
         result.module && result.module !== 'dryRun' && !BUILT_MODULES.has(result.module)
           ? createElement(Text, { dimColor: true }, ' (not built yet)')
@@ -403,7 +423,9 @@ const GOAL_SHORT: Record<Goal, string> = { quests: 'Quests', xp: 'XP', money: 'M
 /** Title and right-hand column of a plan row. */
 function rowText(result: PlanRow, now: number): { title: string; info: string } {
   const taskInfo = result.step;
-  if (!taskInfo) return { title: result.title, info: '' };
+  if (!taskInfo) {
+    return { title: result.title, info: '' };
+  }
   const st = taskInfo.step;
   const walk = taskInfo.travel >= 60 && st.kind !== 'walk' ? `${ICON.walk}${shortDuration(taskInfo.travel)} ` : '';
   const en = `E ${Math.floor(result.energyBefore)}→${Math.floor(result.energy)}`;
@@ -506,7 +528,9 @@ function PlanPane({ state, width, height }: { state: GameState; width: number; h
     // A reason shared with the row above (walk + deposit) is shown once.
     const why = result.why && result.why !== lastWhy ? result.why : undefined;
     const need = (section !== result.fixed ? 1 : 0) + 1 + (why ? 1 : 0);
-    if (body.length + need > room) break;
+    if (body.length + need > room) {
+      break;
+    }
     if (section !== result.fixed) {
       section = result.fixed;
       body.push(
@@ -518,7 +542,9 @@ function PlanPane({ state, width, height }: { state: GameState; width: number; h
       );
     }
     const target = texts[innerIndex];
-    if (!target) continue;
+    if (!target) {
+      continue;
+    }
     const mark = result.fixed
       ? innerIndex === 0
         ? '▶ '
@@ -548,18 +574,25 @@ function PlanPane({ state, width, height }: { state: GameState; width: number; h
         result.levelUp ? createElement(Text, { color: 'yellow' }, ` ${ICON.level}`) : '',
       ),
     );
-    if (why)
+    if (why) {
       body.push(
         createElement(Text, { key: `w${innerIndex}`, dimColor: true, italic: true, wrap: 'truncate' }, `      ${why}`),
       );
-    if (!result.wait) lastWhy = result.why;
+    }
+    if (!result.wait) {
+      lastWhy = result.why;
+    }
     shown++;
   }
-  if (shown < rows.length)
+  if (shown < rows.length) {
     body.push(createElement(Text, { key: 'more', dimColor: true }, `  +${rows.length - shown} more · Q full queue`));
-  if (!rows.length) body.push(createElement(Text, { key: 'idle', dimColor: true }, 'Idle'));
-  if (plan && !plan.tasks.length)
+  }
+  if (!rows.length) {
+    body.push(createElement(Text, { key: 'idle', dimColor: true }, 'Idle'));
+  }
+  if (plan && !plan.tasks.length) {
     body.push(createElement(Text, { key: 'none', color: 'yellow', wrap: 'wrap' }, plan.why));
+  }
   return createElement(
     Box,
     { flexDirection: 'column', borderStyle: 'round', borderColor: 'gray', width, height, paddingX: 1 },
@@ -618,22 +651,35 @@ function QueueView({
     (input, key) => {
       if (confirm !== null) {
         setConfirm(null);
-        if (input === 'y') void state.cancel(confirm);
+        if (input === 'y') {
+          void state.cancel(confirm);
+        }
         return;
       }
-      if (key.escape || input === 'Q') return onClose();
-      if (key.upArrow || input === 'k') return setSelected(Math.max(0, index - 1));
-      if (key.downArrow || input === 'j') return setSelected(Math.min(timeline.steps.length - 1, index + 1));
-      if (!row) return;
-      if (input === 'c' && index < fixedN) return setConfirm(index);
+      if (key.escape || input === 'Q') {
+        return onClose();
+      }
+      if (key.upArrow || input === 'k') {
+        return setSelected(Math.max(0, index - 1));
+      }
+      if (key.downArrow || input === 'j') {
+        return setSelected(Math.min(timeline.steps.length - 1, index + 1));
+      }
+      if (!row) {
+        return;
+      }
+      if (input === 'c' && index < fixedN) {
+        return setConfirm(index);
+      }
       const ins = insertAt(task?.key);
-      if (input === 'd' && ins)
+      if (input === 'd' && ins) {
         return state.updateAutopilot(
           (autopilotFile) =>
             (autopilotFile.rules.inserts = autopilotFile.rules.inserts.filter(
               (xCoord) => !(xCoord.kind === ins.kind && xCoord.at === ins.at),
             )),
         );
+      }
       if (input === 'd' && task?.step.kind === 'job') {
         const jobId = task.step.jobId;
         state.updateAutopilot(
@@ -654,7 +700,9 @@ function QueueView({
       }
       if ((input === 'J' || input === 'K') && ins) {
         const other = timeline.steps[index + (input === 'J' ? 1 : -1)];
-        if (!other) return;
+        if (!other) {
+          return;
+        }
         const at = input === 'J' ? other.end : Math.max(now, other.depart - 1);
         state.updateAutopilot(
           (autopilotFile) =>

@@ -84,7 +84,9 @@ const CHAT_SEND_TIMEOUT_MS = 30_000;
 
 /** Online within 5 minutes of the last action, as Chat.Resource.Client.updateStatus. */
 export function chatPresence(actioned: number | undefined, now = Date.now()): 'online' | 'idle' | 'unknown' {
-  if (!actioned) return 'unknown';
+  if (!actioned) {
+    return 'unknown';
+  }
   return now - actioned > PRESENCE_IDLE_MS ? 'idle' : 'online';
 }
 
@@ -137,8 +139,12 @@ export function encodeChatRequest(data: Record<string, unknown>): string {
 
 /** The reason a chat error ends the session, or null when it is an ordinary error. */
 const sessionInvalidReason = (message: string): string | null => {
-  if (/invalid sid|sid invalidated by login/.test(message)) return message;
-  if (/admin login/.test(message)) return 'Administrator login - chat deactivated';
+  if (/invalid sid|sid invalidated by login/.test(message)) {
+    return message;
+  }
+  if (/admin login/.test(message)) {
+    return 'Administrator login - chat deactivated';
+  }
   return null;
 };
 
@@ -210,7 +216,9 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
   }
 
   start(): void {
-    if (this.running) return;
+    if (this.running) {
+      return;
+    }
     this.running = true;
     void this.loop();
   }
@@ -237,14 +245,18 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
   }
 
   private async send(request: Record<string, unknown>): Promise<void> {
-    if (!String(request.message ?? '').trim()) return;
+    if (!String(request.message ?? '').trim()) {
+      return;
+    }
     // A second request beside the pending long-poll, like Chat.Router (openCnt ≤ 2); not on the poll lane.
     const ok = await this.exchange([request], undefined, {
       ...this.policy,
       lane: 'chat-send',
       timeoutMs: CHAT_SEND_TIMEOUT_MS,
     });
-    if (!ok) throw new Error('chat session is gone');
+    if (!ok) {
+      throw new Error('chat session is gone');
+    }
   }
 
   private async exchange(
@@ -297,12 +309,16 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
       payload: obj(event.payload),
     }));
     batch.sort((first, second) => first.t - second.t);
-    for (const event of batch) this.handle(event);
+    for (const event of batch) {
+      this.handle(event);
+    }
     return true;
   }
 
   roomTitle(id: string): string {
-    if (id.startsWith('tell:')) return `✉ ${id.slice(5)}`;
+    if (id.startsWith('tell:')) {
+      return `✉ ${id.slice(5)}`;
+    }
     const entry = this.rooms.get(id);
     return entry ? entry.title : id;
   }
@@ -310,9 +326,13 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
   private addLine(room: string, line: ChatLine): void {
     const list = this.history.get(room) ?? [];
     list.push(line);
-    if (list.length > HISTORY_LIMIT) list.splice(0, list.length - HISTORY_LIMIT);
+    if (list.length > HISTORY_LIMIT) {
+      list.splice(0, list.length - HISTORY_LIMIT);
+    }
     this.history.set(room, list);
-    if (!line.own) this.unreadRooms.add(room);
+    if (!line.own) {
+      this.unreadRooms.add(room);
+    }
     this.emit('chat', room, line);
   }
 
@@ -325,14 +345,18 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
     const room = this.rooms.get(id) ?? { id, kind, title, topic: '', members: new Set<string>() };
     room.title = title;
     room.topic = stripTags(jsonValue.topic);
-    if (jsonValue.townid !== undefined && jsonValue.townid !== null) room.townId = Number(jsonValue.townid);
+    if (jsonValue.townid !== undefined && jsonValue.townid !== null) {
+      room.townId = Number(jsonValue.townid);
+    }
     this.rooms.set(id, room);
     return room;
   }
 
   /** Creates or updates a client from Status / ClientJoined / UserUpdate data (missing fields keep old values). */
   private acquireClient(value: unknown): ChatClient | null {
-    if (!isObj(value) || value.id === undefined) return null;
+    if (!isObj(value) || value.id === undefined) {
+      return null;
+    }
     const data = value;
     const id = String(data.id);
     const previous = this.clients.get(id);
@@ -369,16 +393,24 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
           this.acquireClient(payload.self);
           this.emit('self', selfFrom(payload.self));
         }
-        for (const client of arr(payload.clients)) this.acquireClient(client);
+        for (const client of arr(payload.clients)) {
+          this.acquireClient(client);
+        }
         if (Array.isArray(payload.rooms)) {
           const seen = new Set<string>();
           for (const roomData of objs(payload.rooms)) {
-            if (!isObj(roomData.roomdescription)) continue;
+            if (!isObj(roomData.roomdescription)) {
+              continue;
+            }
             const room = this.acquireRoom(roomData.roomdescription);
             room.members = new Set(arr(roomData.members).map(String));
             seen.add(room.id);
           }
-          for (const id of [...this.rooms.keys()]) if (!seen.has(id)) this.rooms.delete(id);
+          for (const id of [...this.rooms.keys()]) {
+            if (!seen.has(id)) {
+              this.rooms.delete(id);
+            }
+          }
           this.emit('rooms');
         }
         break;
@@ -386,7 +418,9 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
         const room = this.rooms.get(String(payload.rid));
         this.acquireClient(payload.client);
         const joined = obj(payload.client);
-        if (room && joined.id !== undefined) room.members.add(String(joined.id));
+        if (room && joined.id !== undefined) {
+          room.members.add(String(joined.id));
+        }
         this.emit('rooms');
         break;
       }
@@ -409,8 +443,11 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
         break;
       case 'UserUpdate':
         this.acquireClient(payload);
-        if (this.myId !== null && String(payload.id) === this.myId) this.emit('self', selfFrom(payload));
-        else if (payload.id !== undefined) this.emit('rooms');
+        if (this.myId !== null && String(payload.id) === this.myId) {
+          this.emit('self', selfFrom(payload));
+        } else if (payload.id !== undefined) {
+          this.emit('rooms');
+        }
         break;
       case 'QuestDataChanged':
         this.emit('quests');
@@ -459,7 +496,9 @@ export class ChatPoller extends EventEmitter<ChatPollerEvents> {
           break;
         }
       } catch (err) {
-        if (!this.running) break;
+        if (!this.running) {
+          break;
+        }
         this.emit('error', err instanceof Error ? err : new Error(String(err)));
         await new Promise((transform) => setTimeout(transform, this.errorPauseMs));
       }

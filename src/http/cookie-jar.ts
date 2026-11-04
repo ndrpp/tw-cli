@@ -16,7 +16,9 @@ export class CookieJar {
 
   static fromJSON(cookies: Cookie[]): CookieJar {
     const jar = new CookieJar();
-    for (const cookie of cookies) jar.cookies.set(`${cookie.domain}|${cookie.name}`, cookie);
+    for (const cookie of cookies) {
+      jar.cookies.set(`${cookie.domain}|${cookie.name}`, cookie);
+    }
     return jar;
   }
 
@@ -27,8 +29,11 @@ export class CookieJar {
 
   private purgeExpired(): void {
     const now = Date.now();
-    for (const [id, cookie] of this.cookies)
-      if (cookie.expires !== undefined && cookie.expires <= now) this.cookies.delete(id);
+    for (const [id, cookie] of this.cookies) {
+      if (cookie.expires !== undefined && cookie.expires <= now) {
+        this.cookies.delete(id);
+      }
+    }
   }
 
   store(url: string, res: Response): void {
@@ -36,7 +41,9 @@ export class CookieJar {
     for (const line of res.headers.getSetCookie()) {
       const [pair = '', ...attrs] = line.split(';');
       const eq = pair.indexOf('=');
-      if (eq <= 0) continue;
+      if (eq <= 0) {
+        continue;
+      }
       const cookie: Cookie = {
         name: pair.slice(0, eq).trim(),
         value: pair.slice(eq + 1).trim(),
@@ -51,24 +58,38 @@ export class CookieJar {
         const attributeValue = separator < 0 ? '' : attribute.slice(separator + 1).trim();
         if (attributeName === 'domain' && attributeValue) {
           const domain = attributeValue.replace(/^\./, '').toLowerCase();
-          if (host === domain || host.endsWith(`.${domain}`)) Object.assign(cookie, { domain, hostOnly: false });
-          else foreign = true;
+          if (host === domain || host.endsWith(`.${domain}`)) {
+            Object.assign(cookie, { domain, hostOnly: false });
+          } else {
+            foreign = true;
+          }
         } else if (attributeName === 'max-age') {
           const seconds = Number(attributeValue);
-          if (seconds <= 0) expired = true;
-          else if (Number.isFinite(seconds)) cookie.expires = Date.now() + seconds * 1000;
+          if (seconds <= 0) {
+            expired = true;
+          } else if (Number.isFinite(seconds)) {
+            cookie.expires = Date.now() + seconds * 1000;
+          }
         } else if (attributeName === 'expires' && cookie.expires === undefined) {
           const expiresAt = Date.parse(attributeValue);
           if (!Number.isNaN(expiresAt)) {
-            if (expiresAt < Date.now()) expired = true;
-            else cookie.expires = expiresAt;
+            if (expiresAt < Date.now()) {
+              expired = true;
+            } else {
+              cookie.expires = expiresAt;
+            }
           }
         }
       }
-      if (foreign) continue;
+      if (foreign) {
+        continue;
+      }
       const id = `${cookie.domain}|${cookie.name}`;
-      if (expired) this.cookies.delete(id);
-      else this.cookies.set(id, cookie);
+      if (expired) {
+        this.cookies.delete(id);
+      } else {
+        this.cookies.set(id, cookie);
+      }
     }
   }
 

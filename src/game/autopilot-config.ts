@@ -242,10 +242,14 @@ export function saveAutopilot(data: AutopilotFile, file = AUTOPILOT_FILE()): voi
  * A loss in the last 24 h at this level or below stops NPC duels (one loss stops them for the day).
  */
 export function duelOutlook(record: DuelRecord[], level: number, now: number): { xp: number; energy: number } | null {
-  if (record.some((dataValue) => !dataValue.won && dataValue.at > now - 86400)) return null;
+  if (record.some((dataValue) => !dataValue.won && dataValue.at > now - 86400)) {
+    return null;
+  }
   const near = record.filter((dataValue) => Math.abs(dataValue.level - level) <= 3);
   const wins = near.filter((dataValue) => dataValue.won);
-  if (near.length < 2 || wins.length < near.length * 0.9) return null;
+  if (near.length < 2 || wins.length < near.length * 0.9) {
+    return null;
+  }
   const avg = (transform: (dataValue: DuelRecord) => number) =>
     wins.reduce((accumulator, current) => accumulator + transform(current), 0) / wins.length;
   return {
@@ -258,11 +262,12 @@ export function duelOutlook(record: DuelRecord[], level: number, now: number): {
 }
 
 export function goalWeights(config: AutopilotConfig): Record<Goal, number> {
-  if (config.customWeights)
+  if (config.customWeights) {
     return Object.fromEntries(GOALS.map((group) => [group, Math.max(0, config.customWeights?.[group] ?? 0)])) as Record<
       Goal,
       number
     >;
+  }
   return Object.fromEntries(config.priority.map((group, index) => [group, RANK_WEIGHTS[index] ?? 0])) as Record<
     Goal,
     number
@@ -270,13 +275,16 @@ export function goalWeights(config: AutopilotConfig): Record<Goal, number> {
 }
 
 function stable(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stable);
-  if (isObj(value))
+  if (Array.isArray(value)) {
+    return value.map(stable);
+  }
+  if (isObj(value)) {
     return Object.fromEntries(
       Object.keys(value)
         .sort()
         .map((key) => [key, stable(value[key])]),
     );
+  }
   return value;
 }
 

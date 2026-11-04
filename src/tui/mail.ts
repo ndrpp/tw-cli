@@ -45,14 +45,22 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
     setScroll(0);
     if (tab === 'reports') {
       const row = reports[index];
-      if (!row) return;
+      if (!row) {
+        return;
+      }
       const reportInfo = await state.openReport(row);
-      if (reportInfo) setOpened({ kind: 'report', report: reportInfo });
+      if (reportInfo) {
+        setOpened({ kind: 'report', report: reportInfo });
+      }
     } else {
       const row = telegrams[index];
-      if (!row) return;
+      if (!row) {
+        return;
+      }
       const openedTelegram = await state.openTelegram(row.id);
-      if (openedTelegram) setOpened({ kind: 'telegram', telegram: openedTelegram });
+      if (openedTelegram) {
+        setOpened({ kind: 'telegram', telegram: openedTelegram });
+      }
     }
   };
 
@@ -75,34 +83,52 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
           setForm(null);
           return setPending(null);
         }
-        if (otherForm !== 'submit') return setForm(otherForm);
+        if (otherForm !== 'submit') {
+          return setForm(otherForm);
+        }
         const value = formValues(form);
         const pick = pending;
         setForm(null);
         setPending(null);
         if (pick?.kind === 'reply') {
           void state.replyTelegram(pick.id, value.text ?? '').then(async (ok) => {
-            if (!ok) return;
+            if (!ok) {
+              return;
+            }
             const openedTelegram = await state.openTelegram(pick.id);
-            if (openedTelegram) setOpened({ kind: 'telegram', telegram: openedTelegram });
+            if (openedTelegram) {
+              setOpened({ kind: 'telegram', telegram: openedTelegram });
+            }
           });
-        } else if (pick?.kind === 'new') void state.sendTelegram(value.to ?? '', value.subject ?? '', value.text ?? '');
+        } else if (pick?.kind === 'new') {
+          void state.sendTelegram(value.to ?? '', value.subject ?? '', value.text ?? '');
+        }
         return;
       }
       if (confirmDelete) {
         setConfirmDelete(false);
-        if (input !== 'y') return;
+        if (input !== 'y') {
+          return;
+        }
         const report = reports[idx];
-        if (tab === 'reports' && report) void state.deleteReport(report);
+        if (tab === 'reports' && report) {
+          void state.deleteReport(report);
+        }
         const telegram = telegrams[idx];
-        if (tab === 'telegrams' && telegram) void state.deleteTelegram(telegram.id);
+        if (tab === 'telegrams' && telegram) {
+          void state.deleteTelegram(telegram.id);
+        }
         setOpened(null);
         return;
       }
-      if (detail && input === 'h') return setDetail(false);
+      if (detail && input === 'h') {
+        return setDetail(false);
+      }
       if (key.escape) {
         setDetail(false);
-        if (opened) return setOpened(null);
+        if (opened) {
+          return setOpened(null);
+        }
         return onExit();
       }
       if (key.tab || key.leftArrow || key.rightArrow) {
@@ -113,8 +139,12 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
       }
       const step = key.pageUp || key.pageDown ? 10 : 1;
       if (detail) {
-        if (key.upArrow || input === 'k' || key.pageUp) return setScroll((value) => Math.max(0, value - step));
-        if (key.downArrow || input === 'j' || key.pageDown) return setScroll((value) => value + step);
+        if (key.upArrow || input === 'k' || key.pageUp) {
+          return setScroll((value) => Math.max(0, value - step));
+        }
+        if (key.downArrow || input === 'j' || key.pageDown) {
+          return setScroll((value) => value + step);
+        }
       }
       if (key.upArrow || input === 'k' || key.pageUp) {
         setSel(Math.max(0, idx - step));
@@ -125,9 +155,13 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
         return setOpened(null);
       }
       if (key.return || input === 'l') {
-        if (!count) return;
+        if (!count) {
+          return;
+        }
         setDetail(true);
-        if (!opened || key.return) return void open(idx);
+        if (!opened || key.return) {
+          return void open(idx);
+        }
         return;
       }
       // Kitty-protocol terminals report Shift+, / Shift+. as the base keys with the shift flag.
@@ -135,7 +169,9 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
       const prevPage = input === '<' || (key.shift && input === ',');
       if (nextPage || prevPage) {
         const page = (list?.page ?? 1) + (nextPage ? 1 : -1);
-        if (page < 1 || page > (list?.pages ?? 1)) return;
+        if (page < 1 || page > (list?.pages ?? 1)) {
+          return;
+        }
         setSel(0);
         setOpened(null);
         setDetail(false);
@@ -147,11 +183,17 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
         setOpened(null);
         return void state.loadReports(1, REPORT_FOLDERS[(index + 1) % REPORT_FOLDERS.length]?.key);
       }
-      if (input === 'd' && count) return setConfirmDelete(true);
-      if (input === 'n') return newTelegram();
+      if (input === 'd' && count) {
+        return setConfirmDelete(true);
+      }
+      if (input === 'n') {
+        return newTelegram();
+      }
       if (input === 'R' && tab === 'telegrams') {
         const id = opened?.kind === 'telegram' ? opened.telegram.id : telegrams[idx]?.id;
-        if (!id) return;
+        if (!id) {
+          return;
+        }
         setPending({ kind: 'reply', id });
         return setForm(
           makeForm(
@@ -233,8 +275,9 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
   const dw = Math.max(10, rightW - 4);
   let lines: React.ReactNode[] = [];
   let maxTop = 0;
-  if (form) lines = [createElement(FormView, { key: 'form', form, width: rightW - 2 })];
-  else if (opened?.kind === 'report') {
+  if (form) {
+    lines = [createElement(FormView, { key: 'form', form, width: rightW - 2 })];
+  } else if (opened?.kind === 'report') {
     const reportInfo = opened.report;
     const body = wrap(reportInfo.text, dw);
     const room = Math.max(1, height - 6);
@@ -275,16 +318,19 @@ export function MailScreen({ state, width, height, onCapture, onExit, active = t
   } else {
     const cur = tab === 'reports' ? reports[idx] : null;
     lines = [createElement(Text, { key: 'h', dimColor: true }, count ? 'Enter: read' : '')];
-    if (cur?.summary)
+    if (cur?.summary) {
       lines.push(
         ...wrap(cur.summary, dw)
           .slice(0, height - 6)
           .map((text, index) => createElement(Text, { key: `s${index}`, dimColor: true }, text)),
       );
+    }
   }
   // Scrolling past the end would leave j/k with nothing to undo.
   useEffect(() => {
-    if (scroll > maxTop) setScroll(maxTop);
+    if (scroll > maxTop) {
+      setScroll(maxTop);
+    }
   });
   const keys = confirmDelete
     ? createElement(

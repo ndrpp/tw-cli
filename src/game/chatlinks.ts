@@ -17,14 +17,20 @@ export function chatSegments(text: string, names: ChatLinkNames, color?: string)
   const out: Segment[] = [];
   let at = 0;
   for (const match of text.matchAll(/\[(item|quest)=(\d+)\]/g)) {
-    if (match.index > at) out.push({ text: text.slice(at, match.index), color });
+    if (match.index > at) {
+      out.push({ text: text.slice(at, match.index), color });
+    }
     const id = Number(match[2]);
     if (match[1] === 'item') {
       const it = names.item(id);
       out.push({ text: `[${it.name}]`, color: it.set ? 'greenBright' : 'yellow' });
-    } else out.push({ text: `[${names.quest(id) ?? `quest ${id}`}]`, color: 'magentaBright' });
+    } else {
+      out.push({ text: `[${names.quest(id) ?? `quest ${id}`}]`, color: 'magentaBright' });
+    }
     at = match.index + match[0].length;
   }
-  if (at < text.length) out.push({ text: text.slice(at), color });
+  if (at < text.length) {
+    out.push({ text: text.slice(at), color });
+  }
   return out;
 }

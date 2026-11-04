@@ -22,7 +22,9 @@ const CATEGORY_ORDER: (DebugCategory | 'all')[] = ['all', ...DEBUG_CATEGORIES];
 
 /** Pretty JSON split into lines no wider than `width` (long lines hard-wrapped). */
 export function jsonLines(data: unknown, width: number): string[] {
-  if (data === undefined) return ['(no data)'];
+  if (data === undefined) {
+    return ['(no data)'];
+  }
   const fieldWidth = Math.max(10, width);
   return debugJson(data, 2)
     .split('\n')
@@ -31,10 +33,13 @@ export function jsonLines(data: unknown, width: number): string[] {
 
 /** Hard-wraps one line to `w`, continuation lines indented. */
 function wrapLine(text: string, fieldWidth: number, indent = '    '): string[] {
-  if (text.length <= fieldWidth) return [text];
+  if (text.length <= fieldWidth) {
+    return [text];
+  }
   const out = [text.slice(0, fieldWidth)];
-  for (let index = fieldWidth; index < text.length; index += fieldWidth - indent.length)
+  for (let index = fieldWidth; index < text.length; index += fieldWidth - indent.length) {
     out.push(indent + text.slice(index, index + fieldWidth - indent.length));
+  }
   return out;
 }
 
@@ -43,7 +48,9 @@ export function compactLines(obj: Record<string, unknown>, width: number): strin
   const fieldWidth = Math.max(10, width);
   return Object.entries(obj).flatMap(([entryKey, value]) => {
     const one = `${entryKey}: ${debugJson(value)}`;
-    if (one.length <= fieldWidth || !Array.isArray(value)) return wrapLine(one, fieldWidth);
+    if (one.length <= fieldWidth || !Array.isArray(value)) {
+      return wrapLine(one, fieldWidth);
+    }
     return [
       `${entryKey}: (${value.length})`,
       ...value.flatMap((xCoord) => wrapLine(`  • ${debugJson(xCoord)}`, fieldWidth, '      ')),
@@ -95,33 +102,63 @@ export function DebugScreen({ state, width, height, onCapture, onExit, active = 
           setTyping(false);
           return onCapture(false);
         }
-        if (key.backspace || key.delete) return setFilter((currentFilter) => currentFilter.slice(0, -1));
-        if (input && !key.ctrl && !key.meta) setFilter((currentFilter) => currentFilter + input);
+        if (key.backspace || key.delete) {
+          return setFilter((currentFilter) => currentFilter.slice(0, -1));
+        }
+        if (input && !key.ctrl && !key.meta) {
+          setFilter((currentFilter) => currentFilter + input);
+        }
         return;
       }
-      if (dataFocus && (key.escape || input === 'h')) return setDataFocus(false);
-      if (key.escape) return onExit();
+      if (dataFocus && (key.escape || input === 'h')) {
+        return setDataFocus(false);
+      }
+      if (key.escape) {
+        return onExit();
+      }
       if (key.tab) {
         setDataFocus(false);
         return setView((value) => (value === 'log' ? 'now' : 'log'));
       }
-      if (input === 'l' && view === 'log') return setDataFocus(true);
+      if (input === 'l' && view === 'log') {
+        return setDataFocus(true);
+      }
       if (view === 'now' || dataFocus) {
-        if (key.pageDown) return setScroll((value) => Math.min(maxScroll, value + bodyRows));
-        if (key.pageUp) return setScroll((value) => Math.max(0, value - bodyRows));
-        if (key.downArrow || input === 'j') return setScroll((value) => Math.min(maxScroll, value + 1));
-        if (key.upArrow || input === 'k') return setScroll((value) => Math.max(0, value - 1));
-        if (view === 'now') return;
+        if (key.pageDown) {
+          return setScroll((value) => Math.min(maxScroll, value + bodyRows));
+        }
+        if (key.pageUp) {
+          return setScroll((value) => Math.max(0, value - bodyRows));
+        }
+        if (key.downArrow || input === 'j') {
+          return setScroll((value) => Math.min(maxScroll, value + 1));
+        }
+        if (key.upArrow || input === 'k') {
+          return setScroll((value) => Math.max(0, value - 1));
+        }
+        if (view === 'now') {
+          return;
+        }
       }
       const move = (value: number) => {
         const count = Math.max(0, Math.min(list.length - 1, idx + value));
         setSel(count >= list.length - 1 ? -1 : count);
       };
-      if (key.upArrow || input === 'k') return move(-1);
-      if (key.downArrow || input === 'j') return move(1);
-      if (key.pageUp) return move(-bodyRows);
-      if (key.pageDown) return move(bodyRows);
-      if (input === 'e') return setSel(-1);
+      if (key.upArrow || input === 'k') {
+        return move(-1);
+      }
+      if (key.downArrow || input === 'j') {
+        return move(1);
+      }
+      if (key.pageUp) {
+        return move(-bodyRows);
+      }
+      if (key.pageDown) {
+        return move(bodyRows);
+      }
+      if (input === 'e') {
+        return setSel(-1);
+      }
       if (input === 'f') {
         setSel(-1);
         return setCat((category) => {

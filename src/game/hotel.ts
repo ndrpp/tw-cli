@@ -57,12 +57,16 @@ export function parseHotel(townId: number, json: JsonObject): Hotel {
 /** The room the browser pre-selects: own hotel → its level; else the best free one. */
 export function defaultRoom(hotel: Hotel): HotelRoom | undefined {
   const usable = hotel.rooms.filter((room) => room.available);
-  if (hotel.own) return usable.find((room) => room.level === hotel.level) ?? usable.at(-1);
+  if (hotel.own) {
+    return usable.find((room) => room.level === hotel.level) ?? usable.at(-1);
+  }
   return usable.filter((room) => room.free && room.level <= hotel.level).at(-1) ?? usable[0];
 }
 
 export async function fetchHotel(client: GameClient, townId: number): Promise<Hotel> {
   const json = await client.remoteCallMode('building_hotel', 'get_data', { town_id: townId });
-  if (json.error) throw new Error(String(json.msg ?? 'Hotel failed'));
+  if (json.error) {
+    throw new Error(String(json.msg ?? 'Hotel failed'));
+  }
   return parseHotel(townId, json);
 }

@@ -75,14 +75,21 @@ function fakeServers(opts: { gameAcceptsSid?: Set<string> } = {}) {
     calls.push({ method: init.method ?? 'GET', url, body, headers });
     const res = (status: number, items: [string, string][] = [], text: string | null = null) => {
       const out = new Headers();
-      for (const [key, value] of items) out.append(key, value);
+      for (const [key, value] of items) {
+        out.append(key, value);
+      }
       return new Response(text, { status, headers: out });
     };
-    if (url === `${PORTAL}/`) return res(200, [['set-cookie', 'PHPSESSID=portal; path=/']], '<html>');
+    if (url === `${PORTAL}/`) {
+      return res(200, [['set-cookie', 'PHPSESSID=portal; path=/']], '<html>');
+    }
     if (url.startsWith(`${PORTAL}/index.php?ajax=check_login`)) {
-      if (!cookie.includes('PHPSESSID=portal')) return Response.json({ error: 'cookies disabled' });
-      if (form?.get('name') !== 'Tester' || form.get('password') !== 'secret')
+      if (!cookie.includes('PHPSESSID=portal')) {
+        return Response.json({ error: 'cookies disabled' });
+      }
+      if (form?.get('name') !== 'Tester' || form.get('password') !== 'secret') {
         return Response.json({ error: 'Wrong name or password' });
+      }
       return Response.json({ player_id: 42, password: 'tokenhash', playerWorlds: { 12: [12, 1], 38: [38, 1] } });
     }
     if (url === `${PORTAL}/index.php?action=login`) {
@@ -98,13 +105,19 @@ function fakeServers(opts: { gameAcceptsSid?: Set<string> } = {}) {
         ['set-cookie', `sid=${sid}; path=/`],
       ]);
     }
-    if (url.startsWith('https://en12.')) return res(302, [['location', `${PORTAL}/`]]);
+    if (url.startsWith('https://en12.')) {
+      return res(302, [['location', `${PORTAL}/`]]);
+    }
     const sid = /(?:^|; )sid=([^;]+)/.exec(cookie)?.[1];
     if (url === `${GAME}/game.php`) {
-      if (!sid || !sessions.has(sid)) return res(302, [['location', `${PORTAL}/?logout`]]);
+      if (!sid || !sessions.has(sid)) {
+        return res(302, [['location', `${PORTAL}/?logout`]]);
+      }
       return res(200, [], GAME_HTML);
     }
-    if (url === `${GAME}/game.php?window=anti_cheat&action=record_fp&h=0b89b1`) return Response.json({ error: false });
+    if (url === `${GAME}/game.php?window=anti_cheat&action=record_fp&h=0b89b1`) {
+      return Response.json({ error: false });
+    }
     return res(404, [], `unexpected ${url}`);
   }) as typeof fetch;
   return sessions;

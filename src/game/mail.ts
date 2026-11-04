@@ -125,12 +125,19 @@ function formatItems(lines: string[]): string[] {
   const items: string[] = [];
   for (const raw of lines) {
     const line = raw.trim();
-    if (!line) continue;
-    if (/^no items? (were|was) found/i.test(line)) return [];
+    if (!line) {
+      continue;
+    }
+    if (/^no items? (were|was) found/i.test(line)) {
+      return [];
+    }
     if (/^\d+$/.test(line)) {
       const last = items[items.length - 1];
-      if (last && !/\sx\s\d+$/.test(last)) items[items.length - 1] = `${last} x ${line}`;
-      else items.push(line);
+      if (last && !/\sx\s\d+$/.test(last)) {
+        items[items.length - 1] = `${last} x ${line}`;
+      } else {
+        items.push(line);
+      }
       continue;
     }
     const match =
@@ -138,8 +145,11 @@ function formatItems(lines: string[]): string[] {
       /^(.+?)\s*\((\d+)\)$/.exec(line) ??
       /^(.+?):\s*(\d+)$/.exec(line) ??
       /^(.+?)\s+(\d+)$/.exec(line);
-    if (match) items.push(`${match[1]?.trim() ?? ''} x ${match[2]}`);
-    else items.push(line);
+    if (match) {
+      items.push(`${match[1]?.trim() ?? ''} x ${match[2]}`);
+    } else {
+      items.push(line);
+    }
   }
   return items;
 }
@@ -170,14 +180,21 @@ export function popupItems(html: unknown): string[] {
  * reportItems) replaces the page's items section, which is empty in the HTML.
  */
 export function formatReport(text: string, type = '', items: string[] = []): string {
-  if (type.toLowerCase() !== 'job') return text;
+  if (type.toLowerCase() !== 'job') {
+    return text;
+  }
   const out = formatJobReport(text);
-  if (!items.length) return out;
+  if (!items.length) {
+    return out;
+  }
   const line = `Items: ${items.join(', ')}`;
   const lines = out.split('\n');
   const at = lines.findIndex((candidateLine) => /^Items:/.test(candidateLine));
-  if (at >= 0) lines[at] = line;
-  else lines.push(line);
+  if (at >= 0) {
+    lines[at] = line;
+  } else {
+    lines.push(line);
+  }
   return lines.join('\n');
 }
 
@@ -189,7 +206,9 @@ function formatJobReport(text: string): string {
   const out: string[] = [];
   const push = (line: string) => {
     const value = line.trim();
-    if (value && out[out.length - 1] !== value) out.push(value);
+    if (value && out[out.length - 1] !== value) {
+      out.push(value);
+    }
   };
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index] ?? '';
@@ -198,7 +217,9 @@ function formatJobReport(text: string): string {
       let foundAt = index + 1;
       for (; foundAt < lines.length; foundAt++) {
         const nextLine = lines[foundAt] ?? '';
-        if (isKnownLabel(nextLine)) break;
+        if (isKnownLabel(nextLine)) {
+          break;
+        }
         if (/^no items? (were|was) found/i.test(nextLine)) {
           foundAt++;
           break;
@@ -231,7 +252,9 @@ function formatJobReport(text: string): string {
       if ((knownLabel && isValue(next)) || genericLabel) {
         const value = normalizeValue(next);
         let repeatTo = index + 1;
-        while (repeatTo + 1 < lines.length && normalizeValue(lines[repeatTo + 1] ?? '') === value) repeatTo++;
+        while (repeatTo + 1 < lines.length && normalizeValue(lines[repeatTo + 1] ?? '') === value) {
+          repeatTo++;
+        }
         push(`${knownLabel ? canonicalLabel(line) : cleanLabel(line)}: ${value}`);
         index = repeatTo;
         continue;
@@ -266,7 +289,9 @@ export function popupText(html: unknown): string {
 
 /** The list summary's "Found items:" heading is followed by images only: put the names after it. */
 function withItems(summary: string, items: string[]): string {
-  if (!items.length) return summary;
+  if (!items.length) {
+    return summary;
+  }
   return /Found items:/i.test(summary)
     ? summary.replace(/Found items:/i, `Found items: ${items.join(', ')}`)
     : `${summary}\nFound items: ${items.join(', ')}`;
@@ -279,7 +304,9 @@ function withItems(summary: string, items: string[]): string {
  */
 export function reportLogLine(reportInfo: ReportRow): string {
   const job = /^Job report:\s*(.+)$/i.exec(reportInfo.title)?.[1];
-  if (!job) return `Report: ${reportInfo.title}`;
+  if (!job) {
+    return `Report: ${reportInfo.title}`;
+  }
   const num = (re: RegExp) => Number(re.exec(reportInfo.summary)?.[1]) || 0;
   const xp = num(/\bXP:\s*(\d+)/i);
   const money = num(/\bMoney:\s*(\d+)/i);
@@ -302,7 +329,9 @@ export function parseJobReport(
 ): { jobId: number; items: [number, number][]; seconds: number | null } | null {
   const info = obj(json.reportInfo);
   const jobId = Number(info.job_id);
-  if (String(json.reportType ?? '') !== 'job' || !jobId) return null;
+  if (String(json.reportType ?? '') !== 'job' || !jobId) {
+    return null;
+  }
   const items = arr(info.items)
     .filter(Array.isArray)
     .filter((item) => Number(item[0]))
@@ -325,7 +354,9 @@ export class MailApi {
 
   async reports(page = 1, folder: ReportFolder = 'all'): Promise<ReportList> {
     const json = await this.client.remoteCall('reports', 'get_reports', { page, folder });
-    if (json.error) fail(json, 'reports/get_reports');
+    if (json.error) {
+      fail(json, 'reports/get_reports');
+    }
     return {
       page: Number(json.page) || page,
       pages: Number(json.count) || 1,
@@ -347,7 +378,9 @@ export class MailApi {
       animated: 0,
       simpleheader: 0,
     });
-    if (json.error) fail(json, 'reports/show_report');
+    if (json.error) {
+      fail(json, 'reports/show_report');
+    }
     const type = String(json.reportType ?? '');
     return {
       id,
@@ -373,7 +406,9 @@ export class MailApi {
       animated: 0,
       simpleheader: 0,
     });
-    if (json.error) fail(json, 'reports/show_report');
+    if (json.error) {
+      fail(json, 'reports/show_report');
+    }
     return parseJobReport(json);
   }
 
@@ -383,7 +418,9 @@ export class MailApi {
       type: folder,
       deleted: folder === 'deleted',
     });
-    if (Array.isArray(json) ? json[0] : obj(json).error) throw new Error('Report could not be removed');
+    if (Array.isArray(json) ? json[0] : obj(json).error) {
+      throw new Error('Report could not be removed');
+    }
   }
 
   async telegrams(page = 1): Promise<TelegramList> {
@@ -393,7 +430,9 @@ export class MailApi {
       visibles: [],
       include_blocked: 0,
     });
-    if (json.error) fail(json, 'messages/get_messages');
+    if (json.error) {
+      fail(json, 'messages/get_messages');
+    }
     return {
       page: Number(json.page) || page,
       pages: Number(json.count ?? json.pages) || 1,
@@ -413,7 +452,9 @@ export class MailApi {
 
   async telegram(id: number, page = 0): Promise<Telegram> {
     const json = await this.client.remoteCall('messages', 'get_message', { tid: id, page });
-    if (json.error) fail(json, 'messages/get_message');
+    if (json.error) {
+      fail(json, 'messages/get_message');
+    }
     return {
       id,
       subject: plainText(json.subject),
@@ -430,22 +471,32 @@ export class MailApi {
   /** Replies are [ok, message] arrays. */
   async reply(id: number, text: string): Promise<void> {
     const response = await this.client.remoteCallRaw('messages', 'reply', { message_id: id, text });
-    if (Array.isArray(response) ? !response[0] : obj(response).error)
+    if (Array.isArray(response) ? !response[0] : obj(response).error) {
       throw new Error(plainText(Array.isArray(response) ? response[1] : obj(response).msg) || 'Reply failed');
+    }
   }
 
   /** `to`: names separated by ; or , (MessagesWindow.Telegram.send checks: subject ≥ 1, text ≥ 3 characters). */
   async send(to: string, subject: string, text: string): Promise<void> {
-    if (!to.trim()) throw new Error('No recipient');
-    if (!subject.trim()) throw new Error('The subject is empty');
-    if (text.length < 3) throw new Error('The text has to be at least 3 characters long!');
+    if (!to.trim()) {
+      throw new Error('No recipient');
+    }
+    if (!subject.trim()) {
+      throw new Error('The subject is empty');
+    }
+    if (text.length < 3) {
+      throw new Error('The text has to be at least 3 characters long!');
+    }
     const response = await this.client.remoteCallRaw('messages', 'send', { to, subject, text, masstelegramm: 0 });
-    if (Array.isArray(response) ? !response[0] : obj(response).error)
+    if (Array.isArray(response) ? !response[0] : obj(response).error) {
       throw new Error(plainText(Array.isArray(response) ? response[1] : obj(response).msg) || 'Sending failed');
+    }
   }
 
   async deleteTelegram(id: number): Promise<void> {
     const json = await this.client.remoteCall('messages', 'delete_messages', { messages: [id] });
-    if (json.error) fail(json, 'messages/delete_messages');
+    if (json.error) {
+      fail(json, 'messages/delete_messages');
+    }
   }
 }

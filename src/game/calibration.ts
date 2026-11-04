@@ -63,7 +63,9 @@ export class Calibration {
   }
 
   private save(): void {
-    if (!this.file) return;
+    if (!this.file) {
+      return;
+    }
     try {
       mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
       writeFileSync(this.file, JSON.stringify(this.data, null, 2), { mode: 0o600 });
@@ -79,7 +81,9 @@ export class Calibration {
     const entryKey = `${jobId}:${duration}`;
     const existing = this.data.drops[entryKey];
     const dataValue = existing ?? { runs: 0, found: {} };
-    if (!existing) this.data.drops[entryKey] = dataValue;
+    if (!existing) {
+      this.data.drops[entryKey] = dataValue;
+    }
     dataValue.runs++;
     for (const [id, count] of items) {
       const base = String(baseId(id));
@@ -116,7 +120,9 @@ export class Calibration {
 
   addLevelUp(refilled: boolean): void {
     this.data.levelUps.seen++;
-    if (refilled) this.data.levelUps.refilled++;
+    if (refilled) {
+      this.data.levelUps.refilled++;
+    }
     this.save();
   }
 
@@ -125,7 +131,9 @@ export class Calibration {
   /** Expected items per run, the game's number blended with what reports showed. */
   dropRate(jobId: number, duration: string, itemId: number, prior: number): number {
     const dataValue = this.data.drops[`${jobId}:${duration}`];
-    if (!dataValue?.runs) return prior;
+    if (!dataValue?.runs) {
+      return prior;
+    }
     const found = dataValue.found[String(baseId(itemId))] ?? 0;
     return (found + prior * PRIOR_RUNS) / (dataValue.runs + PRIOR_RUNS);
   }
@@ -133,7 +141,9 @@ export class Calibration {
   /** Multiplier for the danger → HP heuristic (1 until dangerous runs were seen). */
   get hpScale(): number {
     const item = this.data.hp;
-    if (!item.runs || item.predicted <= 0) return 1;
+    if (!item.runs || item.predicted <= 0) {
+      return 1;
+    }
     const prior = (item.predicted / item.runs) * PRIOR_RUNS; // PRIOR_RUNS runs exactly as predicted
     return (item.observed + prior) / (item.predicted + prior);
   }
@@ -145,7 +155,9 @@ export class Calibration {
   get motivation(): { perRun: number; perHour: number; samples: number } {
     const match = this.data.motivation;
     const det = match.rr * match.hh - match.rh * match.rh;
-    if (match.n < 3 || Math.abs(det) < 1e-9) return { ...DEFAULT_MOTIVATION, samples: match.n };
+    if (match.n < 3 || Math.abs(det) < 1e-9) {
+      return { ...DEFAULT_MOTIVATION, samples: match.n };
+    }
     // drop = perRun · runs − perHour · hours; normal equations [rr −rh; −rh hh]·[a b] = [rd −hd].
     const perRun = (match.rd * match.hh - match.rh * match.hd) / det;
     const perHour = (match.rh * match.rd - match.rr * match.hd) / det;

@@ -67,7 +67,9 @@ const errText = (json: JsonObject, what: string) =>
 
 export async function fetchTownHall(client: GameClient, townId: number): Promise<TownHall> {
   const json = await client.remoteCall('building_cityhall', '', { town_id: townId });
-  if (json.error) throw new Error(errText(json, 'Town hall'));
+  if (json.error) {
+    throw new Error(errText(json, 'Town hall'));
+  }
   return {
     townId,
     townName: plainText(json.townName) || `town ${townId}`,
@@ -127,7 +129,9 @@ export async function fetchConstruction(
   building: string,
 ): Promise<Construction> {
   const json = await client.remoteCallMode('cityhall_build', 'build', { x: xCoord, y: yCoord, building });
-  if (json.error) throw new Error(errText(json, 'Construction'));
+  if (json.error) {
+    throw new Error(errText(json, 'Construction'));
+  }
   return parseConstruction(json);
 }
 

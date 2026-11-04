@@ -107,8 +107,12 @@ export interface TimelineOptions {
 
 /** Seconds of regen at `rate` (fraction of max per hour) to go from `have` to `want` points. */
 export function regenSeconds(have: number, want: number, max: number, rate: number): number {
-  if (want <= have) return 0;
-  if (rate <= 0 || max <= 0) return Infinity;
+  if (want <= have) {
+    return 0;
+  }
+  if (rate <= 0 || max <= 0) {
+    return Infinity;
+  }
   return ((Math.min(want, max) - have) * 3600) / (max * rate);
 }
 
@@ -124,7 +128,9 @@ export function projectTimeline(start: TimelineStart, steps: TimelineStep[], opt
   let maxHealth = start.maxHealth;
 
   const regen = (seconds: number, eRate = start.energyRegen, hRate = start.healthRegen) => {
-    if (seconds <= 0) return;
+    if (seconds <= 0) {
+      return;
+    }
     energy = Math.min(start.maxEnergy, energy + (start.maxEnergy * eRate * seconds) / 3600);
     health = Math.min(maxHealth, health + (maxHealth * hRate * seconds) / 3600);
   };
@@ -183,7 +189,9 @@ export function projectTimeline(start: TimelineStart, steps: TimelineStep[], opt
         break;
       }
       case 'walk':
-        if (step.fixed) regen(end - begin);
+        if (step.fixed) {
+          regen(end - begin);
+        }
         break;
       case 'sleep': {
         if (!step.fixed) {

@@ -128,17 +128,24 @@ async function enterWorld(
     policy,
   );
   let url = await gameUrlFrom(response, `${portal}/index.php`);
-  if (!url) throw new AuthError('Login did not lead to the game');
-  if (new URL(url).host !== worldHost) return false;
+  if (!url) {
+    throw new AuthError('Login did not lead to the game');
+  }
+  if (new URL(url).host !== worldHost) {
+    return false;
+  }
 
   for (let hop = 0; hop < MAX_REDIRECTS; hop++) {
     const redirect = await send(jar, identity, url, { referer: `${portal}/` }, policy);
     const location = redirect.headers.get('location');
     await redirect.body?.cancel().catch(() => {});
-    if (!isRedirect(redirect.status) || !location) return true;
+    if (!isRedirect(redirect.status) || !location) {
+      return true;
+    }
     url = new URL(location, url).href;
-    if (new URL(url).host !== worldHost)
+    if (new URL(url).host !== worldHost) {
       throw new AuthError(`Game sent the login back to ${new URL(url).host}: login failed`);
+    }
   }
   throw new AuthError('Too many redirects while entering the game');
 }
@@ -158,7 +165,9 @@ export async function loginToWorld(
   const account = await checkLogin(world, credentials, jar, identity, policy);
   // One at a time: each attempt rewrites the jar's session cookies.
   for (const worldId of account.worlds) {
-    if (await enterWorld(world, jar, identity, account, worldId, policy)) return jar;
+    if (await enterWorld(world, jar, identity, account, worldId, policy)) {
+      return jar;
+    }
   }
   throw new AuthError(`This account has no character on ${new URL(world.url).host}`);
 }

@@ -157,9 +157,13 @@ export const JOB_SORTS: JobSort[] = ['name', 'xp', 'money', 'luck', 'distance'];
 
 /** Value a job is sorted by: the 1 h (else longest known) duration's XP / money; luck = max $ find (maxLuck). */
 export function jobSortValue(job: JobInfo, sort: JobSort): number {
-  if (sort === 'luck') return job.luckValue[1];
+  if (sort === 'luck') {
+    return job.luckValue[1];
+  }
   const jobInfo = job.values.long ?? job.values.middle ?? job.values.short;
-  if (!jobInfo) return -Infinity;
+  if (!jobInfo) {
+    return -Infinity;
+  }
   return sort === 'xp' ? jobInfo.experience : sort === 'money' ? jobInfo.money : 0;
 }
 
@@ -268,7 +272,9 @@ export class GameState extends EventEmitter {
     const str = (value: unknown) => (typeof value === 'string' ? value : undefined);
     this.clock = new ServerClock(game.sincepoch === undefined ? undefined : Number(game.sincepoch));
     this.character = CharacterState.fromInit(bootstrap.character ?? {}, this.clock);
-    if (Number(game.maxLevel) > 0) this.character.maxLevel = Number(game.maxLevel);
+    if (Number(game.maxLevel) > 0) {
+      this.character.maxLevel = Number(game.maxLevel);
+    }
     this.catalog = new JobCatalog(bootstrap.game);
     this.tasks = new TaskApi(client);
     this.travelSpeed = Number(game.travelSpeed ?? 1);
@@ -288,7 +294,9 @@ export class GameState extends EventEmitter {
     const wasLive = !!this.live?.active;
     this.live?.stop();
     this.live = null;
-    if (wasLive) this.startLive();
+    if (wasLive) {
+      this.startLive();
+    }
   }
 
   private get questApi(): QuestApi {
@@ -317,7 +325,9 @@ export class GameState extends EventEmitter {
 
   private push(level: LogEntry['level'], msg: string): void {
     this.log.push({ at: new Date(), level, msg });
-    if (this.log.length > MAX_LOG_LINES) this.log.shift();
+    if (this.log.length > MAX_LOG_LINES) {
+      this.log.shift();
+    }
     this.debug.add('log', msg, { level });
     this.changed();
   }
@@ -362,7 +372,9 @@ export class GameState extends EventEmitter {
     let changed = false;
     while ((this.queue[0]?.end ?? Number.POSITIVE_INFINITY) <= now) {
       const done = this.queue.shift();
-      if (!done) break;
+      if (!done) {
+        break;
+      }
       this.character.position = done.coords;
       this.info(`Finished: ${done.title}`);
       if (done.type === 'job') {
@@ -381,9 +393,13 @@ export class GameState extends EventEmitter {
   /** A queued job ended: count the run for motivation and expect its HP loss in the next health value. */
   private jobFinished(taskInfo: QueuedTask): void {
     const searchQuery = this.queuedJob(taskInfo);
-    if (!searchQuery) return;
+    if (!searchQuery) {
+      return;
+    }
     const seen = this.motivationSeen.get(searchQuery.job.id);
-    if (seen) seen.runs++;
+    if (seen) {
+      seen.runs++;
+    }
     if (searchQuery.job.danger) {
       const predicted = expectedHpLoss(searchQuery.job.danger, searchQuery.values.duration, this.character.maxHealth);
       this.hpPending = { title: taskInfo.title, predicted: (this.hpPending?.predicted ?? 0) + predicted };
@@ -396,15 +412,18 @@ export class GameState extends EventEmitter {
    */
   private observeHealth(before: number, after: number): void {
     const pick = this.hpPending;
-    if (!pick) return;
+    if (!pick) {
+      return;
+    }
     this.hpPending = null;
     const lost = Math.max(0, before - after);
-    if (lost > ATTACK_DROP_FRACTION * this.character.maxHealth)
+    if (lost > ATTACK_DROP_FRACTION * this.character.maxHealth) {
       return void this.debug.add('state', `HP drop ${lost} after ${pick.title} looks like an attack: not calibrated`, {
         before,
         after,
         predicted: pick.predicted,
       });
+    }
     this.calibration.addHp(pick.predicted, lost);
     this.debug.add('state', `Calibration: ${pick.title} cost ${lost} HP (predicted ${Math.round(pick.predicted)})`, {
       lost,
@@ -437,8 +456,9 @@ export class GameState extends EventEmitter {
           (prev.runs > 0 || hours > MIN_MOTIVATION_HOURS) &&
           prev.m < MOTIVATION_NEAR_CAP &&
           jobInfo.motivation < MOTIVATION_NEAR_CAP
-        )
+        ) {
           this.calibration.addMotivation(prev.runs, hours, jobInfo.motivation - prev.m);
+        }
       }
       this.motivationSeen.set(jobInfo.id, { m: jobInfo.motivation, at: now, runs: 0 });
     }
@@ -448,15 +468,25 @@ export class GameState extends EventEmitter {
   /** New job reports (from a report list): drops per job and duration. One show_report request each. */
   async calibrateFromReports(rows: ReportRow[]): Promise<void> {
     for (const report of rows) {
-      if (this.reportsSeen.has(report.id) || !/^job report/i.test(report.title)) continue;
+      if (this.reportsSeen.has(report.id) || !/^job report/i.test(report.title)) {
+        continue;
+      }
       this.reportsSeen.add(report.id);
       try {
         const rep = await this.mail.jobReport(report.id, report.hash);
         const job = rep && this.jobs.find((jobInfo) => jobInfo.id === rep.jobId);
-        if (!rep || !job || rep.seconds === null) continue;
+        if (!rep || !job || rep.seconds === null) {
+          continue;
+        }
         let dur: DurationKey | undefined;
-        for (const entryKey of DURATION_KEYS) if (job.values[entryKey]?.duration === rep.seconds) dur = entryKey;
-        if (!dur) continue;
+        for (const entryKey of DURATION_KEYS) {
+          if (job.values[entryKey]?.duration === rep.seconds) {
+            dur = entryKey;
+          }
+        }
+        if (!dur) {
+          continue;
+        }
         this.calibration.addJobRun(job.id, dur, rep.items);
         this.debug.add(
           'state',
@@ -510,7 +540,9 @@ export class GameState extends EventEmitter {
     if (this.debugSnap) {
       const dataValue = diffSnapshots(this.debugSnap, snap);
       const keys = Object.keys(dataValue);
-      if (keys.length) this.debug.add('state', `Changed: ${keys.join(', ')}`, dataValue);
+      if (keys.length) {
+        this.debug.add('state', `Changed: ${keys.join(', ')}`, dataValue);
+      }
     }
     this.debugSnap = snap;
     const now = this.clock.now();
@@ -596,14 +628,18 @@ export class GameState extends EventEmitter {
     await this.step('Jobs and map', () => this.loadJobs(true));
     await this.step('Item data', () => this.loadItems());
     await this.step('Quest log', () => this.loadQuests(true));
-    if (opts.live !== false) await this.step('Live updates', async () => this.startLive());
+    if (opts.live !== false) {
+      await this.step('Live updates', async () => this.startLive());
+    }
     this.startup.done = true;
     this.info(`Ready: ${this.jobs.length} jobs, ${this.items?.size ?? 0} items, ${this.quests.length} quests.`);
   }
 
   /** Leaves the loading screen early (requests keep running in the background). */
   skipStartup(): void {
-    if (this.startup) this.startup.done = true;
+    if (this.startup) {
+      this.startup.done = true;
+    }
     this.changed();
   }
 
@@ -612,13 +648,17 @@ export class GameState extends EventEmitter {
   /** After a rebuild (wake from sleep): keep the log and a running auto-route. */
   carryOver(prev: GameState): void {
     this.log.unshift(...prev.log.slice(-CARRIED_LOG_LINES));
-    for (const entry of this.debug.entries) prev.debug.add(entry.cat, entry.title, entry.data);
+    for (const entry of this.debug.entries) {
+      prev.debug.add(entry.cat, entry.title, entry.data);
+    }
     this.debug = prev.debug;
     this.sleepRates = prev.sleepRates;
     this.motivationSeen = prev.motivationSeen;
     this.reportsSeen = prev.reportsSeen;
     this.hpPending = prev.hpPending;
-    if (prev.autoRoute) this.autoRoute = { ...prev.autoRoute, retryAt: 0 };
+    if (prev.autoRoute) {
+      this.autoRoute = { ...prev.autoRoute, retryAt: 0 };
+    }
     this.autopilot = prev.autopilot;
     this.mapLayers = prev.mapLayers;
     this.rates = prev.rates;
@@ -628,7 +668,9 @@ export class GameState extends EventEmitter {
 
   /** Starts the chat long-poll the browser keeps open; pushes XP/money/energy/position. */
   startLive(): void {
-    if (this.live?.active) return;
+    if (this.live?.active) {
+      return;
+    }
     const poller = new ChatPoller(this.client);
     this.live = poller;
     this.liveStatus = 'connecting';
@@ -676,7 +718,9 @@ export class GameState extends EventEmitter {
 
   /** Last user input time; sent as `actioned` like the browser's click/keypress tracking. */
   touch(): void {
-    if (this.live) this.live.actioned = Date.now();
+    if (this.live) {
+      this.live.actioned = Date.now();
+    }
   }
 
   applySelf(value: SelfUpdate): void {
@@ -685,8 +729,9 @@ export class GameState extends EventEmitter {
       value.x !== undefined &&
       value.y !== undefined &&
       (value.x !== character.position.x || value.y !== character.position.y)
-    )
+    ) {
       character.position = { x: value.x, y: value.y };
+    }
     const level = value.level;
     const leveled = level !== undefined && level > character.level;
     if (leveled && level !== undefined) {
@@ -694,19 +739,27 @@ export class GameState extends EventEmitter {
       character.level = level;
     }
     const hpBefore = character.health;
-    if (value.experience !== undefined && value.experience > character.experience)
+    if (value.experience !== undefined && value.experience > character.experience) {
       character.experience = value.experience;
-    if (value.money !== undefined) character.cash = value.money;
-    if (value.deposit !== undefined) character.deposit = value.deposit;
+    }
+    if (value.money !== undefined) {
+      character.cash = value.money;
+    }
+    if (value.deposit !== undefined) {
+      character.deposit = value.deposit;
+    }
     // energy_date / health_date are offsets from now in seconds (Character.setEnergy @tw2game: getServerTime() + date).
     const now = this.clock.now();
-    if (value.energy !== undefined)
+    if (value.energy !== undefined) {
       character.setEnergy(value.energy, value.energyAt === undefined ? undefined : now + value.energyAt);
+    }
     if (value.health !== undefined) {
       character.setHealth(value.health, value.healthAt === undefined ? undefined : now + value.healthAt);
       this.observeHealth(hpBefore, character.health);
     }
-    if (leveled) this.observeLevelUp();
+    if (leveled) {
+      this.observeLevelUp();
+    }
     this.changed();
   }
 
@@ -721,18 +774,24 @@ export class GameState extends EventEmitter {
    * Runs in the background: no busy lock, errors only logged.
    */
   async syncCharacter(why = ''): Promise<void> {
-    if (this.syncing) return;
+    if (this.syncing) {
+      return;
+    }
     this.syncing = true;
     try {
       const { bootstrap } = await this.reopen();
       const data = bootstrap.character;
-      if (!data) return;
+      if (!data) {
+        return;
+      }
       const fresh = CharacterState.fromInit(data, this.clock);
       const character = this.character;
       const hpBefore = character.health;
       const cashBefore = character.cash;
       const leveled = fresh.level > character.level;
-      if (leveled) this.info(`Level up: ${fresh.level}!`);
+      if (leveled) {
+        this.info(`Level up: ${fresh.level}!`);
+      }
       character.level = fresh.level;
       character.experience = fresh.experience;
       character.cash = fresh.cash;
@@ -749,8 +808,12 @@ export class GameState extends EventEmitter {
       character.setHealth(Number(data.health));
       character.lpPerPoint = fresh.lpPerPoint;
       this.observeHealth(hpBefore, character.health);
-      if (leveled) this.observeLevelUp();
-      if (data.taskQueue) this.queue = parseQueue(data.taskQueue);
+      if (leveled) {
+        this.observeLevelUp();
+      }
+      if (data.taskQueue) {
+        this.queue = parseQueue(data.taskQueue);
+      }
       this.lastSync = Date.now();
       // Regen estimate vs. the server: a real drop means something happened to us.
       const lost = hpBefore - character.health;
@@ -782,9 +845,15 @@ export class GameState extends EventEmitter {
         .reverse();
       this.recentReports = list.reports;
       void this.calibrateFromReports(list.reports);
-      for (const report of list.reports) this.seenReports.add(report.id);
-      for (const reportInfo of fresh) this.info(reportLogLine(reportInfo));
-      if (!fresh.length) this.info('New report.');
+      for (const report of list.reports) {
+        this.seenReports.add(report.id);
+      }
+      for (const reportInfo of fresh) {
+        this.info(reportLogLine(reportInfo));
+      }
+      if (!fresh.length) {
+        this.info('New report.');
+      }
     } catch {
       this.info('New report.');
     }
@@ -794,7 +863,9 @@ export class GameState extends EventEmitter {
 
   /** Item data (cached per game version). Inventory names need it. */
   async loadItems(): Promise<void> {
-    if (this.items) return;
+    if (this.items) {
+      return;
+    }
     await this.guard('Items', async () => {
       this.items = await loadItemCatalog(this.client, this.itemsFile, (messageValue) => this.info(messageValue));
       this.inventory.retype(this.items);
@@ -820,7 +891,9 @@ export class GameState extends EventEmitter {
   /** Item level requirement after Character.itemLevelRequirementDecrease (ItemPopup "- Level %1 (%2)"). */
   requiredLevel(itemId: number): { level: number; base: number } | null {
     const entry = this.items?.get(itemId);
-    if (!entry?.level) return null;
+    if (!entry?.level) {
+      return null;
+    }
     const dec = this.character.itemLevelDecrease;
     const decrease = (dec.all ?? 0) + (dec[entry.type] ?? 0);
     return { level: Math.max(1, entry.level - decrease), base: entry.level };
@@ -832,7 +905,9 @@ export class GameState extends EventEmitter {
   ): { name: string; worn: number; items: { id: number; name: string; worn: boolean }[]; bonus: string[] } | null {
     const entry = this.items?.get(itemId);
     const set = this.itemSets?.get(entry?.set);
-    if (!set) return null;
+    if (!set) {
+      return null;
+    }
     const wornBase = new Set([...this.inventory.wear.values()].map(baseId));
     const items = set.items.map((id) => ({
       id,
@@ -860,26 +935,38 @@ export class GameState extends EventEmitter {
   /** Switches to a saved set; gear changes skill bonuses, so skills and jobs are refreshed too. */
   async switchEquipSet(id: number): Promise<void> {
     const set = this.equipSets?.sets.find((source) => source.id === id);
-    if (!set) return this.error('That equipment set is no longer available.');
+    if (!set) {
+      return this.error('That equipment set is no longer available.');
+    }
     const ok = await this.guard('Switch equipment', async () => {
       const resultValue = await new InventoryApi(this.client).switchEquip(id, this.inventory.lastInvId);
       this.inventory.applyChanges(resultValue.changes);
       this.inventory.setWearIds(resultValue.wear, this.items ?? undefined);
-      if (resultValue.speed !== undefined) this.character.speed = resultValue.speed;
+      if (resultValue.speed !== undefined) {
+        this.character.speed = resultValue.speed;
+      }
       this.info(`Equipped set: ${set.name}`);
       return true;
     });
-    if (ok) await this.afterGearChange();
+    if (ok) {
+      await this.afterGearChange();
+    }
   }
 
   async wear(itemId: number): Promise<void> {
     const type = this.items?.get(itemId)?.type;
     await this.guard('Wear', async () => {
       const resultValue = await new InventoryApi(this.client).carry(itemId, this.inventory.lastInvId);
-      if (resultValue.error) throw new Error(resultValue.error);
+      if (resultValue.error) {
+        throw new Error(resultValue.error);
+      }
       this.inventory.applyChanges(resultValue.changes);
-      if (type) this.inventory.wear.set(type, itemId);
-      if (resultValue.speed !== undefined) this.character.speed = resultValue.speed;
+      if (type) {
+        this.inventory.wear.set(type, itemId);
+      }
+      if (resultValue.speed !== undefined) {
+        this.character.speed = resultValue.speed;
+      }
       this.info(`Equipped ${this.itemName(itemId)}`);
     });
     await this.afterGearChange();
@@ -887,13 +974,19 @@ export class GameState extends EventEmitter {
 
   async unwear(slot: string): Promise<void> {
     const id = this.inventory.wear.get(slot);
-    if (id === undefined) return;
+    if (id === undefined) {
+      return;
+    }
     await this.guard('Take off', async () => {
       const resultValue = await new InventoryApi(this.client).uncarry(slot, this.inventory.lastInvId);
-      if (resultValue.error) throw new Error(resultValue.error);
+      if (resultValue.error) {
+        throw new Error(resultValue.error);
+      }
       this.inventory.applyChanges(resultValue.changes);
       this.inventory.wear.delete(slot);
-      if (resultValue.speed !== undefined) this.character.speed = resultValue.speed;
+      if (resultValue.speed !== undefined) {
+        this.character.speed = resultValue.speed;
+      }
       this.info(`Took off ${this.itemName(id)}`);
     });
     await this.afterGearChange();
@@ -920,7 +1013,9 @@ export class GameState extends EventEmitter {
       return true;
     });
     await this.refreshSkills();
-    if (ok) await this.loadJobs(true);
+    if (ok) {
+      await this.loadJobs(true);
+    }
     return !!ok;
   }
 
@@ -934,10 +1029,14 @@ export class GameState extends EventEmitter {
       );
       this.quests = resultValue.quests;
       this.questCapacity = resultValue.capacity;
-      for (const currentQuest of resultValue.quests)
-        if (currentQuest.finishable && !before.has(currentQuest.id) && quiet)
+      for (const currentQuest of resultValue.quests) {
+        if (currentQuest.finishable && !before.has(currentQuest.id) && quiet) {
           this.info(`Quest ready to finish: ${currentQuest.title}`);
-      if (!quiet) this.info(`Quest log: ${resultValue.quests.length}/${resultValue.capacity || '?'}`);
+        }
+      }
+      if (!quiet) {
+        this.info(`Quest log: ${resultValue.quests.length}/${resultValue.capacity || '?'}`);
+      }
     });
   }
 
@@ -961,23 +1060,28 @@ export class GameState extends EventEmitter {
       this.info(`Accepted: ${currentQuest.title}`);
     });
     await this.loadQuests(true);
-    if (this.employer)
+    if (this.employer) {
       await this.openEmployer(
         this.employer.key,
         this.employer.x !== null && this.employer.y !== null ? { x: this.employer.x, y: this.employer.y } : null,
       );
+    }
   }
 
   async finishQuest(currentQuest: Quest, rewardOption?: number): Promise<void> {
     await this.guard('Finish quest', async () => {
       const resultValue = await this.questApi.finish(currentQuest.id, rewardOption);
-      if (resultValue.health !== undefined) this.character.setHealth(resultValue.health);
+      if (resultValue.health !== undefined) {
+        this.character.setHealth(resultValue.health);
+      }
       this.info(
         `Finished: ${currentQuest.title}${resultValue.rewards.length ? ` → ${resultValue.rewards.join(', ')}` : ''}`,
       );
     });
     await this.loadQuests(true);
-    if (this.items) await this.refreshInventory();
+    if (this.items) {
+      await this.refreshInventory();
+    }
   }
 
   async cancelQuest(currentQuest: Quest): Promise<void> {
@@ -994,13 +1098,20 @@ export class GameState extends EventEmitter {
    */
   requirementSources(req: QuestRequirement): (JobOption & { chance: number | null })[] {
     const found: { id: number; chance: number | null }[] = [];
-    if (req.itemId !== undefined)
-      for (const yCoord of this.catalog.yielding(req.itemId)) found.push({ id: yCoord.job.id, chance: yCoord.chance });
-    if (req.jobId !== undefined) found.push({ id: req.jobId, chance: null });
+    if (req.itemId !== undefined) {
+      for (const yCoord of this.catalog.yielding(req.itemId)) {
+        found.push({ id: yCoord.job.id, chance: yCoord.chance });
+      }
+    }
+    if (req.jobId !== undefined) {
+      found.push({ id: req.jobId, chance: null });
+    }
     const from = this.queueEndPosition;
     return found.flatMap(({ id, chance }) => {
       const job = this.jobs.find((jobInfo) => jobInfo.id === id);
-      if (!job) return [];
+      if (!job) {
+        return [];
+      }
       const at = nearestLocation(this.locations.get(job.groupid), from);
       return [{ job, at, way: at ? wayTime(from, at, this.travelSpeed, this.character.speed) : null, chance }];
     });
@@ -1026,7 +1137,9 @@ export class GameState extends EventEmitter {
   // ---- walking & sleeping -------------------------------------------------------------------
 
   private queueFull(): boolean {
-    if (this.queue.length < this.taskLimit) return false;
+    if (this.queue.length < this.taskLimit) {
+      return false;
+    }
     this.error(
       `Task queue is full (${this.queue.length}/${this.taskLimit})${this.hasAutomation ? '' : '; automation premium raises the limit'}`,
     );
@@ -1035,8 +1148,12 @@ export class GameState extends EventEmitter {
 
   /** Which way to page the market: the neighbour, or "next" from page 1 to page 2. */
   private marketNav(page: number): 'first' | 'next' | 'prev' {
-    if (page > this.market.page) return 'next';
-    if (page < this.market.page) return 'prev';
+    if (page > this.market.page) {
+      return 'next';
+    }
+    if (page < this.market.page) {
+      return 'prev';
+    }
     return page > 1 ? 'next' : 'first';
   }
 
@@ -1046,18 +1163,28 @@ export class GameState extends EventEmitter {
       this.character.setEnergy(result.energy);
       return;
     }
-    if (!result.added.length) return;
+    if (!result.added.length) {
+      return;
+    }
     const spent = costs.slice(0, result.added.length).reduce((total, cost) => total + cost, 0);
     this.character.setEnergy(this.character.energy - spent);
   }
 
   private async addTask(label: string, post: Parameters<TaskApi['add']>[1][number], done: string): Promise<boolean> {
-    if (this.queueFull()) return false;
+    if (this.queueFull()) {
+      return false;
+    }
     const flag = await this.guard(label, async () => {
       const res = await this.tasks.add(this.queue.length, [post], this.taskLimit);
-      if (res.energy !== undefined) this.character.setEnergy(res.energy);
-      for (const textValue of res.errors) this.error(textValue);
-      if (!res.added.length) return false;
+      if (res.energy !== undefined) {
+        this.character.setEnergy(res.energy);
+      }
+      for (const textValue of res.errors) {
+        this.error(textValue);
+      }
+      if (!res.added.length) {
+        return false;
+      }
       this.queue.push(...res.added);
       this.info(done);
       return true;
@@ -1091,11 +1218,12 @@ export class GameState extends EventEmitter {
       `Sleeping in ${hotel.townName}: ${room.name}`,
     );
     const taskInfo = this.queue[this.queue.length - 1];
-    if (ok && taskInfo?.type === 'sleep')
+    if (ok && taskInfo?.type === 'sleep') {
       this.sleepRates.set(taskInfo.queueId, {
         energyRate: roomRate(room.energy) * this.calibration.roomScale,
         healthRate: roomRate(room.health),
       });
+    }
     return ok;
   }
 
@@ -1123,7 +1251,9 @@ export class GameState extends EventEmitter {
         `minimap-${new URL(this.client.worldUrl).host}`,
         async () => {
           const entry = await this.client.get('map', 'get_minimap');
-          if (entry.error) throw new Error(String(entry.msg ?? 'map/get_minimap failed'));
+          if (entry.error) {
+            throw new Error(String(entry.msg ?? 'map/get_minimap failed'));
+          }
           return entry;
         },
         { fresh: freshMap },
@@ -1131,7 +1261,9 @@ export class GameState extends EventEmitter {
       this.jobs = jobs.sort((first, second) => first.name.localeCompare(second.name));
       this.observeMotivation();
       this.world = WorldMap.fromMinimap(minimap);
-      if (!quiet) this.info(`Loaded ${jobs.length} jobs.`);
+      if (!quiet) {
+        this.info(`Loaded ${jobs.length} jobs.`);
+      }
     });
   }
 
@@ -1140,12 +1272,16 @@ export class GameState extends EventEmitter {
    * Refreshes the selected job only: the browser does the same when its job window opens.
    */
   async loadJobDetail(job: JobInfo, at: Position): Promise<void> {
-    if (this.jobDetailLoading.has(job.id)) return;
+    if (this.jobDetailLoading.has(job.id)) {
+      return;
+    }
     this.jobDetailLoading.add(job.id);
     try {
       const detail = parseJobDetail(await fetchJobDetail(this.client, job.id, at));
       const current = this.jobs.find((jobInfo) => jobInfo.id === job.id);
-      if (!current) return;
+      if (!current) {
+        return;
+      }
       let changed = false;
       if (detail.danger !== null && detail.danger !== current.danger) {
         current.danger = detail.danger;
@@ -1155,7 +1291,9 @@ export class GameState extends EventEmitter {
         current.motivation = detail.motivation;
         changed = true;
       }
-      if (changed) this.changed();
+      if (changed) {
+        this.changed();
+      }
     } catch (err) {
       this.error(`Job detail: ${errorMessage(err)}`);
     } finally {
@@ -1166,14 +1304,17 @@ export class GameState extends EventEmitter {
   /** Product names a job drops (static yields + per-duration drops), for search and display. */
   jobProducts(job: JobInfo): { itemId: number; name: string; percent: number | null }[] {
     const out = new Map<number, { itemId: number; name: string; percent: number | null }>();
-    for (const yCoord of job.values.long?.items ?? job.values.middle?.items ?? [])
+    for (const yCoord of job.values.long?.items ?? job.values.middle?.items ?? []) {
       out.set(baseId(yCoord.itemId), {
         itemId: yCoord.itemId,
         name: this.itemName(yCoord.itemId),
         percent: yCoord.percent,
       });
+    }
     for (const id of Object.keys(job.yields ?? {}).map(Number)) {
-      if (!out.has(baseId(id))) out.set(baseId(id), { itemId: id, name: this.itemName(id), percent: null });
+      if (!out.has(baseId(id))) {
+        out.set(baseId(id), { itemId: id, name: this.itemName(id), percent: null });
+      }
     }
     return [...out.values()];
   }
@@ -1201,8 +1342,12 @@ export class GameState extends EventEmitter {
         const at = nearestLocation(this.locations.get(job.groupid), from);
         return { job, at, way: at ? wayTime(from, at, this.travelSpeed, this.character.speed) : null };
       });
-    if (sort === 'name') return list;
-    if (sort === 'distance') return list.sort((first, second) => (first.way ?? Infinity) - (second.way ?? Infinity));
+    if (sort === 'name') {
+      return list;
+    }
+    if (sort === 'distance') {
+      return list.sort((first, second) => (first.way ?? Infinity) - (second.way ?? Infinity));
+    }
     return list.sort(
       (first, second) =>
         jobSortValue(second.job, sort) - jobSortValue(first.job, sort) || first.job.name.localeCompare(second.job.name),
@@ -1211,7 +1356,9 @@ export class GameState extends EventEmitter {
 
   async startJob(option: JobOption, duration: DurationKey): Promise<void> {
     const { job, at } = option;
-    if (this.queueFull()) return;
+    if (this.queueFull()) {
+      return;
+    }
     if (!at) {
       this.error(`No known location for ${job.name}`);
       return;
@@ -1219,8 +1366,12 @@ export class GameState extends EventEmitter {
     const seconds = job.values[duration]?.duration ?? job.durations[duration];
     await this.guard('Start job', async () => {
       const res = await this.tasks.add(this.queue.length, [jobPost(job.id, at, seconds)], this.taskLimit);
-      if (res.energy !== undefined) this.character.setEnergy(res.energy);
-      for (const textValue of res.errors) this.error(textValue);
+      if (res.energy !== undefined) {
+        this.character.setEnergy(res.energy);
+      }
+      for (const textValue of res.errors) {
+        this.error(textValue);
+      }
       if (res.added.length) {
         this.queue.push(...res.added);
         this.info(`Queued ${job.name} (${duration}) at ${at.x},${at.y}`);
@@ -1233,11 +1384,14 @@ export class GameState extends EventEmitter {
   /** Quests a route covers: one quest, its chain (accepted quests of the same chain) or the whole log. */
   routeQuests(scope: 'quest' | 'chain' | 'all', quest?: Quest): Quest[] {
     const open = this.quests.filter((currentQuest) => !currentQuest.finishable);
-    if (scope === 'all' || !quest) return open;
-    if (scope === 'chain')
+    if (scope === 'all' || !quest) {
+      return open;
+    }
+    if (scope === 'chain') {
       return open.filter((currentQuest) =>
         quest.groupId ? currentQuest.groupId === quest.groupId : currentQuest.group === quest.group,
       );
+    }
     return open.filter((currentQuest) => currentQuest.id === quest.id);
   }
 
@@ -1291,10 +1445,11 @@ export class GameState extends EventEmitter {
     if (opts.auto) {
       this.autoRoute = { label: opts.label ?? 'route', runs, total: runs.length, retryAt: 0 };
       const added = await this.autoRouteStep();
-      if (this.autoRoute)
+      if (this.autoRoute) {
         this.info(
           `Auto-route on: ${this.autoRoute.runs.length} more job(s) get queued as queue space and energy allow (R, then x stops).`,
         );
+      }
       return added;
     }
     if (free <= 0) {
@@ -1311,8 +1466,12 @@ export class GameState extends EventEmitter {
     }
     const value = await this.guard('Queue route', async () => {
       const res = await this.tasks.add(this.queue.length, posts, this.taskLimit);
-      if (res.energy !== undefined) this.character.setEnergy(res.energy);
-      for (const textValue of res.errors) this.error(textValue);
+      if (res.energy !== undefined) {
+        this.character.setEnergy(res.energy);
+      }
+      for (const textValue of res.errors) {
+        this.error(textValue);
+      }
       this.queue.push(...res.added);
       const left = plan.totals.runs - res.added.length;
       const why =
@@ -1326,7 +1485,9 @@ export class GameState extends EventEmitter {
   /** Adds the next auto-route runs that fit in the queue and the current energy; no request otherwise. */
   async autoRouteStep(): Promise<number> {
     const auto = this.autoRoute;
-    if (!auto || this.busy || Date.now() < auto.retryAt) return 0;
+    if (!auto || this.busy || Date.now() < auto.retryAt) {
+      return 0;
+    }
     if (!auto.runs.length) {
       this.autoRoute = null;
       this.info(`Auto-route done: all ${auto.total} job(s) queued.`);
@@ -1336,11 +1497,15 @@ export class GameState extends EventEmitter {
     let energy = this.character.energy;
     const batch: RouteRun[] = [];
     for (const run of auto.runs) {
-      if (batch.length >= free || run.energy > energy) break;
+      if (batch.length >= free || run.energy > energy) {
+        break;
+      }
       batch.push(run);
       energy -= run.energy;
     }
-    if (!batch.length) return 0;
+    if (!batch.length) {
+      return 0;
+    }
     const added = await this.guard('Auto-route', async () => {
       const res = await this.tasks.add(
         this.queue.length,
@@ -1354,15 +1519,21 @@ export class GameState extends EventEmitter {
       this.queue.push(...res.added);
       return res;
     });
-    if (this.autoRoute !== auto) return added?.added.length ?? 0; // stopped meanwhile
+    if (this.autoRoute !== auto) {
+      return added?.added.length ?? 0; // stopped meanwhile
+    }
     if (!added?.added.length) {
       // Refused (energy/queue out of sync, job gone, …): retry in a minute instead of hammering.
-      for (const textValue of added?.errors ?? []) this.error(`Auto-route: ${textValue}`);
+      for (const textValue of added?.errors ?? []) {
+        this.error(`Auto-route: ${textValue}`);
+      }
       auto.retryAt = Date.now() + 60_000;
       void this.refreshQueue();
       return 0;
     }
-    for (const errorText of added.errors) this.error(`Auto-route: ${errorText}`);
+    for (const errorText of added.errors) {
+      this.error(`Auto-route: ${errorText}`);
+    }
     auto.runs = auto.runs.slice(added.added.length);
     this.info(
       `Auto-route: queued ${added.added.map((taskInfo) => taskInfo.title).join(', ')} (${auto.runs.length} left).`,
@@ -1376,7 +1547,9 @@ export class GameState extends EventEmitter {
   }
 
   stopAutoRoute(): void {
-    if (!this.autoRoute) return;
+    if (!this.autoRoute) {
+      return;
+    }
     this.info(`Auto-route stopped (${this.autoRoute.runs.length} job(s) not queued).`);
     this.autoRoute = null;
     this.changed();
@@ -1450,7 +1623,7 @@ export class GameState extends EventEmitter {
     // Bag items this quest counts on, per item (a "have it" and a "wear it" requirement share one).
     const mine = new Map<number, number>();
     for (const requirement of currentQuest.requirements) {
-      if (requirement.itemId !== undefined && requirement.kind !== 'bought')
+      if (requirement.itemId !== undefined && requirement.kind !== 'bought') {
         mine.set(
           baseId(requirement.itemId),
           Math.max(
@@ -1458,15 +1631,19 @@ export class GameState extends EventEmitter {
             Math.min(have(requirement.itemId), requirement.count ?? 1),
           ),
         );
+      }
     }
     const needs = new Map<number, BuyNeed>();
     const want = (itemId: number, count: number, name: string) => {
       const prev = needs.get(baseId(itemId));
-      if (count > have(itemId) && (!prev || prev.count < count - have(itemId)))
+      if (count > have(itemId) && (!prev || prev.count < count - have(itemId))) {
         needs.set(baseId(itemId), { itemId, name, count: count - have(itemId) });
+      }
     };
     const result = this.purchaseOf(currentQuest, have, want, needs, cfg);
-    for (const [id, countValue] of mine) used.set(id, (used.get(id) ?? 0) + countValue);
+    for (const [id, countValue] of mine) {
+      used.set(id, (used.get(id) ?? 0) + countValue);
+    }
     return result;
   }
 
@@ -1490,29 +1667,43 @@ export class GameState extends EventEmitter {
       problem: null,
     });
     for (const requirement of currentQuest.requirements) {
-      if (requirement.solved || requirement.kind === 'window') continue;
+      if (requirement.solved || requirement.kind === 'window') {
+        continue;
+      }
       if (requirement.itemId !== undefined) {
-        if (have(requirement.itemId) >= (requirement.count ?? 1)) continue;
-        if (this.requirementSources(requirement).some((xCoord) => isDoable(xCoord.job) && xCoord.at)) continue;
-        if (!cfg.buy) return nothingToBuy(`${requirement.info}: no doable job drops it`);
+        if (have(requirement.itemId) >= (requirement.count ?? 1)) {
+          continue;
+        }
+        if (this.requirementSources(requirement).some((xCoord) => isDoable(xCoord.job) && xCoord.at)) {
+          continue;
+        }
+        if (!cfg.buy) {
+          return nothingToBuy(`${requirement.info}: no doable job drops it`);
+        }
         want(requirement.itemId, requirement.count ?? 1, this.itemName(requirement.itemId));
         continue;
       }
       if (requirement.kind === 'bought' && requirement.buy && cfg.buy) {
         const id = this.items?.findByName(requirement.buy);
-        if (id === undefined) return nothingToBuy(`${requirement.info}: unknown item`);
+        if (id === undefined) {
+          return nothingToBuy(`${requirement.info}: unknown item`);
+        }
         // Bought means bought: one in the bag does not count.
         needs.set(baseId(id), { itemId: id, name: requirement.buy, count: 1 });
         continue;
       }
       if (requirement.jobId !== undefined) {
         const job = this.jobs.find((jobInfo) => jobInfo.id === requirement.jobId);
-        if (job && isDoable(job)) continue;
+        if (job && isDoable(job)) {
+          continue;
+        }
         return nothingToBuy(`${requirement.info}: job not doable`);
       }
       return nothingToBuy(`${requirement.info}: the autopilot cannot do this`);
     }
-    if (!needs.size) return nothingToBuy(null);
+    if (!needs.size) {
+      return nothingToBuy(null);
+    }
     const list = [...needs.values()];
     const from = this.queueEndPosition;
     const towns = new Map(
@@ -1570,9 +1761,11 @@ export class GameState extends EventEmitter {
       const all = this.questPurchases(quests);
       for (const currentQuest of quests) {
         const purchase = all.get(currentQuest.id);
-        if (!purchase) continue;
+        if (!purchase) {
+          continue;
+        }
         for (const pick of purchase.picks) {
-          if (pick.source.kind === 'shop')
+          if (pick.source.kind === 'shop') {
             add(
               pick.source.townId,
               pick.source.townName,
@@ -1580,10 +1773,11 @@ export class GameState extends EventEmitter {
               pick.cost,
               `${pick.count > 1 ? `${pick.count}× ` : ''}${pick.name} (${where(pick.source).split(' in ')[0]}) for "${currentQuest.soloTitle || currentQuest.title}"`,
             );
+          }
         }
       }
     }
-    for (const pickInfo of this.autopilot.pickups)
+    for (const pickInfo of this.autopilot.pickups) {
       add(
         pickInfo.townId,
         pickInfo.townName,
@@ -1591,6 +1785,7 @@ export class GameState extends EventEmitter {
         0,
         `pick up ${pickInfo.count > 1 ? `${pickInfo.count}× ` : ''}${this.itemName(pickInfo.itemId)} (market) for "${pickInfo.quest}"`,
       );
+    }
     return [...trips.values()];
   }
 
@@ -1609,7 +1804,9 @@ export class GameState extends EventEmitter {
           accumulator + (currentValue.unit === 'seconds' ? currentValue.amount / 3600 : currentValue.amount),
         0,
       );
-      if (!mine.length || units <= 0) continue;
+      if (!mine.length || units <= 0) {
+        continue;
+      }
       const rewardTotal = (pattern: RegExp) =>
         currentQuest.rewards.reduce(
           (total, reward) =>
@@ -1644,14 +1841,17 @@ export class GameState extends EventEmitter {
    */
   queuedJob(taskInfo: QueuedTask): { job: JobInfo; duration: DurationKey; values: JobDurationValues } | null {
     const job = taskInfo.jobId === undefined ? undefined : this.jobs.find((jobInfo) => jobInfo.id === taskInfo.jobId);
-    if (!job) return null;
+    if (!job) {
+      return null;
+    }
     const secs = taskInfo.end - (taskInfo.way?.end ?? taskInfo.start);
     let found: { job: JobInfo; duration: DurationKey; values: JobDurationValues } | null = null;
     let best = Infinity;
     for (const entryKey of DURATION_KEYS) {
       const jobInfo = job.values[entryKey];
-      if (jobInfo && Math.abs(jobInfo.duration - secs) < best)
+      if (jobInfo && Math.abs(jobInfo.duration - secs) < best) {
         [found, best] = [{ job, duration: entryKey, values: jobInfo }, Math.abs(jobInfo.duration - secs)];
+      }
     }
     return found;
   }
@@ -1716,7 +1916,9 @@ export class GameState extends EventEmitter {
 
   /** Marks the route's jobs on the map. */
   highlightRoute(plan: RoutePlan, label: string): { x: number; y: number } | null {
-    if (!plan.stops.length) return null;
+    if (!plan.stops.length) {
+      return null;
+    }
     this.mapHighlight = { label, jobIds: new Set(plan.stops.map((source) => source.job.id)) };
     this.changed();
     return plan.stops[0]?.at ?? null;
@@ -1725,7 +1927,9 @@ export class GameState extends EventEmitter {
   /** Loads tile details (quest giver names, gold/silver jobs, crowds) around a map position. */
   async loadTilesAround(at: { x: number; y: number }): Promise<void> {
     try {
-      if (await this.tiles.loadAround(this.client, at)) this.changed();
+      if (await this.tiles.loadAround(this.client, at)) {
+        this.changed();
+      }
     } catch (err) {
       this.error(`Map tiles: ${errorMessage(err)}`);
     }
@@ -1738,12 +1942,20 @@ export class GameState extends EventEmitter {
 
   async cancel(position: number): Promise<void> {
     const task = this.queue[position];
-    if (!task) return;
+    if (!task) {
+      return;
+    }
     await this.guard('Cancel', async () => {
       const res = await this.tasks.cancel(this.queue, [position]);
-      if (res.energy !== undefined) this.character.setEnergy(res.energy);
-      if (res.money !== undefined) this.character.cash = res.money;
-      for (const textValue of res.errors) this.error(textValue);
+      if (res.energy !== undefined) {
+        this.character.setEnergy(res.energy);
+      }
+      if (res.money !== undefined) {
+        this.character.cash = res.money;
+      }
+      for (const textValue of res.errors) {
+        this.error(textValue);
+      }
       this.queue = res.queue;
       this.info(`Cancelled: ${task.title}`);
     });
@@ -1759,8 +1971,11 @@ export class GameState extends EventEmitter {
       return false;
     }
     try {
-      if (room.startsWith('tell:')) await live.whisper(room.slice(5), text);
-      else await live.say(room, text);
+      if (room.startsWith('tell:')) {
+        await live.whisper(room.slice(5), text);
+      } else {
+        await live.say(room, text);
+      }
       return true;
     } catch (err) {
       this.error(`Chat: ${errorMessage(err)}`);
@@ -1786,7 +2001,9 @@ export class GameState extends EventEmitter {
   async loadRecentReports(): Promise<void> {
     try {
       this.recentReports = (await this.mail.reports(1, 'all')).reports;
-      for (const report of this.recentReports) this.seenReports.add(report.id);
+      for (const report of this.recentReports) {
+        this.seenReports.add(report.id);
+      }
       this.changed();
     } catch (err) {
       this.error(`Reports: ${errorMessage(err)}`);
@@ -1808,7 +2025,9 @@ export class GameState extends EventEmitter {
       this.info(`Deleted report: ${row.title}`);
       return true;
     });
-    if (ok) await this.loadReports(this.reports?.page ?? 1);
+    if (ok) {
+      await this.loadReports(this.reports?.page ?? 1);
+    }
   }
 
   async loadTelegrams(page = 1): Promise<void> {
@@ -1822,7 +2041,9 @@ export class GameState extends EventEmitter {
     const foundValue = await this.guard('Telegram', async () => {
       const telegram = await this.mail.telegram(id, page);
       const row = this.telegrams?.telegrams.find((xCoord) => xCoord.id === id);
-      if (row) row.unread = false;
+      if (row) {
+        row.unread = false;
+      }
       return telegram;
     });
     return foundValue ?? null;
@@ -1843,7 +2064,9 @@ export class GameState extends EventEmitter {
       this.info(`Your telegram to ${to} was sent!`);
       return true;
     });
-    if (ok) await this.loadTelegrams(1);
+    if (ok) {
+      await this.loadTelegrams(1);
+    }
     return !!ok;
   }
 
@@ -1852,7 +2075,9 @@ export class GameState extends EventEmitter {
       await this.mail.deleteTelegram(id);
       return true;
     });
-    if (ok) await this.loadTelegrams(this.telegrams?.page ?? 1);
+    if (ok) {
+      await this.loadTelegrams(this.telegrams?.page ?? 1);
+    }
   }
 
   // ---- town: bank, shops, market, item use ---------------------------------------------------
@@ -1870,9 +2095,13 @@ export class GameState extends EventEmitter {
   /** Where the trade screen shops: the town you stand in, else your home town. */
   get tradeTown(): { id: number; name: string; here: boolean } | null {
     const here = this.townHere;
-    if (here) return { id: here.id, name: here.name ?? `town ${here.id}`, here: true };
+    if (here) {
+      return { id: here.id, name: here.name ?? `town ${here.id}`, here: true };
+    }
     const home = this.character.homeTown;
-    if (!home) return null;
+    if (!home) {
+      return null;
+    }
     const foundValue = this.world.towns.find((townInfo) => townInfo.id === home.id);
     return { id: home.id, name: foundValue?.name ?? `town ${home.id}`, here: false };
   }
@@ -1890,7 +2119,9 @@ export class GameState extends EventEmitter {
   /** City hall of the home town (construction rights live there). */
   async loadTownHall(): Promise<void> {
     const home = this.character.homeTown;
-    if (!home) return this.error('You are not a member of a town.');
+    if (!home) {
+      return this.error('You are not a member of a town.');
+    }
     await this.guard('Town hall', async () => {
       this.townHall = await fetchTownHall(this.client, home.id);
     });
@@ -1912,7 +2143,9 @@ export class GameState extends EventEmitter {
   /** Queues TaskBuild; the server walks to the town first when needed. */
   async queueConstruction(duration: number, pay: 'town' | 'player'): Promise<boolean> {
     const candidate = this.construction;
-    if (!candidate) return false;
+    if (!candidate) {
+      return false;
+    }
     if (!candidate.durations.some((dataValue) => dataValue.seconds === duration)) {
       this.error('That construction duration is not available.');
       return false;
@@ -1926,9 +2159,15 @@ export class GameState extends EventEmitter {
 
   async depositMoney(amount: number): Promise<void> {
     const bank = this.bank;
-    if (!bank) return;
-    if (!(amount > 0)) return this.error('Enter an amount to deposit.');
-    if (amount > this.character.cash) return this.error(`You only have ${this.character.cash} in cash.`);
+    if (!bank) {
+      return;
+    }
+    if (!(amount > 0)) {
+      return this.error('Enter an amount to deposit.');
+    }
+    if (amount > this.character.cash) {
+      return this.error(`You only have ${this.character.cash} in cash.`);
+    }
     await this.guard('Deposit', async () => {
       const resultValue = await deposit(this.client, bank.townId, amount);
       this.character.cash = resultValue.cash;
@@ -1961,7 +2200,9 @@ export class GameState extends EventEmitter {
       );
       return true;
     });
-    if (!ok) return;
+    if (!ok) {
+      return;
+    }
     await this.refreshInventory();
     await this.openMobileTrader();
   }
@@ -1972,13 +2213,19 @@ export class GameState extends EventEmitter {
   }
 
   private applyMoney(resultValue: { cash?: number | undefined; deposit?: number | undefined }): void {
-    if (typeof resultValue.cash === 'number') this.character.cash = resultValue.cash;
-    if (typeof resultValue.deposit === 'number') this.character.deposit = resultValue.deposit;
+    if (typeof resultValue.cash === 'number') {
+      this.character.cash = resultValue.cash;
+    }
+    if (typeof resultValue.deposit === 'number') {
+      this.character.deposit = resultValue.deposit;
+    }
   }
 
   async buyFromShop(itemId: number): Promise<void> {
     const shop = this.shop;
-    if (!shop) return;
+    if (!shop) {
+      return;
+    }
     await this.guard('Buy', async () => {
       const resultValue = await shopBuy(this.client, shop.key, shop.townId, itemId, this.inventory.lastInvId);
       this.inventory.applyChanges(resultValue.changes);
@@ -1990,8 +2237,12 @@ export class GameState extends EventEmitter {
   async sellToShop(itemId: number, count = 1): Promise<void> {
     const shop = this.shop;
     const item = this.inventory.bag.get(itemId);
-    if (!shop || !item) return;
-    if (this.items?.get(itemId)?.sellable === false) return this.error(`${this.itemName(itemId)} cannot be sold.`);
+    if (!shop || !item) {
+      return;
+    }
+    if (this.items?.get(itemId)?.sellable === false) {
+      return this.error(`${this.itemName(itemId)} cannot be sold.`);
+    }
     await this.guard('Sell', async () => {
       const resultValue = await shopSell(
         this.client,
@@ -2009,19 +2260,27 @@ export class GameState extends EventEmitter {
 
   async useItem(itemId: number, count = 1): Promise<void> {
     const entry = this.items?.get(itemId);
-    if (entry && entry.usetype === 'none') return this.error(`${entry.name} cannot be used.`);
+    if (entry && entry.usetype === 'none') {
+      return this.error(`${entry.name} cannot be used.`);
+    }
     await this.guard('Use item', async () => {
       const resultValue = await useItem(this.client, itemId, count, this.inventory.lastInvId, (id) =>
         this.itemName(id),
       );
       this.inventory.applyChanges(resultValue.changes);
-      if (resultValue.energy !== undefined) this.character.setEnergy(resultValue.energy);
-      if (resultValue.health !== undefined) this.character.setHealth(resultValue.health);
+      if (resultValue.energy !== undefined) {
+        this.character.setEnergy(resultValue.energy);
+      }
+      if (resultValue.health !== undefined) {
+        this.character.setHealth(resultValue.health);
+      }
       this.info(
         `Used ${this.itemName(itemId)}${resultValue.effects.length ? `: ${resultValue.effects.join(' ')}` : ''}`,
       );
     });
-    if (entry?.usetype === 'buff' || entry?.usebonus?.length) await this.refreshSkills();
+    if (entry?.usetype === 'buff' || entry?.usebonus?.length) {
+      await this.refreshSkills();
+    }
   }
 
   private get marketApi(): MarketApi {
@@ -2041,8 +2300,9 @@ export class GameState extends EventEmitter {
         filter: { ...filter },
         searched: true,
       };
-      if (!resultValue.offers.length)
+      if (!resultValue.offers.length) {
         this.info(`No ${filter.buyOrders ? 'buy orders' : 'market offers'}${query ? ` for "${query}"` : ''}.`);
+      }
     });
   }
 
@@ -2063,8 +2323,12 @@ export class GameState extends EventEmitter {
    * Goods for sale: ≥ the buy-now price buys at once; cash first unless fromBank.
    */
   async bidMarket(offer: MarketOffer, amount: number, fromBank = false): Promise<void> {
-    if (offer.sellerId && offer.sellerId === this.character.playerId) return this.error('That is your own offer.');
-    if (!(amount > 0)) return this.error('Enter an amount.');
+    if (offer.sellerId && offer.sellerId === this.character.playerId) {
+      return this.error('That is your own offer.');
+    }
+    if (!(amount > 0)) {
+      return this.error('Enter an amount.');
+    }
     const selling = offer.direction === 'BUY';
     if (selling && this.inventory.count(offer.itemId) < offer.count) {
       return this.error(
@@ -2072,11 +2336,15 @@ export class GameState extends EventEmitter {
       );
     }
     // Like the web's bid dialog: going past the instant price only ever gets the instant price.
-    if (offer.buyNow !== null && (selling ? amount < offer.buyNow : amount > offer.buyNow)) amount = offer.buyNow;
+    if (offer.buyNow !== null && (selling ? amount < offer.buyNow : amount > offer.buyNow)) {
+      amount = offer.buyNow;
+    }
     await this.guard('Bid', async () => {
       const resultValue = await this.marketApi.bid(offer, amount, fromBank);
       this.applyMoney(resultValue);
-      if (resultValue.changes.length) this.inventory.applyChanges(resultValue.changes);
+      if (resultValue.changes.length) {
+        this.inventory.applyChanges(resultValue.changes);
+      }
       const name = this.itemName(offer.itemId);
       this.info(
         resultValue.instant
@@ -2086,7 +2354,9 @@ export class GameState extends EventEmitter {
           : `You have posted your bid of $ ${amount}.`,
       );
     });
-    if (selling && this.items) await this.refreshInventory();
+    if (selling && this.items) {
+      await this.refreshInventory();
+    }
     await this.searchMarket(this.market.query, this.market.page);
   }
 
@@ -2097,35 +2367,47 @@ export class GameState extends EventEmitter {
 
   /** Picks up a finished offer's goods/money; you must stand in the market town. */
   async pickUpMarket(offer: MarketOffer): Promise<void> {
-    if (!this.atTown(offer.town)) return this.error(`Go to ${offer.town.name} to pick this up (w walks there).`);
+    if (!this.atTown(offer.town)) {
+      return this.error(`Go to ${offer.town.name} to pick this up (w walks there).`);
+    }
     await this.guard('Pick up', async () => {
       const resultValue = await this.marketApi.fetch(offer.id);
       this.applyMoney(resultValue);
       this.info('You have accepted the market delivery.');
     });
     await this.loadMarketMine();
-    if (this.items) await this.refreshInventory();
+    if (this.items) {
+      await this.refreshInventory();
+    }
   }
 
   /** Picks up everything finished at the market of the town you stand in. */
   async pickUpAllMarket(): Promise<void> {
     const town = this.townHere;
-    if (!town) return this.error('Stand in a town to pick up its market deliveries.');
+    if (!town) {
+      return this.error('Stand in a town to pick up its market deliveries.');
+    }
     await this.guard('Pick up', async () => {
       const resultValue = await this.marketApi.fetchAll(town.id);
       this.applyMoney(resultValue);
       this.info(`You have accepted the market deliveries at ${town.name ?? 'this town'}.`);
     });
     await this.loadMarketMine();
-    if (this.items) await this.refreshInventory();
+    if (this.items) {
+      await this.refreshInventory();
+    }
   }
 
   /** Withdraws one of your running sell offers or buy orders (in the market town, as the web asks for). */
   async withdrawMarket(offer: MarketOffer): Promise<void> {
-    if (!this.atTown(offer.town)) return this.error(`Go to ${offer.town.name} to withdraw this (w walks there).`);
+    if (!this.atTown(offer.town)) {
+      return this.error(`Go to ${offer.town.name} to withdraw this (w walks there).`);
+    }
     await this.guard('Withdraw', async () => {
       const resultValue = await this.marketApi.withdraw(offer);
-      if (resultValue.refund) this.character.cash += resultValue.refund;
+      if (resultValue.refund) {
+        this.character.cash += resultValue.refund;
+      }
       this.info(
         resultValue.refund
           ? `The offer was withdrawn; $ ${resultValue.refund} of fees were refunded to you.`
@@ -2133,13 +2415,17 @@ export class GameState extends EventEmitter {
       );
     });
     await this.loadMarketMine();
-    if (this.items) await this.refreshInventory();
+    if (this.items) {
+      await this.refreshInventory();
+    }
   }
 
   /** Auctionable items whose name matches `query` (exact name first), for placing a buy order. */
   findAuctionable(query: string): { id: number; name: string }[] {
     const textValue = query.trim().toLowerCase();
-    if (!textValue || !this.items) return [];
+    if (!textValue || !this.items) {
+      return [];
+    }
     const all = this.items
       .all()
       .filter((itemInfo) => itemInfo.auctionable && itemInfo.name.toLowerCase().includes(textValue));
@@ -2174,7 +2460,9 @@ export class GameState extends EventEmitter {
       return false;
     }
     const item = found[0];
-    if (!item) return false;
+    if (!item) {
+      return false;
+    }
     const problem = buyOrderProblem(options, this.items?.get(item.id)?.sell ?? 0);
     if (problem) {
       this.error(problem);
@@ -2188,7 +2476,9 @@ export class GameState extends EventEmitter {
       );
       return true;
     });
-    if (ok) await this.loadMarketMine();
+    if (ok) {
+      await this.loadMarketMine();
+    }
     return !!ok;
   }
 
@@ -2210,7 +2500,9 @@ export class GameState extends EventEmitter {
       this.info(`The goods are offered for sale; the fee is $ ${resultValue.fee}`);
       return true;
     });
-    if (ok && this.items) await this.refreshInventory();
+    if (ok && this.items) {
+      await this.refreshInventory();
+    }
     return !!ok;
   }
 
@@ -2256,16 +2548,28 @@ export class GameState extends EventEmitter {
       this.lastNpcDuel = resultValue;
       this.duels = resultValue.data;
       const character = this.character;
-      if (resultValue.energy !== undefined) character.setEnergy(Math.floor(resultValue.energy));
-      if (resultValue.health !== undefined) character.setHealth(Math.floor(resultValue.health));
-      if (resultValue.money !== undefined) character.cash = resultValue.money;
-      if (resultValue.experience !== undefined) character.experience = resultValue.experience;
-      if (resultValue.level !== undefined) character.level = resultValue.level;
+      if (resultValue.energy !== undefined) {
+        character.setEnergy(Math.floor(resultValue.energy));
+      }
+      if (resultValue.health !== undefined) {
+        character.setHealth(Math.floor(resultValue.health));
+      }
+      if (resultValue.money !== undefined) {
+        character.cash = resultValue.money;
+      }
+      if (resultValue.experience !== undefined) {
+        character.experience = resultValue.experience;
+      }
+      if (resultValue.level !== undefined) {
+        character.level = resultValue.level;
+      }
       this.info(
         `NPC duel: ${resultValue.result || 'done'}${resultValue.died ? ' (you passed out and wake up in your home town)' : ''}`,
       );
     });
-    if (this.lastNpcDuel?.died) await this.reload();
+    if (this.lastNpcDuel?.died) {
+      await this.reload();
+    }
   }
 
   /** Queues a duel against a player (TaskDuel). */

@@ -32,13 +32,19 @@ export function TownScreen({ state, width, height, onCapture, onExit, active = t
 
   const openConstruction = (buildingB: TownBuilding) => {
     void state.openConstruction(buildingB).then((candidate) => {
-      if (!candidate) return;
+      if (!candidate) {
+        return;
+      }
       const labels = candidate.durations.map(durationLabel);
-      if (!labels.length) return state.error(`${candidate.name} has no construction durations.`);
+      if (!labels.length) {
+        return state.error(`${candidate.name} has no construction durations.`);
+      }
       const defaultDuration =
         candidate.durations.find((duration) => duration.seconds === candidate.defaultDuration) ??
         candidate.durations[0];
-      if (!defaultDuration) return;
+      if (!defaultDuration) {
+        return;
+      }
       const defaultLabel = durationLabel(defaultDuration);
       setForm(
         makeForm(
@@ -66,22 +72,41 @@ export function TownScreen({ state, width, height, onCapture, onExit, active = t
     (input, key) => {
       if (form && construction) {
         const otherForm = formKey(form, input, key);
-        if (otherForm === 'cancel') return setForm(null);
-        if (otherForm !== 'submit') return setForm(otherForm);
+        if (otherForm === 'cancel') {
+          return setForm(null);
+        }
+        if (otherForm !== 'submit') {
+          return setForm(otherForm);
+        }
         const values = formValues(form);
         const duration = durationFor(construction.durations, values.duration ?? '') ?? construction.durations[0];
         setForm(null);
-        if (duration)
+        if (duration) {
           void state.queueConstruction(duration.seconds, values.paid === 'Private treasury' ? 'player' : 'town');
+        }
         return;
       }
-      if (key.escape) return onExit();
-      if (key.upArrow || input === 'k') return setSel(Math.max(0, idx - 1));
-      if (key.downArrow || input === 'j') return setSel(Math.min(buildings.length - 1, idx + 1));
-      if (key.pageUp) return setSel(Math.max(0, idx - 10));
-      if (key.pageDown) return setSel(Math.min(buildings.length - 1, idx + 10));
-      if (key.return && building) return openConstruction(building);
-      if (input === 'u') void state.loadTownHall();
+      if (key.escape) {
+        return onExit();
+      }
+      if (key.upArrow || input === 'k') {
+        return setSel(Math.max(0, idx - 1));
+      }
+      if (key.downArrow || input === 'j') {
+        return setSel(Math.min(buildings.length - 1, idx + 1));
+      }
+      if (key.pageUp) {
+        return setSel(Math.max(0, idx - 10));
+      }
+      if (key.pageDown) {
+        return setSel(Math.min(buildings.length - 1, idx + 10));
+      }
+      if (key.return && building) {
+        return openConstruction(building);
+      }
+      if (input === 'u') {
+        void state.loadTownHall();
+      }
     },
     { isActive: active },
   );

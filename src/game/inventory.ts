@@ -65,12 +65,17 @@ export class Inventory {
   static fromInit(bagInit: JsonObject | null | undefined, catalog?: ItemCatalog): Inventory {
     const inv = new Inventory();
     for (const list of vals(bagInit?.bag)) {
-      for (const jsonValue of objs(list)) inv.put(toBagItem(jsonValue));
+      for (const jsonValue of objs(list)) {
+        inv.put(toBagItem(jsonValue));
+      }
     }
     for (const id of arr(bagInit?.wear).map(Number)) {
       const type = catalog?.get(id)?.type;
-      if (type) inv.wear.set(type, Number(id));
-      else inv.wear.set(`#${id}`, Number(id)); // type unknown until items load; fixed by retype()
+      if (type) {
+        inv.wear.set(type, Number(id));
+      } else {
+        inv.wear.set(`#${id}`, Number(id)); // type unknown until items load; fixed by retype()
+      }
     }
     return inv;
   }
@@ -78,7 +83,9 @@ export class Inventory {
   /** Puts worn items under their slot once the item catalog is available. */
   retype(catalog: ItemCatalog): void {
     for (const [slot, id] of [...this.wear]) {
-      if (!slot.startsWith('#')) continue;
+      if (!slot.startsWith('#')) {
+        continue;
+      }
       const type = catalog.get(id)?.type;
       if (type) {
         this.wear.delete(slot);
@@ -89,30 +96,43 @@ export class Inventory {
 
   private put(item: BagItem): void {
     this.bag.set(item.itemId, item);
-    if (item.invId > this.lastInvId) this.lastInvId = item.invId;
+    if (item.invId > this.lastInvId) {
+      this.lastInvId = item.invId;
+    }
   }
 
   applyChanges(changes: unknown): void {
     for (const jsonValue of objs(changes)) {
       const candidate = toBagItem(jsonValue);
-      if (candidate.count <= 0) this.bag.delete(candidate.itemId);
-      else
+      if (candidate.count <= 0) {
+        this.bag.delete(candidate.itemId);
+      } else {
         this.put({
           ...this.bag.get(candidate.itemId),
           ...candidate,
           type: candidate.type || this.bag.get(candidate.itemId)?.type || '',
         });
-      if (candidate.invId > this.lastInvId) this.lastInvId = candidate.invId;
+      }
+      if (candidate.invId > this.lastInvId) {
+        this.lastInvId = candidate.invId;
+      }
     }
   }
 
   applyWear(wear: unknown): void {
-    if (!wear || typeof wear !== 'object') return;
+    if (!wear || typeof wear !== 'object') {
+      return;
+    }
     for (const slot of WEAR_SLOTS) {
-      if (!(slot in wear)) continue;
+      if (!(slot in wear)) {
+        continue;
+      }
       const id = (wear as Record<string, unknown>)[slot];
-      if (id === null || id === undefined || id === 0) this.wear.delete(slot);
-      else this.wear.set(slot, Number(id));
+      if (id === null || id === undefined || id === 0) {
+        this.wear.delete(slot);
+      } else {
+        this.wear.set(slot, Number(id));
+      }
     }
   }
 
@@ -121,11 +141,15 @@ export class Inventory {
     this.wear.clear();
     for (const raw of ids) {
       const id = Number(raw);
-      if (!id) continue;
+      if (!id) {
+        continue;
+      }
       const type = catalog?.get(id)?.type;
       this.wear.set(type ?? `#${id}`, id);
     }
-    if (catalog) this.retype(catalog);
+    if (catalog) {
+      this.retype(catalog);
+    }
   }
 
   items(): BagItem[] {
@@ -137,14 +161,22 @@ export class Inventory {
   }
 
   isWorn(itemId: number): boolean {
-    for (const id of this.wear.values()) if (id === itemId) return true;
+    for (const id of this.wear.values()) {
+      if (id === itemId) {
+        return true;
+      }
+    }
     return false;
   }
 
   /** Count of an item by base id across upgrade levels (quest requirements use base·1000). */
   countBase(itemId: number): number {
     let countValue = 0;
-    for (const it of this.bag.values()) if (baseId(it.itemId) === baseId(itemId)) countValue += it.count;
+    for (const it of this.bag.values()) {
+      if (baseId(it.itemId) === baseId(itemId)) {
+        countValue += it.count;
+      }
+    }
     return countValue;
   }
 }
@@ -181,7 +213,9 @@ export class InventoryApi {
   /** Saved equipment sets (EquipManager.showPopup). */
   async equipSets(): Promise<EquipSets> {
     const json = await this.client.remoteCallMode('inventory', 'show_equip', {});
-    if (json.error) throw new Error(String(json.msg ?? json.error));
+    if (json.error) {
+      throw new Error(String(json.msg ?? json.error));
+    }
     const sets: EquipSet[] = objs(json.data).map((jsonValue) => {
       const slots: Record<string, number | null> = {};
       for (const slot of WEAR_SLOTS) {
@@ -202,7 +236,9 @@ export class InventoryApi {
   /** Switches to a saved set (EquipManager.switchEquip). */
   async switchEquip(id: number, lastInvId: number): Promise<SwitchEquipResult> {
     const json = await this.client.remoteCall('inventory', 'switch_equip', { id, last_inv_id: lastInvId });
-    if (json.error) throw new Error(String(json.msg ?? json.error));
+    if (json.error) {
+      throw new Error(String(json.msg ?? json.error));
+    }
     const result = this.cloth(json);
     return {
       ...result,

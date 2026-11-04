@@ -9,7 +9,9 @@ export class ServerClock {
   driftMs = 0;
 
   constructor(sincepochSec?: number) {
-    if (sincepochSec) this.driftMs = Date.now() - sincepochSec * 1000;
+    if (sincepochSec) {
+      this.driftMs = Date.now() - sincepochSec * 1000;
+    }
   }
 
   /** Server time in ms. */
@@ -38,7 +40,9 @@ export class ServerClock {
       client.policy,
     );
     const serverMs = Number((await res.text()).trim());
-    if (!Number.isFinite(serverMs)) return;
+    if (!Number.isFinite(serverMs)) {
+      return;
+    }
     const rtt = Date.now() - start;
     this.driftMs = Date.now() - serverMs - rtt + 1000;
   }

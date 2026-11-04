@@ -63,7 +63,9 @@ export interface Quest {
  */
 export function questEnds(limited: string): number | null {
   const matchValue = limited.match(/until(?: the)? (\d{1,2})\.(\d{1,2})\.(\d{4})(?: at (\d{1,2}):(\d{2}))?/i);
-  if (!matchValue) return null;
+  if (!matchValue) {
+    return null;
+  }
   return (
     Date.UTC(
       Number(matchValue[3]),
@@ -203,7 +205,9 @@ function parseRequirement(jsonValue: JsonObject): QuestRequirement {
       req.jobId = Number(js.id);
       req.kind = 'job';
     }
-    if (js.count !== undefined) req.count = Number(js.count);
+    if (js.count !== undefined) {
+      req.count = Number(js.count);
+    }
   }
   const bought = req.kind === 'other' ? req.info.match(/^Item '(.+)' bought$/i)?.[1] : undefined;
   if (bought) {
@@ -269,7 +273,9 @@ export function groupByChain(quests: Quest[]): QuestChain[] {
       chains.set(key, entry);
     }
     entry.quests.push(quest);
-    if (quest.finishable) entry.finishable++;
+    if (quest.finishable) {
+      entry.finishable++;
+    }
   }
   return [...chains.values()].sort((first, second) =>
     first.title.localeCompare(second.title, 'en', { sensitivity: 'base' }),
@@ -287,7 +293,9 @@ export class QuestApi {
 
   async openQuests(): Promise<{ quests: Quest[]; capacity: number }> {
     const json = await this.client.remoteCallMode('building_quest', 'get_open_quests');
-    if (json.error) throw new Error(plainText(json.msg) || 'Quest log failed');
+    if (json.error) {
+      throw new Error(plainText(json.msg) || 'Quest log failed');
+    }
     return {
       quests: objs(json.quests).map((jsonValue) => parseQuest(jsonValue, this.itemName)),
       capacity: Number(json.capacity) || 0,
@@ -297,7 +305,9 @@ export class QuestApi {
   /** Quest givers in the saloon (no map position). */
   async saloon(): Promise<{ key: string; name: string }[]> {
     const json = await this.client.remoteCallMode('building_quest', '');
-    if (json.error) throw new Error(plainText(json.msg) || 'Saloon failed');
+    if (json.error) {
+      throw new Error(plainText(json.msg) || 'Saloon failed');
+    }
     return objs(json.questEmployer)
       .filter((jsonValue) => jsonValue.key && jsonValue.key !== 'wallpaper_telekom')
       .map((jsonValue) => ({ key: String(jsonValue.key), name: plainText(jsonValue.name) }));
@@ -305,8 +315,9 @@ export class QuestApi {
 
   async employer(key: string, at?: { x: number; y: number } | null): Promise<QuestEmployer> {
     const json = await this.client.remoteCall('quest_employer', '', { employer: key, x: at?.x, y: at?.y });
-    if (json.error)
+    if (json.error) {
       throw new Error(typeof json.error === 'string' ? json.error : plainText(json.msg) || 'Quest giver failed');
+    }
     const jsonValue = obj(json.employer);
     return {
       key: String(jsonValue.key ?? key),
@@ -319,7 +330,9 @@ export class QuestApi {
 
   async accept(questId: number): Promise<{ finishable: boolean }> {
     const json = await this.client.remoteCall('quest', 'accept_quest', { quest_id: questId });
-    if (json.error) throw new Error(plainText(json.msg) || 'Could not accept the quest');
+    if (json.error) {
+      throw new Error(plainText(json.msg) || 'Could not accept the quest');
+    }
     return { finishable: !!json.finishable };
   }
 
@@ -331,11 +344,15 @@ export class QuestApi {
       quest_id: questId,
       reward_option_id: rewardOption,
     });
-    if (json.error) throw new Error(plainText(json.msg) || 'Could not finish the quest');
+    if (json.error) {
+      throw new Error(plainText(json.msg) || 'Could not finish the quest');
+    }
     const rewards: string[] = [];
     for (const result of vals(json.allRewards)) {
       const textValue = rewardText(obj(result), this.itemName).text;
-      if (textValue) rewards.push(textValue);
+      if (textValue) {
+        rewards.push(textValue);
+      }
     }
     return {
       msg: plainText(json.msg ?? ''),
@@ -346,6 +363,8 @@ export class QuestApi {
 
   async cancel(questId: number): Promise<void> {
     const json = await this.client.remoteCall('quest', 'cancel_quest', { quest_id: questId });
-    if (json.error) throw new Error(plainText(json.msg) || 'Could not cancel the quest');
+    if (json.error) {
+      throw new Error(plainText(json.msg) || 'Could not cancel the quest');
+    }
   }
 }

@@ -17,19 +17,31 @@ export function formatDuration(totalSeconds: number): string {
 
 /** "15s", "45m", "2h10", "3d4h" */
 export function shortDuration(seconds: number): string {
-  if (seconds < SHORTEST_SECOND) return `${Math.max(1, Math.round(seconds))}s`;
+  if (seconds < SHORTEST_SECOND) {
+    return `${Math.max(1, Math.round(seconds))}s`;
+  }
   const minutes = Math.round(seconds / SECONDS_PER_MINUTE);
-  if (minutes < SECONDS_PER_MINUTE) return `${minutes}m`;
+  if (minutes < SECONDS_PER_MINUTE) {
+    return `${minutes}m`;
+  }
   const hours = Math.floor(minutes / SECONDS_PER_MINUTE);
-  if (hours < 24) return `${hours}h${minutes % SECONDS_PER_MINUTE ? twoDigits(minutes % SECONDS_PER_MINUTE) : ''}`;
+  if (hours < 24) {
+    return `${hours}h${minutes % SECONDS_PER_MINUTE ? twoDigits(minutes % SECONDS_PER_MINUTE) : ''}`;
+  }
   return `${Math.floor(hours / 24)}d${hours % 24 ? `${hours % 24}h` : ''}`;
 }
 
 /** Coarse "2d" / "3h" / "45m" for deadlines and offers; never "0m". */
 export function coarseDuration(seconds: number): string {
-  if (seconds <= 0) return 'ended';
-  if (seconds >= SECONDS_PER_DAY) return `${Math.floor(seconds / SECONDS_PER_DAY)}d`;
-  if (seconds >= SECONDS_PER_HOUR) return `${Math.floor(seconds / SECONDS_PER_HOUR)}h`;
+  if (seconds <= 0) {
+    return 'ended';
+  }
+  if (seconds >= SECONDS_PER_DAY) {
+    return `${Math.floor(seconds / SECONDS_PER_DAY)}d`;
+  }
+  if (seconds >= SECONDS_PER_HOUR) {
+    return `${Math.floor(seconds / SECONDS_PER_HOUR)}h`;
+  }
   return `${Math.max(1, Math.floor(seconds / SECONDS_PER_MINUTE))}m`;
 }
 
@@ -44,13 +56,17 @@ export function money(amount: number): string {
 }
 
 export function truncate(text: string, width: number): string {
-  if (width <= 0) return '';
+  if (width <= 0) {
+    return '';
+  }
   return text.length <= width ? text.padEnd(width) : `${text.slice(0, Math.max(0, width - 1))}…`;
 }
 
 /** Keeps the selected row visible inside a window of `height` rows. */
 export function scrollWindow(selected: number, total: number, height: number): [start: number, end: number] {
-  if (total <= height) return [0, total];
+  if (total <= height) {
+    return [0, total];
+  }
   const start = Math.min(Math.max(0, selected - Math.floor(height / 2)), total - height);
   return [start, start + height];
 }
@@ -59,7 +75,9 @@ export function scrollWindow(selected: number, total: number, height: number): [
 export function formatClock(epochSeconds: number, nowSeconds = Date.now() / 1000): string {
   const date = new Date(epochSeconds * 1000);
   const clock = `${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
-  if (date.toDateString() === new Date(nowSeconds * 1000).toDateString()) return clock;
+  if (date.toDateString() === new Date(nowSeconds * 1000).toDateString()) {
+    return clock;
+  }
   return `${date.toLocaleDateString('en-US', { weekday: 'short' })} ${clock}`;
 }
 

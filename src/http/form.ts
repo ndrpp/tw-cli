@@ -15,7 +15,9 @@ function build(prefix: string, value: FormValue, out: string[]): void {
       build(`${prefix}[${isComplex ? index : ''}]`, currentValue, out);
     });
   } else if (value !== null && typeof value === 'object') {
-    for (const key of Object.keys(value)) build(`${prefix}[${key}]`, value[key], out);
+    for (const key of Object.keys(value)) {
+      build(`${prefix}[${key}]`, value[key], out);
+    }
   } else {
     out.push(`${enc(prefix)}=${enc(value == null ? '' : String(value))}`);
   }
@@ -23,6 +25,8 @@ function build(prefix: string, value: FormValue, out: string[]): void {
 
 export function jqueryParam(data: Record<string, FormValue>): string {
   const out: string[] = [];
-  for (const key of Object.keys(data)) build(key, data[key], out);
+  for (const key of Object.keys(data)) {
+    build(key, data[key], out);
+  }
   return out.join('&');
 }

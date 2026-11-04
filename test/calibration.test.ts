@@ -7,7 +7,9 @@ import { questEnds } from '../src/game/quests.ts';
 test("calibration: drops blend reports with the game's number; HP, rooms and motivation from samples", () => {
   const candidate = new Calibration(null);
   assert.equal(candidate.dropRate(4, 'long', 704000, 0.4), 0.4, "no reports: the game's number");
-  for (let index = 0; index < 5; index++) candidate.addJobRun(4, 'long', index < 1 ? [[704000, 2]] : []);
+  for (let index = 0; index < 5; index++) {
+    candidate.addJobRun(4, 'long', index < 1 ? [[704000, 2]] : []);
+  }
   assert.ok(
     Math.abs(candidate.dropRate(4, 'long', 704000, 0.4) - (2 + 0.4 * 5) / 10) < 1e-9,
     'half prior, half observed',
@@ -25,8 +27,9 @@ test("calibration: drops blend reports with the game's number; HP, rooms and mot
     [0, 3],
     [4, 0.5],
     [1, 2],
-  ] as const)
+  ] as const) {
     candidate.addMotivation(runs, hours, -0.03 * runs + 0.01 * hours);
+  }
   assert.ok(
     Math.abs(candidate.motivation.perRun - 0.03) < 1e-9 && Math.abs(candidate.motivation.perHour - 0.01) < 1e-9,
   );

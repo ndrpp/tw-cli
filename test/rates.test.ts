@@ -14,7 +14,9 @@ test('rates: null until 5 min of data, then per hour over the session', () => {
 
 test('rates: rolling window starts at the newest sample before it; samples thinned to one a minute', () => {
   const result = new RateTracker();
-  for (let time = 0; time <= 7200; time += 10) result.record(time, time, -time); // 1 xp/s, −$1/s
+  for (let time = 0; time <= 7200; time += 10) {
+    result.record(time, time, -time); // 1 xp/s, −$1/s
+  }
   assert.ok(result.samples.length <= 122);
   const xCoord = result.rates(7200, 7200, -7200)!;
   assert.equal(xCoord.span, 3600);

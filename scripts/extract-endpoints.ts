@@ -28,12 +28,19 @@ function readArgument(index: number): [string, number] {
     if (character === '"' || character === "'" || character === '`') {
       const quote = character;
       index++;
-      while (index < source.length && source[index] !== quote) index += source[index] === '\\' ? 2 : 1;
-    } else if (character === '(' || character === '{' || character === '[') depth++;
-    else if (character === ')' || character === '}' || character === ']') {
-      if (depth === 0) return [source.slice(start, index).trim(), index];
+      while (index < source.length && source[index] !== quote) {
+        index += source[index] === '\\' ? 2 : 1;
+      }
+    } else if (character === '(' || character === '{' || character === '[') {
+      depth++;
+    } else if (character === ')' || character === '}' || character === ']') {
+      if (depth === 0) {
+        return [source.slice(start, index).trim(), index];
+      }
       depth--;
-    } else if (character === ',' && depth === 0) return [source.slice(start, index).trim(), index];
+    } else if (character === ',' && depth === 0) {
+      return [source.slice(start, index).trim(), index];
+    }
     index++;
   }
   return [source.slice(start).trim(), index];
@@ -43,7 +50,9 @@ const unquote = (argument: string) => /^(['"])(.*)\1$/.exec(argument)?.[2] ?? `<
 
 /** Top-level keys of an object literal argument. */
 function topLevelKeys(argument: string): string[] | null {
-  if (!argument.startsWith('{')) return null;
+  if (!argument.startsWith('{')) {
+    return null;
+  }
   const body = argument.slice(1, -1);
   const keys: string[] = [];
   let depth = 0;
@@ -53,23 +62,33 @@ function topLevelKeys(argument: string): string[] | null {
     if (character === '"' || character === "'") {
       const quote = character;
       let close = index + 1;
-      while (close < body.length && body[close] !== quote) close += body[close] === '\\' ? 2 : 1;
-      if (depth === 0) token += body.slice(index, close + 1);
+      while (close < body.length && body[close] !== quote) {
+        close += body[close] === '\\' ? 2 : 1;
+      }
+      if (depth === 0) {
+        token += body.slice(index, close + 1);
+      }
       index = close;
       continue;
     }
-    if ('({['.includes(character)) depth++;
-    else if (')}]'.includes(character)) depth--;
-    else if (depth === 0 && character === ':') {
+    if ('({['.includes(character)) {
+      depth++;
+    } else if (')}]'.includes(character)) {
+      depth--;
+    } else if (depth === 0 && character === ':') {
       const key = token.trim().replace(/^['"]|['"]$/g, '');
-      if (key) keys.push(key);
+      if (key) {
+        keys.push(key);
+      }
       token = '';
       continue;
     } else if (depth === 0 && character === ',') {
       token = '';
       continue;
     }
-    if (depth === 0) token += character;
+    if (depth === 0) {
+      token += character;
+    }
   }
   return keys;
 }
@@ -79,7 +98,9 @@ function enclosingName(offset: number): string {
   const before = source.slice(Math.max(0, offset - 4_000), offset);
   const pattern = /([A-Za-z_$][\w$.]*)\s*[:=]\s*function\s*\(|function\s+([A-Za-z_$][\w$]*)\s*\(/g;
   let last = '';
-  for (let match = pattern.exec(before); match; match = pattern.exec(before)) last = match[1] ?? match[2] ?? last;
+  for (let match = pattern.exec(before); match; match = pattern.exec(before)) {
+    last = match[1] ?? match[2] ?? last;
+  }
   return last;
 }
 

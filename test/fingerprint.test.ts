@@ -18,12 +18,16 @@ const GAME_PHP = fileURLToPath(new URL('../../en32.the_west.net/en32.the-west.ne
 // Load the ORIGINAL Fingerprint2 library from the downloaded game.php into an isolated vm context,
 // so the port is checked against the real code rather than our reading of it.
 function loadOriginal(): any | null {
-  if (!existsSync(GAME_PHP)) return null;
+  if (!existsSync(GAME_PHP)) {
+    return null;
+  }
   const html = readFileSync(GAME_PHP, 'utf8');
   const start = html.indexOf('!function(e,t,n){"use strict";"function"==typeof window.define');
   const endMarker = 't.VERSION="1.8.0",t});';
   const end = html.indexOf(endMarker, start);
-  if (start < 0 || end < 0) return null;
+  if (start < 0 || end < 0) {
+    return null;
+  }
   const lib = html.slice(start, end + endMarker.length);
   const ctx: any = { window: {} };
   vm.createContext(ctx);
@@ -35,7 +39,9 @@ const original = loadOriginal();
 
 function randomString(len: number, maxCode: number): string {
   let text = '';
-  for (let index = 0; index < len; index++) text += String.fromCharCode(Math.floor(Math.random() * maxCode));
+  for (let index = 0; index < len; index++) {
+    text += String.fromCharCode(Math.floor(Math.random() * maxCode));
+  }
   return text;
 }
 

@@ -35,7 +35,9 @@ export function levelProgress(level: number, experience: number, maxLevel = 250)
   const lo = levelStartXp(level, maxLevel);
   const hi = levelStartXp(level + 1, maxLevel);
   const have = Math.max(0, experience - lo);
-  if (hi <= lo) return { have, need: 0, ratio: 1, maxed: true };
+  if (hi <= lo) {
+    return { have, need: 0, ratio: 1, maxed: true };
+  }
   return { have, need: hi - lo, ratio: Math.min(1, have / (hi - lo)), maxed: false };
 }
 
@@ -105,11 +107,12 @@ export class CharacterState {
     character.maxEnergy = Number(data.maxEnergy);
     character.healthRegen = Number(data.healthRegenFactor ?? 0);
     character.energyRegen = Number(data.energyRegenFactor ?? 0);
-    if (isObj(data.taskLimit))
+    if (isObj(data.taskLimit)) {
       character.taskLimit = {
         normal: Number(data.taskLimit.normal) || 4,
         premium: Number(data.taskLimit.premium) || 9,
       };
+    }
     character.skills = nums(obj(data.skillData).skills);
     character.skillBonus = nums(obj(data.skillData).skillBonus);
     const lp = Number(data.lpPerPoint ?? 0);

@@ -112,11 +112,14 @@ export function buildGrid(state: GameState, view: MapView, cols: number, rows: n
       if (column >= 0 && column < cols) {
         for (let rowIndex = 0; rowIndex < rows; rowIndex++) {
           const row = grid[rowIndex];
-          if (!row) continue;
+          if (!row) {
+            continue;
+          }
           const worldY = originY + rowIndex * cellHeight;
           const cell = row[column];
-          if (worldY + cellHeight > county.y1 && worldY <= county.y2 && cell?.prio === 0 && cell.ch === ' ')
+          if (worldY + cellHeight > county.y1 && worldY <= county.y2 && cell?.prio === 0 && cell.ch === ' ') {
             row[column] = { ch: '┊', prio: 0, dim: true };
+          }
         }
       }
     }
@@ -124,11 +127,14 @@ export function buildGrid(state: GameState, view: MapView, cols: number, rows: n
       const countyRow = Math.floor((county.y1 - originY) / cellHeight);
       if (countyRow >= 0 && countyRow < rows) {
         const row = grid[countyRow];
-        if (!row) continue;
+        if (!row) {
+          continue;
+        }
         for (let columnIndex = 0; columnIndex < cols; columnIndex++) {
           const worldX = originX + columnIndex * cellWidth;
-          if (worldX + cellWidth > county.x1 && worldX <= county.x2 && row[columnIndex]?.ch === ' ')
+          if (worldX + cellWidth > county.x1 && worldX <= county.x2 && row[columnIndex]?.ch === ' ') {
             row[columnIndex] = { ch: '┄', prio: 0, dim: true };
+          }
         }
       }
     }
@@ -136,47 +142,77 @@ export function buildGrid(state: GameState, view: MapView, cols: number, rows: n
   const put = (position: Position, cell: Cell) => {
     const column = Math.floor((position.x - originX) / cellWidth);
     const rowIndex = Math.floor((position.y - originY) / cellHeight);
-    if (rowIndex < 0 || rowIndex >= rows || column < 0 || column >= cols) return;
+    if (rowIndex < 0 || rowIndex >= rows || column < 0 || column >= cols) {
+      return;
+    }
     const row = grid[rowIndex];
     const existing = row?.[column];
-    if (row && existing && existing.prio < cell.prio) row[column] = cell;
+    if (row && existing && existing.prio < cell.prio) {
+      row[column] = cell;
+    }
   };
   const doableGroups = new Set(state.jobs.filter((job) => isDoable(job)).map((job) => job.groupid));
   if (isLayerOn('players')) {
-    for (const friend of state.world.friends) put(friend, { ch: 'f', prio: 1, color: 'blue' });
-    for (const crowd of state.tiles.crowds.values()) put(crowd, { ch: 'p', prio: 1, color: 'blueBright' });
+    for (const friend of state.world.friends) {
+      put(friend, { ch: 'f', prio: 1, color: 'blue' });
+    }
+    for (const crowd of state.tiles.crowds.values()) {
+      put(crowd, { ch: 'p', prio: 1, color: 'blueBright' });
+    }
   }
   for (const [groupId, locations] of state.world.jobGroups) {
     const doable = doableGroups.has(groupId);
-    if (!isLayerOn(doable ? 'jobs' : 'lockedJobs')) continue;
-    for (const location of locations)
+    if (!isLayerOn(doable ? 'jobs' : 'lockedJobs')) {
+      continue;
+    }
+    for (const location of locations) {
       put(location, { ch: 'j', prio: doable ? 3 : 2, color: doable ? 'yellow' : 'gray', dim: !doable });
+    }
   }
-  if (isLayerOn('markets')) for (const market of state.world.markets) put(market, { ch: '$', prio: 4, color: 'green' });
+  if (isLayerOn('markets')) {
+    for (const market of state.world.markets) {
+      put(market, { ch: '$', prio: 4, color: 'green' });
+    }
+  }
   if (isLayerOn('questGivers')) {
-    for (const questGiver of state.world.quests) put(questGiver, { ch: '?', prio: 5, color: 'magenta', bold: true });
-    if (state.world.fair) put(state.world.fair, { ch: '&', prio: 5, color: 'magentaBright', bold: true });
+    for (const questGiver of state.world.quests) {
+      put(questGiver, { ch: '?', prio: 5, color: 'magenta', bold: true });
+    }
+    if (state.world.fair) {
+      put(state.world.fair, { ch: '&', prio: 5, color: 'magentaBright', bold: true });
+    }
   }
-  if (isLayerOn('forts')) for (const fort of state.world.forts) put(fort, { ch: 'F', prio: 6, color: 'red' });
-  if (isLayerOn('special'))
-    for (const source of state.tiles.specialJobs.values())
+  if (isLayerOn('forts')) {
+    for (const fort of state.world.forts) {
+      put(fort, { ch: 'F', prio: 6, color: 'red' });
+    }
+  }
+  if (isLayerOn('special')) {
+    for (const source of state.tiles.specialJobs.values()) {
       put(source, { ch: '*', prio: 7, color: source.gold ? 'yellowBright' : 'whiteBright', bold: true });
+    }
+  }
   const home = state.character.homeTown?.id;
   for (const town of state.world.towns) {
-    if (town.id === home)
+    if (town.id === home) {
       put(town, { ch: 'H', prio: 9, color: 'cyan', bold: true }); // home always shows
-    else if (town.name) isLayerOn('towns') && put(town, { ch: 'T', prio: 8, color: 'white', bold: true });
-    else isLayerOn('emptyTowns') && put(town, { ch: 't', prio: 6, dim: true });
+    } else if (town.name) {
+      isLayerOn('towns') && put(town, { ch: 'T', prio: 8, color: 'white', bold: true });
+    } else {
+      isLayerOn('emptyTowns') && put(town, { ch: 't', prio: 6, dim: true });
+    }
   }
-  if (isLayerOn('queue'))
+  if (isLayerOn('queue')) {
     state.queue.forEach((task, index) => {
       put(task.coords, { ch: String((index + 1) % 10), prio: 10, color: 'cyan', bold: true });
     });
+  }
   // Quest targets (jobs that drop a required item) stand out over ordinary jobs and towns.
   for (const id of isLayerOn('questJobs') ? (state.mapHighlight?.jobIds ?? []) : []) {
     const job = state.catalog.get(id);
-    for (const at of job ? (state.world.jobGroups.get(job.groupid) ?? []) : [])
+    for (const at of job ? (state.world.jobGroups.get(job.groupid) ?? []) : []) {
       put(at, { ch: '!', prio: 9.5, color: 'magentaBright', bold: true });
+    }
   }
   put(state.character.position, { ch: '@', prio: 11, color: 'green', bold: true });
 
@@ -194,9 +230,11 @@ export function buildGrid(state: GameState, view: MapView, cols: number, rows: n
         last.color === cell.color &&
         last.dim === cell.dim &&
         last.bold === cell.bold
-      )
+      ) {
         last.text += ch;
-      else segs.push({ text: ch, color: cell.color, dim: cell.dim, bold: cell.bold, inverse });
+      } else {
+        segs.push({ text: ch, color: cell.color, dim: cell.dim, bold: cell.bold, inverse });
+      }
     });
     return segs;
   });
@@ -214,27 +252,36 @@ export function entriesAt(state: GameState, view: MapView, cols: number, rows: n
   const result = cursorRect(view, cols, rows);
   const here = state.world.within(result.x1, result.y1, result.x2, result.y2);
   const out: MapEntry[] = [];
-  for (const town of here.towns) out.push({ kind: 'town', town: town });
-  for (const value of here.forts) out.push({ kind: 'fort', fort: value });
+  for (const town of here.towns) {
+    out.push({ kind: 'town', town: town });
+  }
+  for (const value of here.forts) {
+    out.push({ kind: 'fort', fort: value });
+  }
   const inRect = (position: Position) =>
     position.x >= result.x1 && position.x < result.x2 && position.y >= result.y1 && position.y < result.y2;
   const givers = [...state.tiles.questGivers.values()].filter(inRect);
   for (const group of givers) {
-    if (!group.employers?.length) out.push({ kind: 'text', text: '? quest giver', color: 'magenta' });
-    for (const entry of group.employers ?? [])
+    if (!group.employers?.length) {
+      out.push({ kind: 'text', text: '? quest giver', color: 'magenta' });
+    }
+    for (const entry of group.employers ?? []) {
       out.push({ kind: 'quest', key: entry.key, name: entry.name, at: { x: group.x, y: group.y } });
+    }
   }
   const unnamed = here.quests.filter(
     (position) => !givers.some((group) => group.x === position.x && group.y === position.y),
   );
-  if (unnamed.length)
+  if (unnamed.length) {
     out.push({
       kind: 'text',
       text: `? quest giver${unnamed.length > 1 ? ` ×${unnamed.length}` : ''} (name loads when close)`,
       color: 'magenta',
     });
-  if (state.world.fair && inRect(state.world.fair))
+  }
+  if (state.world.fair && inRect(state.world.fair)) {
     out.push({ kind: 'text', text: '& travelling fair', color: 'magentaBright' });
+  }
   for (const sj of [...state.tiles.specialJobs.values()].filter(inRect)) {
     out.push({
       kind: 'text',
@@ -242,20 +289,26 @@ export function entriesAt(state: GameState, view: MapView, cols: number, rows: n
       color: sj.gold ? 'yellowBright' : 'whiteBright',
     });
   }
-  for (const candidate of [...state.tiles.crowds.values()].filter(inRect))
+  for (const candidate of [...state.tiles.crowds.values()].filter(inRect)) {
     out.push({ kind: 'text', text: `p ${candidate.count} players here`, color: 'blueBright' });
-  if (here.markets.length) out.push({ kind: 'text', text: '$ market', color: 'green' });
-  if (here.friends.length)
+  }
+  if (here.markets.length) {
+    out.push({ kind: 'text', text: '$ market', color: 'green' });
+  }
+  if (here.friends.length) {
     out.push({
       kind: 'text',
       text: `f friends: ${here.friends.reduce((accumulator, current) => accumulator + current.amount, 0)}`,
       color: 'blue',
     });
+  }
   const seen = new Set<string>();
   for (const { groupId, at } of here.jobs) {
     for (const option of state.jobsAtLocation(groupId, at)) {
       const key = `${option.job.id}@${at.x},${at.y}`;
-      if (seen.has(key)) continue;
+      if (seen.has(key)) {
+        continue;
+      }
       seen.add(key);
       out.push({ kind: 'job', option, doable: option.job.jobPoints >= option.job.workPoints });
     }
@@ -265,25 +318,41 @@ export function entriesAt(state: GameState, view: MapView, cols: number, rows: n
 }
 
 function rank(entry: MapEntry): number {
-  if (entry.kind === 'town' || entry.kind === 'fort' || entry.kind === 'quest') return 0;
-  if (entry.kind === 'text') return 1;
+  if (entry.kind === 'town' || entry.kind === 'fort' || entry.kind === 'quest') {
+    return 0;
+  }
+  if (entry.kind === 'text') {
+    return 1;
+  }
   return entry.doable ? 2 : 3;
 }
 
 /** '/' search: nearest location (from the cursor) of a job or named town matching the query. */
 export function findNearest(state: GameState, query: string, from: Position): { at: Position; label: string } | null {
   const text = query.trim().toLowerCase();
-  if (!text) return null;
+  if (!text) {
+    return null;
+  }
   let best: { at: Position; label: string; d: number } | null = null;
   const consider = (at: Position, label: string) => {
     const value = distance(at, from);
-    if (!best || value < best.d) best = { at, label, d: value };
+    if (!best || value < best.d) {
+      best = { at, label, d: value };
+    }
   };
   for (const job of state.jobs) {
-    if (!job.name.toLowerCase().includes(text)) continue;
-    for (const at of state.world.jobGroups.get(job.groupid) ?? []) consider(at, job.name);
+    if (!job.name.toLowerCase().includes(text)) {
+      continue;
+    }
+    for (const at of state.world.jobGroups.get(job.groupid) ?? []) {
+      consider(at, job.name);
+    }
   }
-  for (const town of state.world.towns) if (town.name?.toLowerCase().includes(text)) consider(town, town.name);
+  for (const town of state.world.towns) {
+    if (town.name?.toLowerCase().includes(text)) {
+      consider(town, town.name);
+    }
+  }
   const second = best as { at: Position; label: string; d: number } | null;
   return second ? { at: second.at, label: second.label } : null;
 }
@@ -391,24 +460,27 @@ export function MapScreen(pick: MapScreenProps) {
             truncate(label, fieldWidth),
           );
         }
-        if (entry.kind === 'fort')
+        if (entry.kind === 'fort') {
           return createElement(
             Text,
             { key: idx, inverse: sel, wrap: 'truncate', color: 'red' },
             truncate(`F ${entry.fort.name}`, fieldWidth),
           );
-        if (entry.kind === 'quest')
+        }
+        if (entry.kind === 'quest') {
           return createElement(
             Text,
             { key: idx, inverse: sel, wrap: 'truncate', color: 'magenta' },
             truncate(`? ${entry.name}`, fieldWidth),
           );
-        if (entry.kind === 'text')
+        }
+        if (entry.kind === 'text') {
           return createElement(
             Text,
             defined({ key: idx, inverse: sel, wrap: 'truncate', color: entry.color }),
             truncate(entry.text, fieldWidth),
           );
+        }
         const jobInfo = entry.option.job;
         const longestValues = jobInfo.values.long ?? jobInfo.values.middle ?? jobInfo.values.short;
         const quest = state.mapHighlight?.jobIds.has(jobInfo.id);

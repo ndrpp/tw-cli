@@ -41,7 +41,9 @@ test('debug log: hourly JSONL files, older than 24 h pruned; old sim data droppe
   writeFileSync(join(dir, 'notes.txt'), 'kept');
   const log = new DebugLog();
   log.dir = dir;
-  for (let index = 0; index < 60; index++) log.add('sim', `plan ${index}`, { i: index });
+  for (let index = 0; index < 60; index++) {
+    log.add('sim', `plan ${index}`, { i: index });
+  }
   const files = readdirSync(dir).sort();
   assert.ok(!files.includes(`${old}.jsonl`), 'older than a day: deleted');
   assert.ok(files.includes(`${recent}.jsonl`) && files.includes('notes.txt'));

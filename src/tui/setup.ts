@@ -38,7 +38,9 @@ interface ProfileStatus {
 
 function profileStatus(): ProfileStatus {
   const raw = readProfileRaw(PROFILE_FILE);
-  if (!raw) return { ok: false, detail: 'none saved' };
+  if (!raw) {
+    return { ok: false, detail: 'none saved' };
+  }
   try {
     const profileValue = validateProfile(raw as FingerprintProfile);
     return {
@@ -207,24 +209,46 @@ export function SetupScreen({ onReady, onBack, onQuit, message, policy }: SetupP
       if (key.escape) {
         setField(null);
         setInputBuffer('');
-      } else if (key.return) submit(field, inputBuffer);
-      else if (key.backspace || key.delete) setInputBuffer((value) => value.slice(0, -1));
-      else if (input && !key.ctrl && !key.meta) setInputBuffer((value) => value + input);
+      } else if (key.return) {
+        submit(field, inputBuffer);
+      } else if (key.backspace || key.delete) {
+        setInputBuffer((value) => value.slice(0, -1));
+      } else if (input && !key.ctrl && !key.meta) {
+        setInputBuffer((value) => value + input);
+      }
       return;
     }
-    if (busy) return;
-    if (input === 'q') return onQuit();
-    if (key.escape && onBack) return onBack();
-    if (input === 'w') return void toggleWeb();
-    if (input === 'f') return setField('fp');
-    if (input === 'a') return setField('ua');
-    if (input === 'i') return setField('import');
+    if (busy) {
+      return;
+    }
+    if (input === 'q') {
+      return onQuit();
+    }
+    if (key.escape && onBack) {
+      return onBack();
+    }
+    if (input === 'w') {
+      return void toggleWeb();
+    }
+    if (input === 'f') {
+      return setField('fp');
+    }
+    if (input === 'a') {
+      return setField('ua');
+    }
+    if (input === 'i') {
+      return setField('import');
+    }
     if (input === 'l') {
-      if (!status.ok) return setStatusMessage({ text: 'Set up the fingerprint first (w, f/a or i).', bad: true });
+      if (!status.ok) {
+        return setStatusMessage({ text: 'Set up the fingerprint first (w, f/a or i).', bad: true });
+      }
       setInputBuffer('');
       return setField('name');
     }
-    if (input === 'c' && haveSession && status.ok) return void doContinue();
+    if (input === 'c' && haveSession && status.ok) {
+      return void doContinue();
+    }
   });
 
   const item = (entryKey: string, label: string, enabled = true) =>

@@ -42,9 +42,15 @@ export async function send(
     accept: init.accept ?? HTML_ACCEPT,
   };
   const cookie = jar.header(url);
-  if (cookie) headers.cookie = cookie;
-  if (init.referer) headers.referer = init.referer;
-  if (init.origin) headers.origin = init.origin;
+  if (cookie) {
+    headers.cookie = cookie;
+  }
+  if (init.referer) {
+    headers.referer = init.referer;
+  }
+  if (init.origin) {
+    headers.origin = init.origin;
+  }
   if (init.body !== undefined) {
     headers['content-type'] = init.ajax
       ? 'application/x-www-form-urlencoded; charset=UTF-8'
@@ -80,10 +86,18 @@ export class GameClient {
 
   buildUrl(opts: { window?: string; action?: string; mode?: string; ajax?: string }): string {
     const params: string[] = [];
-    if (opts.window) params.push(`window=${opts.window}`);
-    if (opts.action) params.push(`action=${opts.action}`, `h=${this.h}`);
-    if (opts.ajax) params.push(`ajax=${opts.ajax}`);
-    if (opts.mode) params.push(`mode=${opts.mode}`);
+    if (opts.window) {
+      params.push(`window=${opts.window}`);
+    }
+    if (opts.action) {
+      params.push(`action=${opts.action}`, `h=${this.h}`);
+    }
+    if (opts.ajax) {
+      params.push(`ajax=${opts.ajax}`);
+    }
+    if (opts.mode) {
+      params.push(`mode=${opts.mode}`);
+    }
     return `${this.worldUrl}/game.php${params.length ? `?${params.join('&')}` : ''}`;
   }
 
@@ -114,8 +128,12 @@ export class GameClient {
       throw new Error(`non-JSON response from ${url}: ${text.slice(0, 80)}`);
     }
     const json = obj(parsed);
-    if (json.logout) throw new SessionInvalidError(typeof json.message === 'string' ? json.message : 'session invalid');
-    if (json.error === 'fatal') throw new FatalServerError(`fatal server error for ${url}`);
+    if (json.logout) {
+      throw new SessionInvalidError(typeof json.message === 'string' ? json.message : 'session invalid');
+    }
+    if (json.error === 'fatal') {
+      throw new FatalServerError(`fatal server error for ${url}`);
+    }
     return parsed;
   }
 

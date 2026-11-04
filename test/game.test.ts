@@ -62,16 +62,27 @@ function fakeGame() {
     const url = String(input);
     const body = typeof init.body === 'string' ? init.body : '';
     calls.push({ url, body });
-    if (url === `${WORLD}/ntp.php`) return new Response(String(Date.now()));
-    if (url === `${WORLD}/game.php?window=work&mode=index`) return new Response(fixture('work_index'));
-    if (url === `${WORLD}/game.php?window=map&ajax=get_minimap`) return new Response(fixture('minimap'));
-    if (url === `${WORLD}/game.php?window=map&ajax=get_complete_data`) return new Response(fixture('complete_data'));
-    if (url.startsWith(`${WORLD}/game.php?window=task&action=add&h=`))
+    if (url === `${WORLD}/ntp.php`) {
+      return new Response(String(Date.now()));
+    }
+    if (url === `${WORLD}/game.php?window=work&mode=index`) {
+      return new Response(fixture('work_index'));
+    }
+    if (url === `${WORLD}/game.php?window=map&ajax=get_minimap`) {
+      return new Response(fixture('minimap'));
+    }
+    if (url === `${WORLD}/game.php?window=map&ajax=get_complete_data`) {
+      return new Response(fixture('complete_data'));
+    }
+    if (url.startsWith(`${WORLD}/game.php?window=task&action=add&h=`)) {
       return Response.json(addReply(new URLSearchParams(body)));
+    }
     if (url.startsWith(`${WORLD}/game.php?window=task&action=cancel&h=`)) {
       return Response.json({ tasks: { 1: { extra: { energy: 50 } } }, queue: [] });
     }
-    if (url === `${WORLD}/game.php?window=task&mode=get_tasks`) return Response.json({ queue: [] });
+    if (url === `${WORLD}/game.php?window=task&mode=get_tasks`) {
+      return Response.json({ queue: [] });
+    }
     return new Response(`unexpected ${url}`, { status: 404 });
   }) as typeof fetch;
 }
@@ -237,7 +248,9 @@ test('queue limit without automation premium is enforced before sending', {
   second.premium = { premiumBoni: { automation: { expiration: 0 } } };
   const state = makeState(second);
   await state.loadJobs();
-  while (state.queue.length < state.taskLimit) state.queue.push({ ...state.queue[0]! });
+  while (state.queue.length < state.taskLimit) {
+    state.queue.push({ ...state.queue[0]! });
+  }
   assert.equal(state.taskLimit, 4);
   await state.startJob(state.jobOptions()[0]!, 'short');
   assert.ok(!calls.some((candidate) => candidate.url.includes('action=add')));

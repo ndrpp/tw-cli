@@ -43,7 +43,9 @@ export class TileCache {
 
   /** Loads stale tiles in a square around `at` (radius in tiles). Returns true if a request was made. */
   async loadAround(client: GameClient, at: Position, radius = 2): Promise<boolean> {
-    if (this.inflight) return false;
+    if (this.inflight) {
+      return false;
+    }
     const cx = Math.floor(at.x / TILE);
     const cy = Math.floor(at.y / TILE);
     const tiles: [number, number][] = [];
@@ -51,11 +53,17 @@ export class TileCache {
       for (let dx = -radius; dx <= radius; dx++) {
         const tx = cx + dx;
         const ty = cy + dy;
-        if (tx < 0 || ty < 0 || tx * TILE >= WORLD_W || ty * TILE >= WORLD_H) continue;
-        if (!this.fresh(tx, ty)) tiles.push([tx, ty]);
+        if (tx < 0 || ty < 0 || tx * TILE >= WORLD_W || ty * TILE >= WORLD_H) {
+          continue;
+        }
+        if (!this.fresh(tx, ty)) {
+          tiles.push([tx, ty]);
+        }
       }
     }
-    if (!tiles.length) return false;
+    if (!tiles.length) {
+      return false;
+    }
     this.inflight = true;
     try {
       const json = await client.get('map', 'get_complete_data', {
@@ -70,7 +78,9 @@ export class TileCache {
 
   ingest(json: JsonObject, requested: [number, number][]): void {
     const now = Date.now();
-    for (const tile of this.forgetRequestedTiles(requested)) this.loadedAt.set(tile, now);
+    for (const tile of this.forgetRequestedTiles(requested)) {
+      this.loadedAt.set(tile, now);
+    }
     this.ingestDynamic(json);
     this.ingestQuestGivers(json);
   }
@@ -80,7 +90,11 @@ export class TileCache {
     const tiles = new Set(requested.map(([xCoord, yCoord]) => `${xCoord},${yCoord}`));
     const tileOf = (position: Position) => `${Math.floor(position.x / TILE)},${Math.floor(position.y / TILE)}`;
     for (const entries of [this.specialJobs, this.questGivers, this.crowds] as Map<string, Position>[]) {
-      for (const [key, position] of entries) if (tiles.has(tileOf(position))) entries.delete(key);
+      for (const [key, position] of entries) {
+        if (tiles.has(tileOf(position))) {
+          entries.delete(key);
+        }
+      }
     }
     return tiles;
   }
@@ -93,7 +107,9 @@ export class TileCache {
         for (const column of vals(row)) {
           for (const entry of vals(column)) {
             const data = arr(entry)[1];
-            if (!isObj(data)) continue;
+            if (!isObj(data)) {
+              continue;
+            }
             const xCoord = Number(data.x);
             const yCoord = Number(data.y);
             const key = `${xCoord},${yCoord}`;
@@ -121,7 +137,9 @@ export class TileCache {
       for (const column of vals(row)) {
         for (const entry of vals(column)) {
           const data = arr(entry)[1];
-          if (!isObj(data)) continue;
+          if (!isObj(data)) {
+            continue;
+          }
           const employers = objs(data.employer)
             .filter((employer) => employer.visible !== false)
             .map((employer) => ({

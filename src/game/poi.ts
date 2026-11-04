@@ -48,9 +48,9 @@ export function collectPois(state: GameState): Poi[] {
     out.push({ kind: 'queue', label: `${index + 1}. ${task.title}`, ...task.coords });
   });
   for (const town of width.towns) {
-    if (town.id === homeId)
+    if (town.id === homeId) {
       out.push({ kind: 'home', label: town.name ?? 'Home town', x: town.x, y: town.y, townId: town.id });
-    else if (town.name)
+    } else if (town.name) {
       out.push({
         kind: 'town',
         label: `${town.name} (${town.members} members)`,
@@ -58,17 +58,22 @@ export function collectPois(state: GameState): Poi[] {
         y: town.y,
         townId: town.id,
       });
+    }
   }
-  for (const value of width.forts) out.push({ kind: 'fort', label: value.name, x: value.x, y: value.y });
+  for (const value of width.forts) {
+    out.push({ kind: 'fort', label: value.name, x: value.x, y: value.y });
+  }
   // Named quest givers from loaded tiles; the rest from the minimap without names.
   const named = new Set<string>();
   for (const query of state.tiles.questGivers.values()) {
     named.add(`${query.x},${query.y}`);
     out.push({ kind: 'quest', label: query.names.join(', ') || 'Quest giver', x: query.x, y: query.y });
   }
-  for (const position of width.quests)
-    if (!named.has(`${position.x},${position.y}`))
+  for (const position of width.quests) {
+    if (!named.has(`${position.x},${position.y}`)) {
       out.push({ kind: 'quest', label: 'Quest giver', x: position.x, y: position.y });
+    }
+  }
   for (const source of state.tiles.specialJobs.values()) {
     const name = state.catalog.get(source.jobId)?.name ?? `job ${source.jobId}`;
     out.push({
@@ -78,12 +83,18 @@ export function collectPois(state: GameState): Poi[] {
       y: source.y,
     });
   }
-  for (const match of width.markets) out.push({ kind: 'market', label: 'Market', x: match.x, y: match.y });
-  if (width.fair) out.push({ kind: 'fair', label: 'Travelling fair', ...width.fair });
-  for (const currentValue of width.friends)
+  for (const match of width.markets) {
+    out.push({ kind: 'market', label: 'Market', x: match.x, y: match.y });
+  }
+  if (width.fair) {
+    out.push({ kind: 'fair', label: 'Travelling fair', ...width.fair });
+  }
+  for (const currentValue of width.friends) {
     out.push({ kind: 'friend', label: `Friends (${currentValue.amount})`, x: currentValue.x, y: currentValue.y });
-  for (const candidate of state.tiles.crowds.values())
+  }
+  for (const candidate of state.tiles.crowds.values()) {
     out.push({ kind: 'crowd', label: `${candidate.count} players`, x: candidate.x, y: candidate.y });
+  }
   return out;
 }
 

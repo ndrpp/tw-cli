@@ -25,44 +25,69 @@ export function ChatScreen({ state, width, height, onCapture, onExit, active = t
   const idx = Math.min(sel, Math.max(0, roomIds.length - 1));
   const room = roomIds[idx];
   useEffect(() => {
-    if (room && live?.unreadRooms.delete(room)) state.changed();
+    if (room && live?.unreadRooms.delete(room)) {
+      state.changed();
+    }
   }, [room, live?.history.get(room ?? '')?.length]);
 
   useInput(
     (input, key) => {
       if (form) {
         const otherForm = formKey(form, input, key);
-        if (otherForm === 'cancel') return setForm(null);
-        if (otherForm !== 'submit') return setForm(otherForm);
+        if (otherForm === 'cancel') {
+          return setForm(null);
+        }
+        if (otherForm !== 'submit') {
+          return setForm(otherForm);
+        }
         const value = formValues(form);
         setForm(null);
         const name = (value.to ?? '').trim();
-        if (name && value.text) void state.chatSay(`tell:${name}`, value.text);
+        if (name && value.text) {
+          void state.chatSay(`tell:${name}`, value.text);
+        }
         return;
       }
       if (draft !== null) {
-        if (key.escape) return setDraft(null);
+        if (key.escape) {
+          return setDraft(null);
+        }
         if (key.return) {
           const text = draft;
           setDraft(null);
-          if (room && text.trim()) void state.chatSay(room, text);
+          if (room && text.trim()) {
+            void state.chatSay(room, text);
+          }
           return;
         }
-        if (key.backspace || key.delete) return setDraft(draft.slice(0, -1));
-        if (input && !key.ctrl && !key.meta) setDraft(draft + input);
+        if (key.backspace || key.delete) {
+          return setDraft(draft.slice(0, -1));
+        }
+        if (input && !key.ctrl && !key.meta) {
+          setDraft(draft + input);
+        }
         return;
       }
-      if (key.escape) return onExit();
-      if (key.upArrow || input === 'k') return setSel(Math.max(0, idx - 1));
-      if (key.downArrow || input === 'j') return setSel(Math.min(roomIds.length - 1, idx + 1));
-      if (key.return && room) return setDraft('');
-      if (input === 't')
+      if (key.escape) {
+        return onExit();
+      }
+      if (key.upArrow || input === 'k') {
+        return setSel(Math.max(0, idx - 1));
+      }
+      if (key.downArrow || input === 'j') {
+        return setSel(Math.min(roomIds.length - 1, idx + 1));
+      }
+      if (key.return && room) {
+        return setDraft('');
+      }
+      if (input === 't') {
         return setForm(
           makeForm('Whisper', [
             { key: 'to', label: 'To', value: room?.startsWith('tell:') ? room.slice(5) : '' },
             { key: 'text', label: 'Message', value: '' },
           ]),
         );
+      }
     },
     { isActive: active },
   );
@@ -135,7 +160,11 @@ export function ChatScreen({ state, width, height, onCapture, onExit, active = t
 
 function rosterSummary(members: Set<string>, clients: Map<string, ChatClient> | undefined): string {
   let online = 0;
-  for (const id of members) if (chatPresence(clients?.get(id)?.actioned) === 'online') online++;
+  for (const id of members) {
+    if (chatPresence(clients?.get(id)?.actioned) === 'online') {
+      online++;
+    }
+  }
   return `${online}/${members.size} online`;
 }
 
@@ -259,7 +288,9 @@ export function ChatPanel({
   const room = ids[Math.min(roomIdx, Math.max(0, ids.length - 1))];
   const lines = room && live ? (live.history.get(room) ?? []) : [];
   useEffect(() => {
-    if (room && live?.unreadRooms.delete(room)) state.changed();
+    if (room && live?.unreadRooms.delete(room)) {
+      state.changed();
+    }
   }, [room, lines.length]);
 
   const tw = Math.max(10, width - 4);

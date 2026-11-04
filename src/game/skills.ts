@@ -69,7 +69,9 @@ export class Skills {
 
   static fromInit(skillData: JsonObject | undefined): Skills {
     const source = new Skills();
-    if (!skillData) return source;
+    if (!skillData) {
+      return source;
+    }
     source.attributes = nums(skillData.attributes);
     source.attributeBonus = nums(skillData.attributeBonus);
     source.skills = nums(skillData.skills);
@@ -92,7 +94,9 @@ export class Skills {
 
   /** Total = own points + bonus from items/sets/buffs (what job labor points use). */
   total(key: string): number {
-    if (key in SKILLS_OF) return (this.attributes[key] ?? 0) + (this.attributeBonus[key] ?? 0);
+    if (key in SKILLS_OF) {
+      return (this.attributes[key] ?? 0) + (this.attributeBonus[key] ?? 0);
+    }
     return (this.skills[key] ?? 0) + (this.skillBonus[key] ?? 0);
   }
 
@@ -121,18 +125,26 @@ export function adjustPlan(plan: SkillPlan, skills: Skills, key: string, delta: 
   const bucket = isAttr ? plan.attributes : plan.skills;
   const used = planUsed(plan);
   if (delta > 0) {
-    if (isAttr ? used.attributes >= skills.freeAttributes : used.skills >= skills.freeSkills) return false;
+    if (isAttr ? used.attributes >= skills.freeAttributes : used.skills >= skills.freeSkills) {
+      return false;
+    }
     bucket[key] = (bucket[key] ?? 0) + 1;
     return true;
   }
-  if (!bucket[key]) return false;
-  if (--bucket[key] === 0) delete bucket[key];
+  if (!bucket[key]) {
+    return false;
+  }
+  if (--bucket[key] === 0) {
+    delete bucket[key];
+  }
   return true;
 }
 
 /** What the plan adds to a row: an attribute point also adds one to each of its skills. */
 export function plannedDelta(plan: SkillPlan, key: string): number {
-  if (key in SKILLS_OF) return plan.attributes[key] ?? 0;
+  if (key in SKILLS_OF) {
+    return plan.attributes[key] ?? 0;
+  }
   const attribute = ATTRIBUTE_OF[key];
   return (plan.skills[key] ?? 0) + (attribute === undefined ? 0 : (plan.attributes[attribute] ?? 0));
 }
@@ -159,13 +171,17 @@ export class SkillApi {
 
   async overview(): Promise<Skills> {
     const json = await this.client.remoteCallMode('skill', 'overview');
-    if (json.error) throw new Error(String(json.msg ?? 'skill/overview failed'));
+    if (json.error) {
+      throw new Error(String(json.msg ?? 'skill/overview failed'));
+    }
     return Skills.fromOverview(json);
   }
 
   async save(plan: SkillPlan): Promise<string> {
     const json = await this.client.remoteCall('skill', 'save_skill_changes', savePayload(plan));
-    if (json.error) throw new Error(String(json.msg ?? 'Saving skills failed'));
+    if (json.error) {
+      throw new Error(String(json.msg ?? 'Saving skills failed'));
+    }
     return String(json.msg ?? 'Skills saved.');
   }
 }

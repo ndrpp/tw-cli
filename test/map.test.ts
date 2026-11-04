@@ -49,9 +49,15 @@ beforeEach(() => {
     const url = String(input);
     const body = typeof init.body === 'string' ? init.body : '';
     calls.push({ url, body });
-    if (url.endsWith('window=work&mode=index')) return new Response(fixture('work_index'));
-    if (url.endsWith('ajax=get_minimap')) return new Response(fixture('minimap'));
-    if (url.endsWith('ajax=get_complete_data')) return new Response(fixture('complete_data'));
+    if (url.endsWith('window=work&mode=index')) {
+      return new Response(fixture('work_index'));
+    }
+    if (url.endsWith('ajax=get_minimap')) {
+      return new Response(fixture('minimap'));
+    }
+    if (url.endsWith('ajax=get_complete_data')) {
+      return new Response(fixture('complete_data'));
+    }
     if (url.includes('window=task&action=add')) {
       const pos = /tasks%5B(\d+)%5D/.exec(body)?.[1] ?? '0';
       return Response.json({
@@ -68,7 +74,9 @@ beforeEach(() => {
         },
       });
     }
-    if (url.endsWith('mode=get_tasks')) return Response.json({ queue: [] });
+    if (url.endsWith('mode=get_tasks')) {
+      return Response.json({ queue: [] });
+    }
     return new Response(`unexpected ${url}`, { status: 404 });
   }) as typeof fetch;
 });
@@ -184,8 +192,9 @@ test('points of interest include towns, fort, quest givers, silver job, markets;
   const st = await makeState();
   st.tiles.ingest(obj(JSON.parse(fixture('complete_data'))), [[116, 60]]);
   const kinds = new Set(collectPois(st).map((pick) => pick.kind));
-  for (const key of ['me', 'queue', 'home', 'town', 'fort', 'quest', 'silver', 'market', 'friend', 'crowd'] as const)
+  for (const key of ['me', 'queue', 'home', 'town', 'fort', 'quest', 'silver', 'market', 'friend', 'crowd'] as const) {
     assert.ok(kinds.has(key), key);
+  }
   const near = poisNear(st, st.character.position);
   assert.ok(near.every((pick, index) => index === 0 || near[index - 1]!.dist <= pick.dist));
   assert.equal(poisNear(st, st.character.position, 'silver')[0]!.label, `Silver job: ${st.catalog.get(5)!.name}`);
@@ -260,7 +269,9 @@ test('TUI: ? help, m map, p points of interest, map select + start job', {
     assert.match(plain(), /Tending pigs/);
     const before = calls.filter((candidate) => candidate.url.includes('action=add')).length;
     // Move selection to the Tending pigs entry, then start.
-    for (let index = 0; index < 10 && !/\x1b\[7m[^\x1b]*Tending pigs/.test(out); index++) await press('j');
+    for (let index = 0; index < 10 && !/\x1b\[7m[^\x1b]*Tending pigs/.test(out); index++) {
+      await press('j');
+    }
     await press('3');
     const adds = calls.filter((candidate) => candidate.url.includes('action=add'));
     assert.equal(adds.length, before + 1);

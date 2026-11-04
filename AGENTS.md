@@ -36,8 +36,9 @@ the summary. Small gains compound; nobody needs to schedule a cleanup.
 - `npm run tw`: full-screen TUI · `npm run tw -- <cmd>` for CLI commands (whoami, jobs, queue, login, …).
 - `npm test`: all tests (`node --test test/*.test.ts`). Some skip without a saved `game.php`.
 - `npm run typecheck`: `tsc -p .`. Run it and the tests after every change.
-- `npm run lint`: `biome check .` (formatter + linter, zero warnings). `npm run format`: `biome check --write .`.
-  Biome owns layout, quotes, semicolons and import order (see `docs/code-style.md` §20); do not format by hand.
+- `npm run lint`: `biome check .` (formatter + linter, zero warnings). `npm run format`: `biome check --write .`;
+  `npm run format:unsafe`: also applies unsafe fixes (for example `useBlockStatements` wrapping one-line `if`s).
+  Biome owns layout, quotes, semicolons, braces and import order (see `docs/code-style.md` §20); do not format by hand.
 - CI (`.github/workflows/test.yml`, badge in the README): typecheck + lint + tests on Node 26, Ubuntu, for pushes to
   `main` and every PR. The two login tests that check 0600 file modes fail on Windows only; CI runs them. The test
   step sets `CI=false`: with `CI` set, Ink (is-in-ci) writes only the last frame and every TUI test sees nothing.

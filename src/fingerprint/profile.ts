@@ -98,9 +98,12 @@ const isPrimitive = (value: unknown): value is string | number | boolean | null 
 
 /** A component value as JSON gave it; anything else becomes the string the hash would have joined anyway. */
 function componentValue(value: unknown): ComponentValue {
-  if (value === undefined) return null;
-  if (Array.isArray(value))
+  if (value === undefined) {
+    return null;
+  }
+  if (Array.isArray(value)) {
     return value.map((entry) => (entry === undefined ? null : isPrimitive(entry) ? entry : String(entry)));
+  }
   return isPrimitive(value) ? value : String(value);
 }
 
@@ -108,26 +111,42 @@ function componentValue(value: unknown): ComponentValue {
 function partialProfile(raw: unknown): Partial<FingerprintProfile> {
   const json = obj(raw);
   const pick: Partial<FingerprintProfile> = {};
-  if (json.version === 1) pick.version = 1;
-  if (typeof json.capturedAt === 'string') pick.capturedAt = json.capturedAt;
-  if (typeof json.userAgent === 'string') pick.userAgent = json.userAgent;
-  if (Array.isArray(json.languages)) pick.languages = json.languages.map(String);
-  if (typeof json.webdriver === 'boolean' || json.webdriver === null) pick.webdriver = json.webdriver;
-  if (typeof json.fp === 'string') pick.fp = json.fp;
-  if (Array.isArray(json.components))
+  if (json.version === 1) {
+    pick.version = 1;
+  }
+  if (typeof json.capturedAt === 'string') {
+    pick.capturedAt = json.capturedAt;
+  }
+  if (typeof json.userAgent === 'string') {
+    pick.userAgent = json.userAgent;
+  }
+  if (Array.isArray(json.languages)) {
+    pick.languages = json.languages.map(String);
+  }
+  if (typeof json.webdriver === 'boolean' || json.webdriver === null) {
+    pick.webdriver = json.webdriver;
+  }
+  if (typeof json.fp === 'string') {
+    pick.fp = json.fp;
+  }
+  if (Array.isArray(json.components)) {
     pick.components = objs(json.components).map((component) => ({
       key: String(component.key),
       value: componentValue(component.value),
     }));
+  }
   return pick;
 }
 
 export function validateProfile(raw: unknown): FingerprintProfile {
   const result = partialProfile(raw);
-  if (result.version !== 1)
+  if (result.version !== 1) {
     throw new FingerprintProfileError(`unsupported profile version ${String(obj(raw).version)}`);
+  }
   const fp = result.fp ?? '';
-  if (!/^[0-9a-f]{32}$/.test(fp)) throw new FingerprintProfileError('fp must be 32 lowercase hex chars');
+  if (!/^[0-9a-f]{32}$/.test(fp)) {
+    throw new FingerprintProfileError('fp must be 32 lowercase hex chars');
+  }
   if (!result.userAgent) {
     throw new FingerprintProfileError(
       'userAgent missing: run `tw fp ua "<value of navigator.userAgent from the same browser>"`',
@@ -142,7 +161,9 @@ export function validateProfile(raw: unknown): FingerprintProfile {
     fp,
     components: result.components ?? [],
   };
-  if (profile.components.length === 0) return profile; // hash-only profile
+  if (profile.components.length === 0) {
+    return profile; // hash-only profile
+  }
 
   const keys = profile.components.map((candidate) => candidate.key);
   let cursor = 0;
@@ -156,7 +177,9 @@ export function validateProfile(raw: unknown): FingerprintProfile {
     cursor = idx + 1;
   }
   for (const entryKey of REQUIRED) {
-    if (!keys.includes(entryKey)) throw new FingerprintProfileError(`required component "${entryKey}" missing`);
+    if (!keys.includes(entryKey)) {
+      throw new FingerprintProfileError(`required component "${entryKey}" missing`);
+    }
   }
 
   const recomputed = hashComponents(profile.components);
@@ -208,7 +231,9 @@ export function writeProfileFields(
     capturedAt: new Date().toISOString(),
   };
   // A new hash invalidates components captured for a different one.
-  if (fields.fp !== undefined && current.fp !== fields.fp) next.components = [];
+  if (fields.fp !== undefined && current.fp !== fields.fp) {
+    next.components = [];
+  }
   next.components ??= [];
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });

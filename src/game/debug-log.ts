@@ -25,20 +25,31 @@ export const DEBUG_RETENTION_MS = 24 * 3600_000;
 
 /** Plain data for JSON: Maps → objects, Sets → arrays, Infinity / bigint → strings; only true cycles are cut. */
 function plain(xCoord: unknown, ancestors: Set<object>): unknown {
-  if (typeof xCoord === 'number') return Number.isFinite(xCoord) ? xCoord : String(xCoord);
-  if (typeof xCoord === 'bigint') return String(xCoord);
-  if (!xCoord || typeof xCoord !== 'object') return xCoord;
-  if (ancestors.has(xCoord)) return '[cycle]';
+  if (typeof xCoord === 'number') {
+    return Number.isFinite(xCoord) ? xCoord : String(xCoord);
+  }
+  if (typeof xCoord === 'bigint') {
+    return String(xCoord);
+  }
+  if (!xCoord || typeof xCoord !== 'object') {
+    return xCoord;
+  }
+  if (ancestors.has(xCoord)) {
+    return '[cycle]';
+  }
   ancestors.add(xCoord);
   try {
-    if (typeof (xCoord as { toJSON?: unknown }).toJSON === 'function')
+    if (typeof (xCoord as { toJSON?: unknown }).toJSON === 'function') {
       return (xCoord as { toJSON(): unknown }).toJSON();
-    if (xCoord instanceof Map)
+    }
+    if (xCoord instanceof Map) {
       return Object.fromEntries(
         [...xCoord].map(([entryKey, currentValue]) => [String(entryKey), plain(currentValue, ancestors)]),
       );
-    if (xCoord instanceof Set || Array.isArray(xCoord))
+    }
+    if (xCoord instanceof Set || Array.isArray(xCoord)) {
       return [...xCoord].map((currentValue) => plain(currentValue, ancestors));
+    }
     return Object.fromEntries(
       Object.entries(xCoord).map(([entryKey, currentValue]) => [entryKey, plain(currentValue, ancestors)]),
     );
@@ -69,18 +80,27 @@ export class DebugLog {
   add(cat: DebugCategory, title: string, data?: unknown): void {
     const currentTime: DebugEntry = { id: this.nextId++, at: Date.now(), cat, title, data };
     this.entries.push(currentTime);
-    if (this.entries.length > MAX_ENTRIES) this.entries.splice(0, this.entries.length - MAX_ENTRIES);
-    if (this.dir) this.write(currentTime);
+    if (this.entries.length > MAX_ENTRIES) {
+      this.entries.splice(0, this.entries.length - MAX_ENTRIES);
+    }
+    if (this.dir) {
+      this.write(currentTime);
+    }
     if (cat === 'sim') {
       let count = 0;
       for (let index = this.entries.length - 1; index >= 0; index--) {
         const entry = this.entries[index];
-        if (!entry) continue;
-        if (entry.cat !== 'sim' || entry.data === undefined || typeof entry.data === 'string') continue;
-        if (++count > SIM_WITH_DATA)
+        if (!entry) {
+          continue;
+        }
+        if (entry.cat !== 'sim' || entry.data === undefined || typeof entry.data === 'string') {
+          continue;
+        }
+        if (++count > SIM_WITH_DATA) {
           entry.data = this.dir
             ? '(dropped from memory; full data in the debug file of that hour)'
             : '(dropped from memory)';
+        }
       }
     }
     this.onAdd();
@@ -88,7 +108,9 @@ export class DebugLog {
 
   /** Logs only when the title differs from the last one under `key` (data, e.g. live energy, is not compared). */
   once(key: string, cat: DebugCategory, title: string, data?: unknown): void {
-    if (this.last.get(key) === title) return;
+    if (this.last.get(key) === title) {
+      return;
+    }
     this.last.set(key, title);
     this.add(cat, title, data);
   }
@@ -106,7 +128,9 @@ export class DebugLog {
 
   private write(entry: DebugEntry): void {
     const dir = this.dir;
-    if (!dir) return;
+    if (!dir) {
+      return;
+    }
     try {
       const hour = new Date(entry.at).toISOString().slice(0, 13);
       if (hour !== this.hour) {
@@ -128,7 +152,9 @@ export function pruneDebugDir(dir: string, now = Date.now()): string[] {
   const gone: string[] = [];
   for (const text of readdirSync(dir)) {
     const match = text.match(/^(\d{4}-\d{2}-\d{2}T\d{2})\.jsonl$/);
-    if (!match) continue;
+    if (!match) {
+      continue;
+    }
     const hourEnd = Date.parse(`${match[1]}:00:00Z`) + 3600_000;
     if (now - hourEnd > DEBUG_RETENTION_MS) {
       unlinkSync(join(dir, text));
@@ -144,7 +170,9 @@ export function diffSnapshots(from: Record<string, unknown>, to: Record<string, 
   for (const key of new Set([...Object.keys(from), ...Object.keys(to)])) {
     const fromValue = from[key];
     const toValue = to[key];
-    if (debugJson(fromValue) === debugJson(toValue)) continue;
+    if (debugJson(fromValue) === debugJson(toValue)) {
+      continue;
+    }
     if (Array.isArray(fromValue) && Array.isArray(toValue)) {
       const fromItems = fromValue.map((currentValue) => debugJson(currentValue));
       const toItems = toValue.map((currentValue) => debugJson(currentValue));
@@ -158,7 +186,9 @@ export function diffSnapshots(from: Record<string, unknown>, to: Record<string, 
           return value === undefined || !toItems.includes(value);
         }),
       };
-    } else out[key] = [fromValue, toValue];
+    } else {
+      out[key] = [fromValue, toValue];
+    }
   }
   return out;
 }
