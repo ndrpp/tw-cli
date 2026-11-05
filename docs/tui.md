@@ -50,8 +50,9 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
 - **Character** (`character.ts`, mode `char`, `g i`): three tabs, `← →` cycles Inventory → Sets → Skills. Bag
   `Enter/e` uses an item when `usetype !== 'none'` (coffee is a usable `yield` product) and equips it only when
   it has `usetype: 'none'`; `U` always opens the use form. **Sets** lists `inventory/show_equip` sets, shows the
-  slots and the currently worn alternative, and `Enter` + `y` switches (`switch_equip`); saving/replacing sets
-  stays in the browser.
+  slots and the currently worn alternative, and `Enter` + `y` switches (`switch_equip`). `S` saves the current
+  wear as a new named set (`save_equip`); `R` + `y` replaces the selected set (`replace_equip`); delete stays
+  browser-only.
 - **Trade** (`trade.ts`, mode `trade`, `g b`): Bank · Mobile trader · General store · Tailor · Gunsmith · Market ·
   My market. Mobile trader loads `shop_trader`'s `trader` offers anywhere, shows the dollar price and rotation
   time, and buys with `Enter`; the bag and offers are re-read after a buy.

@@ -953,6 +953,50 @@ export class GameState extends EventEmitter {
     }
   }
 
+  /** Saves the current wear as a new equipment set and returns its id when the server sends one. */
+  async saveEquipSet(name: string): Promise<number | null> {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      this.error('Give the equipment set a name.');
+      return null;
+    }
+    const maximum = this.equipSets?.hasPremium ? this.equipSets.premiumMax : this.equipSets?.max;
+    if (maximum && this.equipSets && this.equipSets.sets.length >= maximum) {
+      this.error(`No free equipment-set slot (${this.equipSets.sets.length}/${maximum}).`);
+      return null;
+    }
+    const saved = await this.guard('Save equipment set', async () => {
+      const set = await new InventoryApi(this.client).saveEquip(trimmedName);
+      this.info(`Saved equipment set: ${trimmedName}`);
+      return set ?? true;
+    });
+    if (saved === undefined) {
+      return null;
+    }
+    await this.loadEquipSets();
+    return typeof saved === 'object'
+      ? saved.id || null
+      : (this.equipSets?.sets.find((set) => set.name === trimmedName)?.id ?? null);
+  }
+
+  /** Replaces a saved set with the current wear. */
+  async replaceEquipSet(id: number): Promise<boolean> {
+    const set = this.equipSets?.sets.find((source) => source.id === id);
+    if (!set) {
+      this.error('That equipment set is no longer available.');
+      return false;
+    }
+    const replaced = await this.guard('Replace equipment set', async () => {
+      await new InventoryApi(this.client).replaceEquip(id);
+      this.info(`Replaced equipment set: ${set.name}`);
+      return true;
+    });
+    if (replaced) {
+      await this.loadEquipSets();
+    }
+    return !!replaced;
+  }
+
   async wear(itemId: number): Promise<void> {
     const type = this.items?.get(itemId)?.type;
     await this.guard('Wear', async () => {

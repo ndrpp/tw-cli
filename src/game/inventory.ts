@@ -7,8 +7,10 @@
 //   inventory/inventory_changed {inv_id}      → {changes|false, wear:{slot:item_id|null}}
 //   inventory/show_equip (mode)               → {data:[{equip_manager_id, name, head, neck, …}], max, premium_max, hasPremium, price}
 //   inventory/switch_equip {id, last_inv_id}  → {changes, wear:[item ids], setItems, workPointBonus, speed, weapon}
+//   inventory/save_equip {name}               → {error?, data:<the new set>}
+//   inventory/replace_equip {id}              → {error?} (the set now holds the current wear)
 import type { GameClient } from '../http/game-client.ts';
-import { arr, type JsonObject, objs, vals } from '../util/json.ts';
+import { arr, isObj, type JsonObject, objs, vals } from '../util/json.ts';
 import { baseId, type ItemCatalog, WEAR_SLOTS } from './items.ts';
 
 export interface BagItem {
@@ -54,6 +56,19 @@ const toBagItem = (jsonValue: JsonObject): BagItem => ({
   invId: Number(jsonValue.inv_id) || 0,
   type: String(jsonValue.type ?? ''),
 });
+
+function parseEquipSet(jsonValue: JsonObject): EquipSet {
+  const slots: Record<string, number | null> = {};
+  for (const slot of WEAR_SLOTS) {
+    const id = Number(jsonValue[slot]);
+    slots[slot] = id > 0 ? id : null;
+  }
+  return {
+    id: Number(jsonValue.equip_manager_id) || 0,
+    name: String(jsonValue.name ?? 'Set'),
+    slots,
+  };
+}
 
 export class Inventory {
   /** item_id → bag entry */
@@ -216,16 +231,8 @@ export class InventoryApi {
     if (json.error) {
       throw new Error(String(json.msg ?? json.error));
     }
-    const sets: EquipSet[] = objs(json.data).map((jsonValue) => {
-      const slots: Record<string, number | null> = {};
-      for (const slot of WEAR_SLOTS) {
-        const id = Number(jsonValue[slot]);
-        slots[slot] = id > 0 ? id : null;
-      }
-      return { id: Number(jsonValue.equip_manager_id) || 0, name: String(jsonValue.name ?? 'Set'), slots };
-    });
     return {
-      sets,
+      sets: objs(json.data).map(parseEquipSet),
       max: Number(json.max) || 0,
       premiumMax: Number(json.premium_max) || 0,
       hasPremium: !!json.hasPremium,
@@ -242,8 +249,25 @@ export class InventoryApi {
     const result = this.cloth(json);
     return {
       ...result,
-      wear: Array.isArray(json.wear) ? json.wear.map(Number) : [],
-      setItems: Array.isArray(json.setItems) ? json.setItems.map(Number) : [],
+      wear: arr(json.wear).map(Number),
+      setItems: arr(json.setItems).map(Number),
     };
+  }
+
+  /** Saves the current equipment as a new set (EquipManager.save). */
+  async saveEquip(name: string): Promise<EquipSet | null> {
+    const json = await this.client.remoteCall('inventory', 'save_equip', { name });
+    if (json.error) {
+      throw new Error(String(json.msg ?? json.error));
+    }
+    return isObj(json.data) ? parseEquipSet(json.data) : null;
+  }
+
+  /** Overwrites a saved set with the current equipment (EquipManager.replaceEquip). */
+  async replaceEquip(id: number): Promise<void> {
+    const json = await this.client.remoteCall('inventory', 'replace_equip', { id });
+    if (json.error) {
+      throw new Error(String(json.msg ?? json.error));
+    }
   }
 }

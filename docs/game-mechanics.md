@@ -83,8 +83,10 @@ browser client's code; **unverified** = assumed, check live and update this file
   right_arm, left_arm, yield, foot, animal, belt, pants}], max, premium_max, hasPremium, price}` (verified live,
   en32: two sets, max 3). `inventory/switch_equip {id, last_inv_id}` → `{changes, wear:[item ids], setItems,
   workPointBonus, speed, weapon}`; `wear` is the complete new worn list (the list endpoint is verified live; the
-  switch shape is from `EquipManager.switchEquip`). Save / replace / delete are `save_equip` / `replace_equip` /
-  `delete_equip`, not used by the TUI yet.
+  switch shape is from `EquipManager.switchEquip`).
+- `inventory/save_equip {name}` saves the current wear as a new set and returns it under `data`;
+  `inventory/replace_equip {id}` overwrites that set with the current wear. Delete (`delete_equip`) stays
+  browser-only. The browser caps sets at `max` (3 without automation, `premium_max` with it).
 
 ## Mobile trader
 
