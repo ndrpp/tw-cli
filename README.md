@@ -62,7 +62,8 @@ In the TUI, press `?` for help on any screen. Keys are vim-like: `Esc` always go
 | `g A`         | account setup                                                                     |
 
 The daily login bonus is collected automatically when the TUI starts; if that fails, `daily bonus pending` stays
-in the header and the next start tries again.
+in the header and the next start tries again. Active seasonal events show their personal progress and any ready
+event items in the header.
 
 ## Autopilot
 

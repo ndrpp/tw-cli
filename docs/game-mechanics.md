@@ -65,6 +65,18 @@ browser client's code; **unverified** = assumed, check live and update this file
   registered-user delivery (not used by the TUI). The TUI checks `Player.hasLoginBonus` on startup and collects
   once; `daily bonus pending` stays in the header only if collection failed. There is no bonus page.
 
+## Seasonal events
+
+- `Game.init.sesData.<Event>` carries the **personal** event progress: `counter.value` and `counter.key`
+  (`ses:<id>_collected`), the reward thresholds in `rewards` (`{<points>:{id, desc}}`), and `meta.end`.
+  `ceData.<event id>` carries the display name, event stages and community progress. Verified from the saved
+  en32 bootstrap.
+- The browser updates the counter live through `SesStatChanged {<stat>: value}` (keys get a `ses:` prefix).
+- Event generator items are ordinary `usetype: 'use'` items whose description says
+  "Generates <amount> <currency> for the <event> event … once every <hours>". Examples: Flower pot (1250 every
+  11.5 h) and Big Flower pot (2500 every 23 h). Their cooldowns are in `Bag.init.itemCooldown` (epoch seconds)
+  and expiry in `itemLifetime` (seconds); `itemuse/use_item` replies update both.
+
 ## Town buildings and construction
 
 - `building_cityhall` action '' `{town_id}` → `{townName, townNoLeave, buildings:[{key, name, stage, maxStage,

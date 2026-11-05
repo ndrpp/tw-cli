@@ -33,12 +33,15 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
 
 ## Screens
 
+- **Header**: two data lines with blank separators; another line appears while a seasonal event is active, with
+  the event name, personal progress toward the next reward, and the names of ready event generator items (green).
+  The line is driven by `state.event` and `state.eventReadyItems()`; a body row is reserved only while it is shown.
 - **Home** (`home.ts`, mode `home`, the start screen; `g h`; where Esc ends up): working panel
   (queue head: progress bar, time left, expected rewards via `state.queuedJob()`, "✓ done" with the report
   summary for 30 s, autopilot status), session (measured XP/h and $/h from `state.rates`, queued rate from
   `state.timeline()`, level ETA, regen "full at"), task queue (`QueuePane` from `queue.ts`, shared with the jobs
   screen; fills the rest of the left column, rows measured with `measureElement`), minimap (`buildGrid` around `@`, +/-),
-  newest reports (`state.recentReports`), interactive chat. Small terminals drop chat (< 24 rows), then the
+  newest reports (`state.recentReports`), interactive chat. Small terminals drop chat (< 23 rows), then the
   right column (< 96 cols).
 - Reports on home cost no polling: one read on first show, then the live "new report" push (which already
   fetches page 1 for its log lines) fills `recentReports`; without live updates, one re-read 5 s after a job ends.

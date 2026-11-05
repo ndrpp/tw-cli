@@ -10,7 +10,7 @@
 //   inventory/save_equip {name}               → {error?, data:<the new set>}
 //   inventory/replace_equip {id}              → {error?} (the set now holds the current wear)
 import type { GameClient } from '../http/game-client.ts';
-import { arr, isObj, type JsonObject, objs, vals } from '../util/json.ts';
+import { arr, entries, isObj, type JsonObject, obj, objs, vals } from '../util/json.ts';
 import { baseId, type ItemCatalog, WEAR_SLOTS } from './items.ts';
 
 export interface BagItem {
@@ -75,24 +75,47 @@ export class Inventory {
   bag = new Map<number, BagItem>();
   /** slot → item_id */
   wear = new Map<string, number>();
+  /** item_id → epoch seconds when it can be used again (Bag.itemCooldown). */
+  itemCooldown = new Map<number, number>();
+  /** item_id → remaining lifetime in seconds (Bag.itemLifetime); absent when it does not expire. */
+  itemLifetime = new Map<number, number>();
   lastInvId = 0;
 
   static fromInit(bagInit: JsonObject | null | undefined, catalog?: ItemCatalog): Inventory {
-    const inv = new Inventory();
+    const inventory = new Inventory();
     for (const list of vals(bagInit?.bag)) {
       for (const jsonValue of objs(list)) {
-        inv.put(toBagItem(jsonValue));
+        inventory.put(toBagItem(jsonValue));
       }
     }
     for (const id of arr(bagInit?.wear).map(Number)) {
       const type = catalog?.get(id)?.type;
       if (type) {
-        inv.wear.set(type, Number(id));
+        inventory.wear.set(type, Number(id));
       } else {
-        inv.wear.set(`#${id}`, Number(id)); // type unknown until items load; fixed by retype()
+        inventory.wear.set(`#${id}`, Number(id)); // type unknown until items load; fixed by retype()
       }
     }
-    return inv;
+    inventory.setItemMeta(bagInit?.itemCooldown, bagInit?.itemLifetime);
+    return inventory;
+  }
+
+  /** Replaces the item cooldown / lifetime maps from Bag.init (or a fresh game.php sync). */
+  setItemMeta(cooldown: unknown, lifetime: unknown): void {
+    this.itemCooldown.clear();
+    for (const [id, at] of entries(obj(cooldown))) {
+      const timestamp = Number(at);
+      if (Number.isFinite(timestamp) && timestamp > 0) {
+        this.itemCooldown.set(Number(id), timestamp);
+      }
+    }
+    this.itemLifetime.clear();
+    for (const [id, seconds] of entries(obj(lifetime))) {
+      const remaining = Number(seconds);
+      if (Number.isFinite(remaining)) {
+        this.itemLifetime.set(Number(id), remaining);
+      }
+    }
   }
 
   /** Puts worn items under their slot once the item catalog is available. */

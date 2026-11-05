@@ -19,6 +19,7 @@ import { CharacterState, type Position } from './character.ts';
 import { ServerClock } from './clock.ts';
 import { DebugLog, diffSnapshots } from './debug-log.ts';
 import { DuelApi, type DuelData, type DuelOpponent, duelPost, type NpcDuelResult } from './duels.ts';
+import { type ActiveEvent, type EventItem, eventReadyItems, parseActiveEvent, withEventPoints } from './event.ts';
 import { fetchHotel, type Hotel, type HotelRoom, roomRate } from './hotel.ts';
 import { type EquipSets, Inventory, InventoryApi } from './inventory.ts';
 import { baseId, type ItemCatalog, type ItemSetCatalog, loadItemCatalog, loadItemSets, statsOf } from './items.ts';
@@ -212,6 +213,8 @@ export class GameState extends EventEmitter {
   equipSets: EquipSets | null = null;
   /** Player.hasLoginBonus from game.php; true while today's streak reward is uncollected. */
   hasLoginBonus = false;
+  /** Active seasonal event and its personal progress (Game.init sesData/ceData). */
+  event: ActiveEvent | null = null;
   skills = new Skills();
   quests: Quest[] = [];
   questCapacity = 0;
@@ -291,6 +294,7 @@ export class GameState extends EventEmitter {
     this.inventory = Inventory.fromInit(this.bagInit, this.items ?? undefined);
     this.equipSets = null;
     this.hasLoginBonus = !!bootstrap.player?.hasLoginBonus;
+    this.event = parseActiveEvent(bootstrap.game);
     this.mobileTrader = null;
     this.townHall = null;
     this.construction = null;
@@ -698,6 +702,7 @@ export class GameState extends EventEmitter {
       this.character.nuggets = countValue;
       this.changed();
     });
+    poller.on('ses', (stats) => this.applySesStats(stats));
     poller.on('tell', ({ from, message }: { from: string; message: string }) => this.info(`✉ ${from}: ${message}`));
     poller.on('chat', () => this.changed());
     poller.on('rooms', () => this.changed());
@@ -786,6 +791,8 @@ export class GameState extends EventEmitter {
     try {
       const { bootstrap } = await this.reopen();
       this.hasLoginBonus = !!bootstrap.player?.hasLoginBonus;
+      this.inventory.setItemMeta(bootstrap.bag?.itemCooldown, bootstrap.bag?.itemLifetime);
+      this.event = parseActiveEvent(bootstrap.game);
       const data = bootstrap.character;
       if (!data) {
         return;
@@ -1024,6 +1031,28 @@ export class GameState extends EventEmitter {
       return;
     }
     await this.collectLoginReward();
+  }
+
+  /** Event generator items whose cooldown is over (header reminders). */
+  eventReadyItems(): EventItem[] {
+    return eventReadyItems(this.inventory, this.items, this.event, this.clock.now());
+  }
+
+  /** Live SesStatChanged: update the personal event counter without a full reload. */
+  private applySesStats(stats: JsonObject): void {
+    if (!this.event) {
+      return;
+    }
+    for (const [key, value] of entries(stats)) {
+      if (`ses:${key}` !== this.event.counterKey) {
+        continue;
+      }
+      const points = Number(value);
+      if (Number.isFinite(points)) {
+        this.event = withEventPoints(this.event, points);
+      }
+    }
+    this.changed();
   }
 
   async wear(itemId: number): Promise<void> {
@@ -2341,6 +2370,12 @@ export class GameState extends EventEmitter {
         this.itemName(id),
       );
       this.inventory.applyChanges(resultValue.changes);
+      if (resultValue.itemCooldown !== undefined) {
+        this.inventory.itemCooldown.set(itemId, resultValue.itemCooldown);
+      }
+      if (resultValue.itemLifetime !== undefined) {
+        this.inventory.itemLifetime.set(itemId, resultValue.itemLifetime);
+      }
       if (resultValue.energy !== undefined) {
         this.character.setEnergy(resultValue.energy);
       }
