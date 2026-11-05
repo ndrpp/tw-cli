@@ -56,6 +56,15 @@ browser client's code; **unverified** = assumed, check live and update this file
   `{deposit, own_money, fee}`. No withdrawal: purchases take cash first, then the bank. You must be in the town.
 - Cash in pocket can be lost in duels; that is why the autopilot banks over a limit.
 
+## Daily login bonus
+
+- `game.php?window=loginbonus` (no mode) → `{couponAmount, nuggetAmount, currentStage, rewardCollected,
+  itemCollected, registerDate, weaponShot, weaponMelee}` (LoginBonus.init @621917). `currentStage` is the 1-based
+  day in the five-day streak; `rewardCollected` says whether today's reward is still available.
+- `loginbonus/collect` → `{rewards:{xp?, nuggets?, upb?}}`; `loginbonus/collect_item` is the separate 7-day
+  registered-user delivery (not used by the TUI). The TUI checks `Player.hasLoginBonus` on startup and collects
+  once; `daily bonus pending` stays in the header only if collection failed. There is no bonus page.
+
 ## Town buildings and construction
 
 - `building_cityhall` action '' `{town_id}` → `{townName, townNoLeave, buildings:[{key, name, stage, maxStage,

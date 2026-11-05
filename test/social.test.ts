@@ -569,6 +569,29 @@ test('trade: bank deposit, shop buy/sell, item use and market requests', async (
   );
 });
 
+test('daily login bonus: the startup hook collects once when the bootstrap says it is available', async () => {
+  fakeServer();
+  const state = makeState();
+  let collected = false;
+  routes['/game.php?window=loginbonus&action=collect'] = () => {
+    collected = true;
+    return { rewards: { xp: 120, nuggets: 3, upb: 2 } };
+  };
+
+  await state.autoCollectLoginBonus();
+
+  assert.equal(collected, false, 'not collected when the bootstrap says there is no bonus');
+
+  state.hasLoginBonus = true;
+  await state.autoCollectLoginBonus();
+
+  assert.equal(collected, true);
+  assert.match(
+    state.log.filter((line) => /Daily login bonus/.test(line.msg)).at(-1)!.msg,
+    /120 XP.*3 nuggets.*2 bonds/,
+  );
+});
+
 test('town hall: building levels, construction detail and the build task post', async () => {
   fakeServer();
   const state = makeState();

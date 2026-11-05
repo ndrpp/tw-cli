@@ -79,6 +79,7 @@ function Header({ state }: { state: GameState }) {
         { dimColor: true, wrap: 'truncate' },
         `${state.worldName} · ${automation} · `,
         createElement(Text, { color: LIVE_COLOR[state.liveStatus], dimColor: false }, `● live ${state.liveStatus}`),
+        state.hasLoginBonus ? createElement(Text, { color: 'yellow' }, ' · daily bonus pending') : '',
         state.unread.reports ? createElement(Text, { color: 'yellow' }, ` · ${ICON.mail} new report (g r)`) : '',
         state.unread.messages ? createElement(Text, { color: 'yellow' }, ` · ${ICON.mail} new telegram (g r)`) : '',
         state.live?.unreadRooms.size

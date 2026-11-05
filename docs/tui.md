@@ -59,6 +59,9 @@ Ink (React without JSX: `const h = React.createElement`). Shell in `src/tui/app.
 - **Chat** (`chat.ts`, mode `chat`, `g c`): for the town room, a third column lists the clients in the room with
   presence (● online / ◐ idle, 5 min), name, role (Mayor / Councillor / Citizen / Guest) and level, online-first.
   It is hidden below 90 columns with a note; whisper/saloon rooms keep the two-column layout.
+- **Daily login bonus**: no screen. `GameState.start()` checks `Player.hasLoginBonus` and collects once after the
+  startup steps; the log line shows the reward. `daily bonus pending` stays in the header only if collection
+  failed. The separate 7-day pony-express delivery is not shown.
 - **Town** (`town.ts`, mode `town`, `g t`): the home town's city hall (`building_cityhall`), building levels,
   progress bars, and construction detail. `Enter` opens a form with the available duration and payer (town
   treasury / private), then queues a `taskType: 'build'` task. `u` refreshes; it does not use the town you are

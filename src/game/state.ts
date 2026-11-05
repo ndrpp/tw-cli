@@ -37,6 +37,7 @@ import {
   parseJobDetail,
   wayTime,
 } from './jobs.ts';
+import { collectLoginBonus, loginRewardText } from './loginbonus.ts';
 import {
   MailApi,
   type Report,
@@ -209,6 +210,8 @@ export class GameState extends EventEmitter {
   inventory = new Inventory();
   /** Saved equipment sets (loaded by the character screen's Sets tab). */
   equipSets: EquipSets | null = null;
+  /** Player.hasLoginBonus from game.php; true while today's streak reward is uncollected. */
+  hasLoginBonus = false;
   skills = new Skills();
   quests: Quest[] = [];
   questCapacity = 0;
@@ -287,6 +290,7 @@ export class GameState extends EventEmitter {
     this.bagInit = bootstrap.bag ?? (isObj(inventory) ? inventory : null);
     this.inventory = Inventory.fromInit(this.bagInit, this.items ?? undefined);
     this.equipSets = null;
+    this.hasLoginBonus = !!bootstrap.player?.hasLoginBonus;
     this.mobileTrader = null;
     this.townHall = null;
     this.construction = null;
@@ -633,6 +637,7 @@ export class GameState extends EventEmitter {
     }
     this.startup.done = true;
     this.info(`Ready: ${this.jobs.length} jobs, ${this.items?.size ?? 0} items, ${this.quests.length} quests.`);
+    void this.autoCollectLoginBonus();
   }
 
   /** Leaves the loading screen early (requests keep running in the background). */
@@ -780,6 +785,7 @@ export class GameState extends EventEmitter {
     this.syncing = true;
     try {
       const { bootstrap } = await this.reopen();
+      this.hasLoginBonus = !!bootstrap.player?.hasLoginBonus;
       const data = bootstrap.character;
       if (!data) {
         return;
@@ -995,6 +1001,29 @@ export class GameState extends EventEmitter {
       await this.loadEquipSets();
     }
     return !!replaced;
+  }
+
+  /** Collects today's reward and refreshes the character (XP/nuggets) and the streak. */
+  async collectLoginReward(): Promise<void> {
+    const rewards = await this.guard('Collect login bonus', async () => {
+      const result = await collectLoginBonus(this.client);
+      const text = loginRewardText(result);
+      this.info(`Daily login bonus${text ? `: ${text}` : ' collected'}`);
+      return result;
+    });
+    if (!rewards) {
+      return;
+    }
+    this.hasLoginBonus = false;
+    await this.syncCharacter('login bonus');
+  }
+
+  /** Startup hook: collect the free daily reward once when the bootstrap says it is available. */
+  async autoCollectLoginBonus(): Promise<void> {
+    if (!this.hasLoginBonus) {
+      return;
+    }
+    await this.collectLoginReward();
   }
 
   async wear(itemId: number): Promise<void> {

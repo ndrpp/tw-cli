@@ -61,6 +61,9 @@ In the TUI, press `?` for help on any screen. Keys are vim-like: `Esc` always go
 | `u` · `g R`   | refresh · reload everything                                                       |
 | `g A`         | account setup                                                                     |
 
+The daily login bonus is collected automatically when the TUI starts; if that fails, `daily bonus pending` stays
+in the header and the next start tries again.
+
 ## Autopilot
 
 Plays the character while the TUI is open (`g a`; `R` runs / pauses, paused only shows what it would do). Every
